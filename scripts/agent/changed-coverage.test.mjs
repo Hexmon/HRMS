@@ -780,8 +780,9 @@ test("workflow disablement and an untraced dangerous shell branch remain red", (
   assert.ok(result.totals.uncovered.some((item) => item.includes("scripts/agent/verify-change.sh")));
 });
 
-test("branch workflow keeps backend and coverage service ports aligned with their clients", () => {
+test("ordinary and trusted workflows provision the dedicated coverage services", () => {
   const workflow = readFileSync(new URL("../../.github/workflows/branch-ci-cd.yml", import.meta.url), "utf8");
+  const trusted = readFileSync(new URL("../../.github/workflows/trusted-changed-coverage.yml", import.meta.url), "utf8");
   const backend = workflow.split("  backend-checks:")[1]?.split("  frontend-checks:")[0] ?? "";
   const coverage = workflow.split("  changed-coverage:")[1]?.split("  deploy-backend:")[0] ?? "";
   assert.match(backend, /TEST_DATABASE_URL: postgresql:\/\/hrms_ci:[^\n]+@127\.0\.0\.1:5432\/hrms_ci_test/);
@@ -791,6 +792,10 @@ test("branch workflow keeps backend and coverage service ports aligned with thei
   assert.match(coverage, /- 55433:5432/);
   assert.match(coverage, /- 56380:6379/);
   assert.match(coverage, /--confirm-disposable-services/);
+  assert.match(trusted, /timeout-minutes: 90/);
+  assert.match(trusted, /- 55433:5432/);
+  assert.match(trusted, /- 56380:6379/);
+  assert.match(trusted, /--confirm-disposable-services/);
 });
 
 test("a PR-authored approval JSON cannot clear unmeasured paths", () => {
@@ -2277,7 +2282,7 @@ test("CLI builds and stamps an external Istanbul report", () => {
     cwd: root, env: { ...process.env, HRMS_COVERAGE_REPO_ROOT: root }, encoding: "utf8",
   });
   assert.equal(unclaimedWorker.status, 1);
-  assert.match(unclaimedWorker.stderr, /Changed coverage gate failed:/);
+  assert.match(unclaimedWorker.stderr, /Full coverage worker service claim verification failed:/);
   assert.equal(git(root, "rev-parse", "HEAD"), workerHead);
   assert.equal(git(root, "status", "--porcelain=v1", "--untracked-files=all"), "");
 });

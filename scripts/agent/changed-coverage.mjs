@@ -1403,7 +1403,11 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       for (const [name, path] of Object.entries(tools)) {
         try { validateTrustedExecutable(path); } catch { throw new Error(`Full coverage worker received invalid ${name} executable`); }
       }
-      await verifyCoverageIntegrationServiceClaim(workerEnvironment, serviceClaimToken);
+      try {
+        await verifyCoverageIntegrationServiceClaim(workerEnvironment, serviceClaimToken);
+      } catch (error) {
+        throw new Error(`Full coverage worker service claim verification failed: ${error.message}`, { cause: error });
+      }
       runFullCoverageWorker(repoRoot, outputRoot, expectedHead, tools);
     } else if (process.argv.includes("--run-full-suite")) {
       process.exitCode = await runFullSuiteCommand(repoRoot, process.argv.slice(2));
