@@ -9,11 +9,55 @@ import unittest
 SOURCE = Path(__file__).resolve().parents[1]
 
 
+def copy_script(name: str, destination: Path) -> None:
+    shutil.copyfile(SOURCE / name, destination / name)
+    (destination / name).chmod(0o755)
+
+
 def run(repo: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(args, cwd=repo, text=True, capture_output=True, check=False)
 
 
 class VerificationScriptTests(unittest.TestCase):
+    def test_trusted_coverage_workflow_uses_pinned_source_without_privileged_trigger(self) -> None:
+        workflow = (SOURCE.parents[1] / ".github" / "workflows" / "trusted-changed-coverage.yml").read_text(encoding="utf-8")
+        root_ignore = (SOURCE.parents[1] / ".gitignore").read_text(encoding="utf-8").splitlines()
+        self.assertIn("pull_request: {}", workflow)
+        self.assertIn("merge_group: {}", workflow)
+        self.assertNotIn("pull_request_target", workflow)
+        self.assertIn("contents: read", workflow)
+        self.assertIn("job.workflow_sha", workflow)
+        self.assertIn("repository: ${{ job.workflow_repository }}", workflow)
+        self.assertIn("ref: ${{ job.workflow_sha }}", workflow)
+        self.assertIn('validator="$GITHUB_WORKSPACE/trusted/scripts/agent/changed-coverage.mjs"', workflow)
+        self.assertIn('--trusted-validator "$validator"', workflow)
+        self.assertIn("actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683", workflow)
+        self.assertIn("actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020", workflow)
+        candidate_installs = [line.strip() for line in workflow.splitlines() if "pnpm --dir candidate/" in line]
+        self.assertEqual(len(candidate_installs), 2)
+        for command in candidate_installs:
+            self.assertIn("--frozen-lockfile", command)
+            self.assertIn("--ignore-scripts", command)
+            self.assertIn("--ignore-pnpmfile", command)
+        self.assertIn('python3 -m venv --copies "$RUNNER_TEMP/hrms-coverage-python"', workflow)
+        self.assertIn('export PATH="$RUNNER_TEMP/hrms-coverage-python/bin:$PATH"', workflow)
+        self.assertIn("exec corepack pnpm@10.25.0", workflow)
+        self.assertIn('chmod 0555 "$pinned_pnpm"', workflow)
+        self.assertIn('>> "$GITHUB_PATH"', workflow)
+        self.assertIn("node_modules", root_ignore)
+
+    def test_branch_coverage_workflow_uses_canonical_pinned_python(self) -> None:
+        workflow = (SOURCE.parents[1] / ".github" / "workflows" / "branch-ci-cd.yml").read_text(encoding="utf-8")
+        self.assertIn('HRMS_COVERAGE_PYTHON: ${{ runner.temp }}/hrms-coverage-python/bin/python3', workflow)
+        self.assertEqual(workflow.count('HRMS_COVERAGE_PYTHON: ${{ runner.temp }}/hrms-coverage-python/bin/python3'), 2)
+        self.assertIn('python -m venv --copies "$coverage_venv"', workflow)
+        self.assertIn('coverage==7.11.0', workflow)
+        self.assertIn('test "$(realpath "$HRMS_COVERAGE_PYTHON")" = "$HRMS_COVERAGE_PYTHON"', workflow)
+        self.assertIn('test ! -L "$HRMS_COVERAGE_PYTHON"', workflow)
+        self.assertIn("print(coverage.__version__)", workflow)
+        coverage_step = workflow.split("- name: Install pinned Python coverage runner", 1)[1].split("- name:", 1)[0]
+        self.assertNotIn('>> "$GITHUB_PATH"', coverage_step)
+
     def test_change_plan_keeps_unrelated_suites_out_of_each_path_class(self) -> None:
         cases = (
             ("docs/README.md", ("Agent setup and documentation references",), ("Backend unit tests", "Frontend lint", "Disposable database preflight")),
@@ -28,8 +72,8 @@ class VerificationScriptTests(unittest.TestCase):
             ("hrms_backend/docs/api/openapi.json", ("Backend contract tests", "Disposable database preflight"), ("Backend unit tests", "Migration history and schema drift", "Cloudflare Queue DLQ and replay", "Frontend lint")),
             ("hrms_backend/src/db/schema.ts", ("Migration history and schema drift", "Disposable database preflight"), ("Backend contract tests", "Cloudflare Queue DLQ and replay", "Frontend lint")),
             ("hrms_backend/src/workers/run.ts", ("Cloudflare Queue DLQ and replay", "Disposable database preflight"), ("Backend contract tests", "Migration history and schema drift", "Frontend lint")),
-            ("hrms-client/src/components/example.tsx", ("Frontend lint", "Frontend production build"), ("Backend unit tests", "Disposable database preflight", "Frontend contract route coverage")),
-            ("hrms-client/vitest.config.ts", ("Frontend lint", "Frontend production build"), ("Backend unit tests", "Disposable database preflight", "Frontend contract route coverage")),
+            ("hrms-client/src/components/example.tsx", ("Frontend lint", "Frontend unit tests", "Frontend production build"), ("Backend unit tests", "Disposable database preflight", "Frontend contract route coverage")),
+            ("hrms-client/vitest.config.ts", ("Frontend lint", "Frontend unit tests", "Frontend production build"), ("Backend unit tests", "Disposable database preflight", "Frontend contract route coverage")),
             ("hrms-client/src/domains/example.ts", ("Frontend contract route coverage", "Frontend lint"), ("Backend unit tests", "Disposable database preflight")),
             (".github/workflows/branch-ci-cd.yml", ("Agent setup and documentation references", "Agent verifier unit tests"), ("Backend unit tests", "Frontend lint", "Disposable database preflight")),
         )
@@ -39,7 +83,7 @@ class VerificationScriptTests(unittest.TestCase):
                 scripts = repo / "scripts" / "agent"
                 scripts.mkdir(parents=True)
                 for name in ("lib.sh", "verify-change.sh"):
-                    shutil.copy2(SOURCE / name, scripts / name)
+                    copy_script(name, scripts)
                 self.assertEqual(run(repo, "git", "init", "-q").returncode, 0)
                 self.assertEqual(run(repo, "git", "config", "user.email", "tests@example.invalid").returncode, 0)
                 self.assertEqual(run(repo, "git", "config", "user.name", "Verification Test").returncode, 0)
@@ -64,7 +108,7 @@ class VerificationScriptTests(unittest.TestCase):
             scripts = repo / "scripts" / "agent"
             scripts.mkdir(parents=True)
             for name in ("lib.sh", "verify-change.sh"):
-                shutil.copy2(SOURCE / name, scripts / name)
+                copy_script(name, scripts)
             (repo / ".gitignore").write_text(".env.test\n", encoding="utf-8")
             self.assertEqual(run(repo, "git", "init", "-q").returncode, 0)
             self.assertEqual(run(repo, "git", "config", "user.email", "tests@example.invalid").returncode, 0)
@@ -106,7 +150,7 @@ class VerificationScriptTests(unittest.TestCase):
             scripts = repo / "scripts" / "agent"
             scripts.mkdir(parents=True)
             for name in ("lib.sh", "verify-change.sh"):
-                shutil.copy2(SOURCE / name, scripts / name)
+                copy_script(name, scripts)
             guard = scripts / "protect-sensitive-files.sh"
             guard.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
             guard.chmod(0o755)
@@ -136,7 +180,7 @@ class VerificationScriptTests(unittest.TestCase):
             scripts = repo / "scripts" / "agent"
             scripts.mkdir(parents=True)
             for name in ("lib.sh", "verify-change.sh"):
-                shutil.copy2(SOURCE / name, scripts / name)
+                copy_script(name, scripts)
             guard = scripts / "protect-sensitive-files.sh"
             guard.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
             guard.chmod(0o755)
@@ -164,7 +208,7 @@ class VerificationScriptTests(unittest.TestCase):
             scripts = repo / "scripts" / "agent"
             scripts.mkdir(parents=True)
             for name in ("lib.sh", "verify-full.sh"):
-                shutil.copy2(SOURCE / name, scripts / name)
+                copy_script(name, scripts)
             for name in ("protect-sensitive-files.sh", "validate-agent-setup.sh"):
                 target = scripts / name
                 target.write_text("#!/usr/bin/env bash\nexit 0\n", encoding="utf-8")
@@ -227,7 +271,7 @@ class VerificationScriptTests(unittest.TestCase):
             scripts = repo / "scripts" / "agent"
             scripts.mkdir(parents=True)
             for name in ("lib.sh", "protect-sensitive-files.sh"):
-                shutil.copy2(SOURCE / name, scripts / name)
+                copy_script(name, scripts)
             self.assertEqual(run(repo, "git", "init", "-q").returncode, 0)
             self.assertEqual(run(repo, "git", "config", "user.email", "tests@example.invalid").returncode, 0)
             self.assertEqual(run(repo, "git", "config", "user.name", "Verification Test").returncode, 0)
@@ -430,7 +474,7 @@ class VerificationScriptTests(unittest.TestCase):
             scripts = repo / "scripts" / "agent"
             scripts.mkdir(parents=True)
             for name in ("lib.sh", "protect-sensitive-files.sh", "verify-change.sh"):
-                shutil.copy2(SOURCE / name, scripts / name)
+                copy_script(name, scripts)
             self.assertEqual(run(repo, "git", "init", "-q").returncode, 0)
             self.assertEqual(run(repo, "git", "config", "user.email", "tests@example.invalid").returncode, 0)
             self.assertEqual(run(repo, "git", "config", "user.name", "Verification Test").returncode, 0)
@@ -450,7 +494,7 @@ class VerificationScriptTests(unittest.TestCase):
             scripts = repo / "scripts" / "agent"
             scripts.mkdir(parents=True)
             for name in ("lib.sh", "protect-sensitive-files.sh", "verify-change.sh"):
-                shutil.copy2(SOURCE / name, scripts / name)
+                copy_script(name, scripts)
             self.assertEqual(run(repo, "git", "init", "-q").returncode, 0)
             self.assertEqual(run(repo, "git", "config", "user.email", "tests@example.invalid").returncode, 0)
             self.assertEqual(run(repo, "git", "config", "user.name", "Verification Test").returncode, 0)

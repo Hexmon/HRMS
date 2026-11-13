@@ -48,6 +48,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "pnpm test:unit && pnpm test:contracts && pnpm test:integration && pnpm test:e2e",
     "test:unit": "vitest run --project unit",
+    "test:unit:coverage": "vitest run --project unit --coverage && node ../scripts/agent/changed-coverage.mjs --stamp backend",
     "test:integration": "vitest run --project integration",
     "test:contracts": "vitest run --project contracts",
     "test:e2e": "vitest run --project e2e",

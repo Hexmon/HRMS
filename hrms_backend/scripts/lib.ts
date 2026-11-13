@@ -1,10 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
 export const rootDir = process.cwd();
 
-export function walkFiles(dir: string, predicate: (path: string) => boolean = () => true): string[] {
+export function walkFiles(dir: string, predicate: (path: string) => boolean = () => true, packageRoot: string = rootDir): string[] {
   if (!existsSync(dir)) {
     return [];
   }
@@ -12,12 +12,13 @@ export function walkFiles(dir: string, predicate: (path: string) => boolean = ()
   const files: string[] = [];
   for (const entry of entries) {
     const full = join(dir, entry);
-    if (entry === "node_modules" || entry === ".next" || entry === "dist" || entry === ".wrangler") {
+    if (entry === "node_modules" || entry === ".next" || entry === "dist" || entry === ".wrangler" ||
+        (entry === "coverage" && resolve(full) === resolve(packageRoot, "coverage"))) {
       continue;
     }
     const stats = statSync(full);
     if (stats.isDirectory()) {
-      files.push(...walkFiles(full, predicate));
+      files.push(...walkFiles(full, predicate, packageRoot));
     } else if (predicate(full)) {
       files.push(full);
     }

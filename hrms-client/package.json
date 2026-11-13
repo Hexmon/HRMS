@@ -13,7 +13,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit --project tsconfig.json",
     "test:unit": "vitest run",
-    "test:unit:coverage": "vitest run --coverage",
+    "test:unit:coverage": "vitest run --coverage && node ../scripts/agent/changed-coverage.mjs --stamp frontend",
     "format": "prettier --write .",
     "test:e2e": "playwright test",
     "test:e2e:frontend-theme": "playwright test -c playwright.frontend-theme.config.ts",

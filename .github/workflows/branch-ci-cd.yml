@@ -124,6 +124,11 @@ jobs:
           cache: pnpm
           cache-dependency-path: hrms_backend/pnpm-lock.yaml
 
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -204,6 +209,113 @@ jobs:
       - name: Build Vercel frontend
         run: pnpm build:vercel
 
+  changed-coverage:
+    name: Changed executable coverage
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'push' &&
+      (github.ref == 'refs/heads/dev' ||
+      github.ref == 'refs/heads/qa' ||
+      github.ref == 'refs/heads/main'))
+    permissions:
+      contents: read
+      actions: read
+    # Real PostgreSQL integration execution contributes to the trusted backend
+    # coverage report, so use bounded disposable services and backend-sized time.
+    timeout-minutes: 90
+    env:
+      NODE_ENV: test
+      APP_ENV: local
+    services:
+      postgres:
+        image: postgis/postgis:16-3.5-alpine
+        env:
+          POSTGRES_DB: hrms_coverage_test
+          POSTGRES_USER: hrms_coverage
+          POSTGRES_PASSWORD: coverage
+        ports:
+          - 55433:5432
+        options: >-
+          --health-cmd "pg_isready -U hrms_coverage -d hrms_coverage_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      valkey:
+        image: valkey/valkey:9.0.3-alpine
+        ports:
+          - 56380:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Checkout actual PR or push head with base history
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: hrms_backend/package.json
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Resolve cumulative push coverage baseline
+        id: push-baseline
+        if: github.event_name == 'push'
+        # Owner-set branch bootstrap SHAs are used only until a successful
+        # same-branch push run with a successful coverage job exists.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          DEV_HRMS_COVERAGE_BOOTSTRAP_SHA: ${{ vars.DEV_HRMS_COVERAGE_BOOTSTRAP_SHA }}
+          QA_HRMS_COVERAGE_BOOTSTRAP_SHA: ${{ vars.QA_HRMS_COVERAGE_BOOTSTRAP_SHA }}
+          MAIN_HRMS_COVERAGE_BOOTSTRAP_SHA: ${{ vars.MAIN_HRMS_COVERAGE_BOOTSTRAP_SHA }}
+        run: node scripts/agent/resolve-push-coverage-base.mjs >> "$GITHUB_OUTPUT"
+
+      - name: Install backend and frontend dependencies
+        run: |
+          pnpm --dir hrms_backend install --frozen-lockfile
+          pnpm --dir hrms-client install --frozen-lockfile
+
+      - name: Install pinned Python coverage runner
+        shell: bash
+        env:
+          HRMS_COVERAGE_PYTHON: ${{ runner.temp }}/hrms-coverage-python/bin/python3
+        run: |
+          coverage_venv="$(dirname "$(dirname "$HRMS_COVERAGE_PYTHON")")"
+          python -m venv --copies "$coverage_venv"
+          "$HRMS_COVERAGE_PYTHON" -m pip install --disable-pip-version-check coverage==7.11.0
+          test "$(realpath "$HRMS_COVERAGE_PYTHON")" = "$HRMS_COVERAGE_PYTHON"
+          test -f "$HRMS_COVERAGE_PYTHON"
+          test ! -L "$HRMS_COVERAGE_PYTHON"
+          test -x "$HRMS_COVERAGE_PYTHON"
+          test "$("$HRMS_COVERAGE_PYTHON" -c 'import coverage; print(coverage.__version__)')" = "7.11.0"
+
+      - name: Generate exact-commit reports and require changed coverage
+        env:
+          COVERAGE_BASE: ${{ github.event.pull_request.base.sha || steps.push-baseline.outputs.base }}
+          HRMS_COVERAGE_PYTHON: ${{ runner.temp }}/hrms-coverage-python/bin/python3
+        run: |
+          if [[ -z "$COVERAGE_BASE" ]]; then
+            echo "Missing validated coverage baseline." >&2
+            exit 1
+          fi
+          node scripts/agent/changed-coverage.mjs --run-full-suite --confirm-disposable-services --base "$COVERAGE_BASE" --head HEAD
+
   deploy-backend:
     name: Deploy backend
     runs-on: ubuntu-latest
@@ -211,6 +323,7 @@ jobs:
       - repository-checks
       - backend-checks
       - frontend-checks
+      - changed-coverage
     if: >-
       github.event_name == 'push' &&
       (github.ref == 'refs/heads/dev' ||
