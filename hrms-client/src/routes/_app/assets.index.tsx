@@ -4,6 +4,7 @@ import { useAuth } from "@/lib/auth";
 import { useAssets, warrantyDaysLeft, fmtMoney } from "@/lib/assets-store";
 import { StatCard, DataCard, EmptyState, StatusBadge } from "@/components/ui-kit";
 import { Button } from "@/components/ui/button";
+import { userFacingErrorMessage } from "@/shared/api";
 import {
   Boxes,
   PackageCheck,
@@ -22,7 +23,7 @@ export const Route = createFileRoute("/_app/assets/")({ component: AssetsDashboa
 
 function AssetsDashboard() {
   const { activeRole, user } = useAuth();
-  const { assets, requests } = useAssets();
+  const { assets, requests, loading, error } = useAssets();
 
   const totals = useMemo(() => {
     const total = assets.length;
@@ -47,9 +48,21 @@ function AssetsDashboard() {
     .sort((x, y) => x.d - y.d)
     .slice(0, 6);
 
+  if (loading || error) {
+    return (
+      <DataCard title="Assets">
+        <p className="text-sm text-muted-foreground">
+          {error
+            ? userFacingErrorMessage(error, "Asset data could not be loaded from the backend.")
+            : "Loading asset data"}
+        </p>
+      </DataCard>
+    );
+  }
+
   // Employee view
   if (activeRole === "employee") {
-    const mine = assets.filter((a) => a.assignedTo === user?.name);
+    const mine = assets.filter((a) => a.assignedToId === user?.id);
     const myReqs = requests.filter((r) => r.raisedBy === user?.name);
     return (
       <div className="space-y-5">
@@ -153,7 +166,11 @@ function AssetsDashboard() {
         <StatCard
           label="Total assets"
           value={totals.total}
-          hint={fmtMoney(assets.reduce((s, a) => s + a.cost, 0)) + " value"}
+          hint={
+            assets.some((asset) => asset.apiMissing?.cost)
+              ? "Some asset costs are unavailable"
+              : fmtMoney(assets.reduce((s, a) => s + a.cost, 0)) + " value"
+          }
           icon={Boxes}
           tone="primary"
         />

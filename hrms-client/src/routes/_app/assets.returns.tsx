@@ -24,6 +24,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Undo2, Laptop } from "lucide-react";
+import { RecoverySettlementControl } from "@/components/assets/recovery-settlement-control";
 import type { AssetCondition } from "@/lib/mock/assets";
 import { toast } from "sonner";
 import { toastApiError } from "@/shared/api";
@@ -31,6 +32,7 @@ import { useApiRouteEnabled } from "@/shared/api";
 import {
   useAssetRecoveryQueue,
   useAssetRecoverySettlementMutation,
+  recoveryTicketDateLabel,
   type AssetRecoveryTicketView,
 } from "@/domains/assets";
 
@@ -74,7 +76,7 @@ function ReturnsScreen() {
     condition: AssetCondition,
     remarks: string,
   ) => {
-    void settleRecovery
+    return settleRecovery
       .mutateAsync({
         id: ticket.id,
         input: {
@@ -86,7 +88,10 @@ function ReturnsScreen() {
         },
       })
       .then(() => toast.success(`${ticket.assetCode} recovered`))
-      .catch((error: Error) => toast.error(error.message));
+      .catch((error: Error) => {
+        toast.error(error.message);
+        throw error;
+      });
   };
 
   return (
@@ -114,17 +119,19 @@ function ReturnsScreen() {
                   <Link to="/assets/$id" params={{ id: ticket.assetId }} className="min-w-0 flex-1">
                     <p className="truncate text-sm font-medium">{ticket.assetName}</p>
                     <p className="text-xs text-muted-foreground">
-                      {ticket.assetCode} · {ticket.employeeName} · since{" "}
-                      {ticket.assignedOn.slice(0, 10)}
+                      {ticket.assetCode} · {ticket.employeeName} · {recoveryTicketDateLabel(ticket)}
                     </p>
                   </Link>
                   <div className="flex items-center gap-2">
                     <StatusBadge status={ticket.status} label={ticket.status} />
-                    <ReturnInline
-                      onConfirm={(date, condition, remarks) =>
-                        settleTicket(ticket, date, condition, remarks)
-                      }
-                    />
+                    <RecoverySettlementControl ticket={ticket}>
+                      <ReturnInline
+                        detailsSupported
+                        onConfirm={(date, condition, remarks) =>
+                          settleTicket(ticket, date, condition, remarks)
+                        }
+                      />
+                    </RecoverySettlementControl>
                   </div>
                 </li>
               ))}
@@ -165,10 +172,14 @@ function ReturnsScreen() {
                         </p>
                       </Link>
                       <ReturnInline
+                        detailsSupported={!apiEnabled}
                         onConfirm={(d, c, r) => {
-                          void returnAsset(a.id, d, c, r)
+                          return returnAsset(a.id, d, c, r)
                             .then(() => toast.success(`${a.id} returned`))
-                            .catch((error) => toastApiError(error, "Asset could not be returned."));
+                            .catch((error) => {
+                              toastApiError(error, "Asset could not be returned.");
+                              throw error;
+                            });
                         }}
                       />
                     </li>
@@ -208,10 +219,14 @@ function ReturnsScreen() {
                       label={a.history[0]?.acknowledged ? "Ack'd" : "Pending Ack"}
                     />
                     <ReturnInline
+                      detailsSupported={!apiEnabled}
                       onConfirm={(d, c, r) => {
-                        void returnAsset(a.id, d, c, r)
+                        return returnAsset(a.id, d, c, r)
                           .then(() => toast.success(`${a.id} returned`))
-                          .catch((error) => toastApiError(error, "Asset could not be returned."));
+                          .catch((error) => {
+                            toastApiError(error, "Asset could not be returned.");
+                            throw error;
+                          });
                       }}
                     />
                   </div>
@@ -226,16 +241,24 @@ function ReturnsScreen() {
 
 function ReturnInline({
   onConfirm,
+  detailsSupported,
 }: {
-  onConfirm: (d: string, c: AssetCondition, r: string) => void;
+  onConfirm: (d: string, c: AssetCondition, r: string) => Promise<unknown>;
+  detailsSupported: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [pending, setPending] = useState(false);
   const today = new Date().toISOString().slice(0, 10);
   const [d, setD] = useState(today);
   const [c, setC] = useState<AssetCondition>("good");
   const [r, setR] = useState("");
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!pending) setOpen(next);
+      }}
+    >
       <DialogTrigger asChild>
         <Button size="sm" variant="outline" className="rounded-full">
           <Undo2 className="mr-1.5 h-4 w-4" />
@@ -245,42 +268,62 @@ function ReturnInline({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Confirm return</DialogTitle>
-          <DialogDescription>Recovery remarks update the audit trail.</DialogDescription>
+          <DialogDescription>
+            {detailsSupported
+              ? "Recovery remarks update the audit trail."
+              : "Mark this asset as returned."}
+          </DialogDescription>
         </DialogHeader>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <Label>Return date</Label>
-            <Input type="date" value={d} onChange={(e) => setD(e.target.value)} />
+        {detailsSupported && (
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label>Return date</Label>
+              <Input type="date" value={d} onChange={(e) => setD(e.target.value)} />
+            </div>
+            <div className="space-y-1">
+              <Label>Condition</Label>
+              <Select value={c} onValueChange={(v) => setC(v as AssetCondition)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(["new", "good", "fair", "poor"] as AssetCondition[]).map((t) => (
+                    <SelectItem key={t} value={t}>
+                      {t}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="col-span-2 space-y-1">
+              <Label>Remarks</Label>
+              <Textarea rows={2} value={r} onChange={(e) => setR(e.target.value)} />
+            </div>
           </div>
-          <div className="space-y-1">
-            <Label>Condition</Label>
-            <Select value={c} onValueChange={(v) => setC(v as AssetCondition)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {(["new", "good", "fair", "poor"] as AssetCondition[]).map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {t}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="col-span-2 space-y-1">
-            <Label>Remarks</Label>
-            <Textarea rows={2} value={r} onChange={(e) => setR(e.target.value)} />
-          </div>
-        </div>
+        )}
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)} className="rounded-full">
+          <Button
+            variant="outline"
+            disabled={pending}
+            onClick={() => setOpen(false)}
+            className="rounded-full"
+          >
             Cancel
           </Button>
           <Button
-            onClick={() => {
-              onConfirm(d, c, r);
-              setOpen(false);
+            onClick={async () => {
+              if (pending) return;
+              setPending(true);
+              try {
+                await onConfirm(d, c, r);
+                setOpen(false);
+              } catch {
+                /* The caller reports the error; keep the dialog for retry. */
+              } finally {
+                setPending(false);
+              }
             }}
+            disabled={pending}
             className="rounded-full"
           >
             Confirm

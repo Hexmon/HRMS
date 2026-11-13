@@ -37,6 +37,7 @@ function Inventory() {
         if (status !== "all" && a.status !== status) return false;
         if (assignedFilter === "assigned" && !a.assignedTo) return false;
         if (assignedFilter === "unassigned" && a.assignedTo) return false;
+        if (warrantyF !== "all" && !a.warrantyExpiry) return false;
         const d = warrantyDaysLeft(a.warrantyExpiry);
         if (warrantyF === "active" && d <= 60) return false;
         if (warrantyF === "expiring" && (d < 0 || d > 60)) return false;
@@ -67,7 +68,7 @@ function Inventory() {
       render: (a) => (
         <div>
           <p className="text-sm font-medium">
-            {a.brand} {a.model}
+            {a.brand === "—" ? a.model : `${a.brand} ${a.model}`}
           </p>
           <p className="text-xs text-muted-foreground">{a.serial}</p>
         </div>
@@ -77,6 +78,7 @@ function Inventory() {
       key: "warranty",
       header: "Warranty",
       render: (a) => {
+        if (!a.warrantyExpiry) return <span className="text-sm text-muted-foreground">—</span>;
         const d = warrantyDaysLeft(a.warrantyExpiry);
         return (
           <span
@@ -103,14 +105,16 @@ function Inventory() {
       header: "Condition",
       render: (a) => (
         <span className="text-xs uppercase tracking-wider text-muted-foreground">
-          {a.condition}
+          {a.apiMissing?.condition ? "—" : a.condition}
         </span>
       ),
     },
     {
       key: "cost",
       header: "Cost",
-      render: (a) => <span className="text-sm font-medium">{fmtMoney(a.cost)}</span>,
+      render: (a) => (
+        <span className="text-sm font-medium">{a.apiMissing?.cost ? "—" : fmtMoney(a.cost)}</span>
+      ),
     },
   ];
 

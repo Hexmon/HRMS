@@ -1850,7 +1850,7 @@ export const holidays = leaveWfh.table(
   "holidays",
   {
     id: uuidPk.defaultRandom(),
-    companyId: uuid("company_id"),
+    companyId: uuid("company_id").notNull(),
     name: text("name").notNull(),
     holidayDate: date("holiday_date").notNull(),
     region: text("region").notNull().default("All"),
@@ -2166,6 +2166,7 @@ export const assetRecoveryTickets = assets.table("asset_recovery_tickets", {
   id: uuidPk.defaultRandom(),
   employeeUserId: uuid("employee_user_id").notNull(),
   assetId: uuid("asset_id").notNull(),
+  assignmentId: uuid("assignment_id").references(() => assetAssignments.id),
   status: text("status").notNull(),
   settlementStatus: text("settlement_status"),
   settlementAmount: numeric("settlement_amount", { precision: 12, scale: 2 }),
@@ -2293,6 +2294,30 @@ export const compromisedKeys = assets.table("compromised_keys", {
   createdAt,
   updatedAt
 });
+
+export const assetCommandResults = assets.table(
+  "asset_command_results",
+  {
+    id: uuidPk.defaultRandom(),
+    companyId: uuid("company_id").notNull(),
+    actorUserId: uuid("actor_user_id").notNull(),
+    actionKey: text("action_key").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    requestHash: text("request_hash").notNull(),
+    responseStatus: integer("response_status").notNull(),
+    responseBody: jsonb("response_body").notNull(),
+    committedAt: timestamp("committed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("asset_command_results_scope_key_uq").on(
+      table.companyId,
+      table.actorUserId,
+      table.actionKey,
+      table.idempotencyKey,
+    ),
+    index("asset_command_results_committed_idx").on(table.committedAt),
+  ],
+);
 
 export const workSegments = timesheets.table(
   "work_segments",
@@ -2840,6 +2865,7 @@ export const schema = {
   licenseEntitlements,
   licenseActivations,
   compromisedKeys,
+  assetCommandResults,
   workSegments,
   workflowDefinitions,
   timesheetSubmissions,

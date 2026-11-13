@@ -168,7 +168,8 @@ export const reportRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get("/assets/summary", async (request) => {
     const actor = withActor(request);
-    return new ReportService(fastify.store).assetsSummary(actor, reportSummaryQuerySchema.parse(request.query));
+    const store = await fastify.store.persistence?.assetReadStore?.() ?? fastify.store;
+    return new ReportService(store).assetsSummary(actor, reportSummaryQuerySchema.parse(request.query));
   });
 
   fastify.get("/helpdesk/summary", async (request) => {

@@ -44,6 +44,7 @@ function WarrantyScreen() {
   const derivedWarrantyAlerts = useMemo<AssetWarrantyAlertView[]>(
     () =>
       assets
+        .filter((asset) => !!asset.warrantyExpiry)
         .map((asset) => ({
           assetId: asset.id,
           assetCode: asset.id,
@@ -87,7 +88,7 @@ function WarrantyScreen() {
     assets.forEach((a) => {
       const cur = map.get(a.vendor) ?? { name: a.vendor, assets: 0, warranties: 0 };
       cur.assets += 1;
-      if (warrantyDaysLeft(a.warrantyExpiry) >= 0) cur.warranties += 1;
+      if (a.warrantyExpiry && warrantyDaysLeft(a.warrantyExpiry) >= 0) cur.warranties += 1;
       map.set(a.vendor, cur);
     });
     return Array.from(map.values())
