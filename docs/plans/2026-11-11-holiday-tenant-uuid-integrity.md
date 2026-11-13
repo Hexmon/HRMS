@@ -52,13 +52,13 @@ Implemented in the clean worktree:
 
 - Tenant-authorized SQL GET/PUT, atomic outbox, optimistic versioning and idempotent unchanged retry.
 - Admin/HR edit UI, stale-draft preservation, explicit latest-version load and multiple same-day calendar rendering.
-- Stable backend conflict reasons; the UI distinguishes stale, duplicate and generic failures.
+- Stable PostgreSQL and memory-mode conflict reasons; the UI distinguishes stale, duplicate and generic failures.
 - Partial case-insensitive Holiday uniqueness; unsafe leaf-only RLS was removed after lifecycle review.
 - Company-owned role grants and transfer approval were removed from this slice because their broader identity/authentication design is unfinished.
-- The composite QA seed now checks the explicit safe target before either the broad release seed or QA extras can mutate data. It also checks active Admin/company, deterministic persona identity and active persona company preference.
+- The composite QA seed now checks the explicit safe target before either the broad release seed or QA extras can mutate data. On a fresh isolated database it idempotently creates or recovers the active default QA company and release-Admin preference before adding deterministic QA personas; the mutation opt-in exists only in the one-shot migration container.
 - Browser journey performs real Admin and HR mutations and a forged Employee PUT denial.
 
-Exact executable revision `8e0b04128db4deb836119aa84e00ae9399c637df` passed on 2026-11-13:
+Baseline executable revision `8e0b04128db4deb836119aa84e00ae9399c637df` passed on 2026-11-13:
 
 - backend unit 563/563 and contracts 27/27;
 - focused Holiday/seed guard 18/18 and frontend Holiday component 9/9;
@@ -67,12 +67,25 @@ Exact executable revision `8e0b04128db4deb836119aa84e00ae9399c637df` passed on 2
 - backend/frontend typecheck, backend lint, frontend lint with 43 pre-existing warnings and no errors, and both production builds;
 - guarded seed production refusal before connection, isolated QA extras seed, and Docker Chromium real-user journey 1/1 (Admin, HR, Employee and two-tab stale edit).
 
+Final executable revision `09a9e98762f9e4d84838e0cf8d4a00819dde523b` adds the reviewed QA-startup correction and memory-mode conflict compatibility. The following exact focused evidence passed on 2026-11-13:
+
+- `env TEST_DATABASE_URL=postgresql://test:test@127.0.0.1:59999/hrms_unit_synthetic pnpm exec vitest run --project unit src/__tests__/qa-seed-safety.unit.test.ts src/modules/leave-wfh/__tests__/holiday-tenant.unit.test.ts`: 2 files and 24/24 tests passed;
+- `pnpm typecheck`: passed;
+- `pnpm lint`: passed for 483 backend files;
+- `docker --context default compose --env-file .env.qa.example -f infra/docker/docker-compose.qa.yml -p hawkaii_hrms_backend_qa config --quiet`: passed;
+- fresh disposable-volume run with local synthetic overrides, `env POSTGRES_PASSWORD=postgres POSTGRES_HOST_PORT=56432 VALKEY_HOST_PORT=57379 API_HOST_PORT=3201 CLOUDINARY_MOCK_UPLOADS=true docker --context default compose --env-file .env.qa.example -f infra/docker/docker-compose.qa.yml -p hrms_holiday_compose_fix up --build --abort-on-container-exit --exit-code-from hawkaii-hrms-migrate hawkaii-hrms-migrate`: exited 0 after applying 65 migrations and completing both guarded release and QA-extra seed phases;
+- repeating that Compose command against the retained disposable database exited 0 with 0 migrations applied, 65 already applied, and both seed phases successful;
+- `docker --context default exec hrms_holiday_compose_fix-postgres-1 psql -U postgres -d hrms_platform_qa -Atc "SELECT (SELECT count(*) FROM platform.company_profiles WHERE company_slug = 'hawkaii-hrms' AND status = 'active') || ',' || (SELECT count(*) FROM platform.user_session_preferences p JOIN core.users u ON u.id = p.user_id JOIN platform.company_profiles c ON c.id = p.company_id WHERE u.employee_code = 'ADM' AND p.active_role = 'admin' AND c.company_slug = 'hawkaii-hrms' AND c.status = 'active');"` returned `1,1`, proving one active `hawkaii-hrms` company and one matching Admin preference after the rerun;
+- `git diff --check`: passed, and the disposable Compose containers, network and volumes were removed after verification.
+
+The broader baseline suites were executed at `8e0b0412`; the focused delta checks above are the evidence for final executable head `09a9e987`. They do not substitute for changed-line/branch coverage, hosted QA or human acceptance.
+
 The trusted changed-coverage runner cannot execute on this candidate because QA-S25-003 is not present in `release-01` or this branch. Running the external validator against this exact SHA correctly failed closed on the missing candidate-owned scripts; that is a dependency blocker, not coverage evidence.
 
 ## Remaining Completion Gates
 
 1. Land/reconcile QA-S25-003 in the approved dependency order, then measure changed executable lines/branches against `origin/release-01`; do not treat the current tooling refusal as a pass.
-2. Obtain independent senior, security/database and QA re-review of the final documentation head after the seed-ordering fix; resolve material findings.
+2. Obtain independent senior, security/database and QA re-review of the final documentation head after the seed-ordering and fresh-database bootstrap fixes; resolve material findings.
 3. Update Sprint 25 task/case rows only with the verified evidence above and keep coverage/hosted/manual gates pending.
 4. Push the clean branch and create the isolated-QA PR/handoff. Do not merge or deploy without explicit owner approval.
 5. In hosted isolated QA, repeat migration preflight, smoke checks and the listed human journeys before QA acceptance.
