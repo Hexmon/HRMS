@@ -27,7 +27,7 @@ const notes: string[] = [];
 try {
   if (store.kind !== "postgres") failures.push("runtime store is not PostgreSQL-backed");
   if (!store.pgPool) failures.push("PostgreSQL pool is not attached to runtime store");
-  const expectedStorageProvider = "cloudinary";
+  const expectedStorageProvider = "r2";
   if (store.objectStorage?.kind !== expectedStorageProvider) {
     failures.push(`document object storage is not ${expectedStorageProvider}-backed`);
   }
@@ -90,15 +90,15 @@ try {
     failures.push(`Unsupported HRMS_EVENT_TRANSPORT: ${eventTransport}`);
   }
 
-  const missingObjects: string[] = [];
+  let missingObjectCount = 0;
   for (const document of store.documents) {
     const stat = await store.objectStorage?.statObject(document.storage_key);
     if (!stat) {
-      missingObjects.push(document.storage_key);
+      missingObjectCount += 1;
     }
   }
-  if (missingObjects.length > 0) {
-    failures.push(`document metadata without object-storage object: ${missingObjects.join(", ")}`);
+  if (missingObjectCount > 0) {
+    failures.push(`document metadata without object-storage object: count=${missingObjectCount}`);
   }
 
   notes.push(`data_store=${store.kind}`);
@@ -137,12 +137,13 @@ console.log("Real adapter verification passed.");
 
 function objectStorageOptions() {
   return {
-    cloudName: requireEnv("CLOUDINARY_CLOUD_NAME"),
-    apiKey: requireEnv("CLOUDINARY_API_KEY"),
-    apiSecret: requireEnv("CLOUDINARY_API_SECRET"),
-    folder: process.env.CLOUDINARY_FOLDER ?? "hawkaii-hrms",
-    resourceType: (process.env.CLOUDINARY_RESOURCE_TYPE as "auto" | "image" | "raw" | "video" | undefined) ?? "auto",
-    uploadTransformation: process.env.CLOUDINARY_UPLOAD_TRANSFORMATION ?? "q_auto:eco,f_auto",
-    mockUploads: process.env.CLOUDINARY_MOCK_UPLOADS === "true"
+    driver: "r2" as const,
+    accountId: requireEnv("R2_ACCOUNT_ID"),
+    accessKeyId: requireEnv("R2_ACCESS_KEY_ID"),
+    secretAccessKey: requireEnv("R2_SECRET_ACCESS_KEY"),
+    bucket: requireEnv("R2_BUCKET_NAME"),
+    endpoint: process.env.R2_ENDPOINT,
+    requestTimeoutMs: Number(process.env.R2_REQUEST_TIMEOUT_MS ?? 10_000),
+    forcePathStyle: process.env.R2_FORCE_PATH_STYLE === "true",
   };
 }

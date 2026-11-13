@@ -5,6 +5,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { useAuth, ROLE_LABELS } from "@/lib/auth";
+import { usePrivateDocumentUrl } from "@/shared/uploads/private-document";
 import { StatCard, StatusBadge, DataCard, EmptyState } from "@/components/ui-kit";
 import {
   mapLetter,
@@ -170,8 +171,9 @@ function EmsDashboard() {
     return () => window.clearInterval(timer);
   }, []);
   const showDemoData = !apiEnabled;
-  if (!user) return null;
   const apiProfile = profileQuery.data ? mapProfile(profileQuery.data) : null;
+  const profilePhotoUrl = usePrivateDocumentUrl(apiProfile?.user.profilePhotoUrl);
+  if (!user) return null;
   const policyRows = apiEnabled ? pageItems(policiesQuery.data).map(mapPolicy) : [];
   const letterRows = apiEnabled ? pageItems(lettersQuery.data).map(mapLetter) : [];
   const pendingPolicies = policyRows.filter(
@@ -246,8 +248,8 @@ function EmsDashboard() {
         <Card className="glass-panel ems-profile-card rounded-2xl border-border/60 lg:col-span-1">
           <div className="p-6 text-center" style={{ background: "var(--gradient-hero)" }}>
             <Avatar className="mx-auto h-20 w-20 ring-4 ring-background">
-              {apiProfile?.user.profilePhotoUrl && (
-                <AvatarImage src={apiProfile.user.profilePhotoUrl} alt={apiProfile.user.fullName} />
+              {profilePhotoUrl && (
+                <AvatarImage src={profilePhotoUrl} alt={apiProfile?.user.fullName ?? user.name} />
               )}
               <AvatarFallback className="bg-primary text-primary-foreground text-xl font-semibold">
                 {initials}

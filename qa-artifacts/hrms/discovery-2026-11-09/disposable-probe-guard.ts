@@ -63,7 +63,7 @@ export function requireLocalTestEnvironment(environment: NodeJS.ProcessEnv): voi
   if (
     environment.APP_ENV !== "local" ||
     environment.EMAIL_DELIVERY_MODE !== "log" ||
-    environment.CLOUDINARY_MOCK_UPLOADS !== "true"
+    environment.OBJECT_STORAGE_DRIVER !== "memory"
   ) {
     throw new Error("Refusing non-local application delivery configuration");
   }

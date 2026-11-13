@@ -320,10 +320,14 @@ export function useFinanceGovernance(enabled = true) {
   });
 }
 
+export function loadManagerBackupsQuery() {
+  return adminApi.listManagerBackups();
+}
+
 export function useManagerBackups(enabled = true) {
   return useQuery({
     queryKey: queryKeys.list("admin", "manager-backups"),
-    queryFn: () => adminApi.listManagerBackups(),
+    queryFn: loadManagerBackupsQuery,
     enabled,
     staleTime: queryTimings.referenceStaleMs,
   });

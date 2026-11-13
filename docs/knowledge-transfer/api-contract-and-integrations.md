@@ -128,7 +128,7 @@ Frontend config keys:
 | --- | --- | --- |
 | PostgreSQL / Neon | Yes | Each env must have its own connection string or Neon branch. |
 | Upstash Redis / Valkey | Yes | Used for sessions, rate-limit state, and outbox streams. Use the TLS TCP URL and do not share across environments. |
-| Cloudinary | Yes for real media persistence | Hosted envs must set `CLOUDINARY_MOCK_UPLOADS=false`. |
+| Cloudflare R2 | Yes for private media persistence | Hosted envs require environment-scoped credentials, a private bucket, and `OBJECT_STORAGE_DRIVER=r2`. |
 | Resend | Required when email send mode is enabled | App owns token validity; Resend is only transport/delivery telemetry. |
 | Vercel | Frontend hosting | One project per hosted environment is recommended. |
 | Render | Backend API and worker hosting | API and worker deploy separately through deploy hooks. |
@@ -154,11 +154,11 @@ Relevant docs:
 1. Frontend prepares `FormData` and sends file to backend.
 2. Backend validates file limits and MIME type.
 3. Backend may compress PDFs if enabled and Ghostscript is available.
-4. Backend stores content through Cloudinary object storage adapter.
+4. Backend stores content under an opaque key through the private R2 object-storage adapter.
 5. Backend writes document metadata/version rows.
-6. Backend returns backend-owned metadata/download URL, not Cloudinary credentials.
+6. Backend returns provider-neutral metadata and an authenticated backend content endpoint, never a bucket path or provider credential.
 
-Frontend must never receive `CLOUDINARY_API_SECRET`.
+Frontend must never receive R2 credentials, bucket names, endpoints, or object keys.
 
 ## Changing An API Safely
 

@@ -1336,6 +1336,9 @@ describe("PostgreSQL attendance command idempotency", () => {
     assertNoExactCoordinateLeak(punchHistory.json());
 
     const admin = await loginAs(app, "ADM");
+    const beforeExportOutbox = await app.store.pgPool!.query<{ count: number }>(
+      "SELECT count(*)::int AS count FROM platform.outbox_events",
+    );
     const exportJob = await app.inject({
       method: "POST",
       url: "/api/v1/attendance/exports",
@@ -1347,8 +1350,13 @@ describe("PostgreSQL attendance command idempotency", () => {
         },
       },
     });
-    expect(exportJob.statusCode).toBe(200);
+    expect(exportJob.statusCode).toBe(409);
+    expect(exportJob.json().code).toBe("WORKFLOW_CONFLICT");
     assertNoExactCoordinateLeak(exportJob.json());
+    const afterExportOutbox = await app.store.pgPool!.query<{ count: number }>(
+      "SELECT count(*)::int AS count FROM platform.outbox_events",
+    );
+    expect(afterExportOutbox.rows[0]?.count).toBe(beforeExportOutbox.rows[0]?.count);
     assertNoExactCoordinateLeak(app.store.outbox.at(-1)?.payload ?? {});
 
     const changedCoordinates = await app.inject({

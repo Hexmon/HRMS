@@ -169,7 +169,8 @@ export const coreRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const params = z.object({ id: z.uuid() }).parse(request.params);
-    const service = new CoreService(fastify.store);
+    const store = await fastify.store.persistence?.assetReadStore?.() ?? fastify.store;
+    const service = new CoreService(store);
     return service.getUser(request.actor, params.id);
   });
 
@@ -302,7 +303,6 @@ function profilePhotoPolicyFromConfig(config: FastifyInstance["config"]): Profil
       .map((value) => value.trim().toLowerCase())
       .filter(Boolean),
     output_mime_type: "image/jpeg",
-    cloudinary_transformation: config.PROFILE_PHOTO_CLOUDINARY_TRANSFORMATION
   };
 }
 

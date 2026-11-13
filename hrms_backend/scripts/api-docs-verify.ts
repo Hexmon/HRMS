@@ -612,7 +612,7 @@ function verifyNoSecrets(spec: OpenApiDocument): void {
   const serialized = JSON.stringify(spec);
   const forbiddenPatterns = [
     /JWT_(ACCESS|REFRESH)_SECRET/iu,
-    /CLOUDINARY_API_SECRET/iu,
+    /R2_SECRET_ACCESS_KEY/iu,
     /VALKEY_PASSWORD/iu,
     /postgres:\/\/postgres:postgres/iu
   ];

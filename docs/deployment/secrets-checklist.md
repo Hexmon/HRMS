@@ -1,6 +1,6 @@
 # Secrets Checklist
 
-Do not commit real secret values. Store hosted secrets in GitHub, Render, Vercel, Neon, Cloudinary, and Resend dashboards as appropriate.
+Do not commit real secret values. Store hosted secrets in GitHub, Render, Vercel, Neon, Cloudflare R2, and Resend dashboards as appropriate.
 
 ## GitHub Actions Secrets
 
@@ -16,9 +16,10 @@ Do not commit real secret values. Store hosted secrets in GitHub, Render, Vercel
 - `DATABASE_URL`
 - `JWT_ACCESS_SECRET`
 - `JWT_REFRESH_SECRET`
-- `CLOUDINARY_CLOUD_NAME`
-- `CLOUDINARY_API_KEY`
-- `CLOUDINARY_API_SECRET`
+- `R2_ACCOUNT_ID`
+- `R2_ACCESS_KEY_ID`
+- `R2_SECRET_ACCESS_KEY`
+- `R2_BUCKET_NAME`
 - `RESEND_API_KEY` where email send mode is enabled
 - `RESEND_WEBHOOK_SECRET` where Resend webhooks are enabled
 - `BUILD_SHA` if not set automatically by the platform
@@ -35,7 +36,8 @@ Do not commit real secret values. Store hosted secrets in GitHub, Render, Vercel
 ## Production Blockers
 
 - Weak/default JWT secrets.
-- `CLOUDINARY_MOCK_UPLOADS=true`.
+- `OBJECT_STORAGE_DRIVER` other than `r2` in hosted QA/production.
+- A public R2 development URL or public custom domain enabled for the protected bucket.
 - `EMAIL_DELIVERY_MODE=send` without `RESEND_API_KEY` and `RESEND_WEBHOOK_SECRET`.
 - `OPENAPI_PUBLIC=true` unless explicitly approved.
 - Frontend mock fallback enabled.

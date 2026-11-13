@@ -12,7 +12,7 @@ Runbooks are operational procedures. Architecture decisions belong in `../archit
 | `incident-response-runbook.md` | First-response procedure for production/QA incidents. |
 | `database-backup-restore-runbook.md` | Backup/restore scripts, safety checks, and rollback cautions. |
 | `worker-operations-runbook.md` | Legacy Render-to-Cloudflare worker transition, Queue/Cron operations, attendance auto-checkout, and coordinate cleanup. |
-| `media-storage-runbook.md` | Cloudinary/media/document upload and download troubleshooting. |
+| `media-storage-runbook.md` | Private R2/media/document upload and authenticated download troubleshooting. |
 | `resend-email-verification-deployment.md` | Resend email verification deployment and support. |
 
 ## General Incident Data To Capture

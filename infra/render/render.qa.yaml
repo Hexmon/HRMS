@@ -53,18 +53,16 @@ services:
         value: "https://qa.hawkaii.in"
       - key: CORS_ALLOWED_ORIGINS
         value: "https://qa.hawkaii.in"
-      - key: CLOUDINARY_MOCK_UPLOADS
-        value: "false"
-      - key: CLOUDINARY_CLOUD_NAME
+      - key: OBJECT_STORAGE_DRIVER
+        value: "r2"
+      - key: R2_ACCOUNT_ID
         sync: false
-      - key: CLOUDINARY_API_KEY
+      - key: R2_ACCESS_KEY_ID
         sync: false
-      - key: CLOUDINARY_API_SECRET
+      - key: R2_SECRET_ACCESS_KEY
         sync: false
-      - key: CLOUDINARY_FOLDER
-        value: "hawkaii-hrms/qa"
-      - key: CLOUDINARY_RESOURCE_TYPE
-        value: "auto"
+      - key: R2_BUCKET_NAME
+        sync: false
       - key: EMAIL_DELIVERY_PROVIDER
         value: "resend"
       - key: EMAIL_DELIVERY_MODE
@@ -121,17 +119,15 @@ services:
         sync: false
       - key: VALKEY_URL
         sync: false
-      - key: CLOUDINARY_MOCK_UPLOADS
-        value: "false"
-      - key: CLOUDINARY_CLOUD_NAME
+      - key: OBJECT_STORAGE_DRIVER
+        value: "r2"
+      - key: R2_ACCOUNT_ID
         sync: false
-      - key: CLOUDINARY_API_KEY
+      - key: R2_ACCESS_KEY_ID
         sync: false
-      - key: CLOUDINARY_API_SECRET
+      - key: R2_SECRET_ACCESS_KEY
         sync: false
-      - key: CLOUDINARY_FOLDER
-        value: "hawkaii-hrms/qa"
-      - key: CLOUDINARY_RESOURCE_TYPE
-        value: "auto"
+      - key: R2_BUCKET_NAME
+        sync: false
       - key: OUTBOX_WORKER_INTERVAL_MS
         value: "2000"

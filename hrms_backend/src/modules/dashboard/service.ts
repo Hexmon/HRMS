@@ -1,6 +1,6 @@
 import type { AttendanceDayRecord, AuthUser, CoreUser, ExpenseTicket, LeaveRequest, TimesheetSubmission, UUID, WfhRequest } from "#shared";
 import { AssetStatuses, AttendanceEvidenceStates, AttendancePresenceStates, AttendancePunctualityStates, EmploymentStatuses, ExpenseStatuses, LeaveRequestStatuses, Roles, TimesheetStatuses } from "#shared";
-import type { MemoryDataStore, WorkSegment } from "../../platform/data-store.js";
+import type { DashboardExactMetrics, MemoryDataStore, WorkSegment } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
 import {
   countAttendanceReportingEvidenceCategories,
@@ -93,7 +93,7 @@ const FINANCE_PENDING_STATUSES = new Set<string>([
 export class DashboardService {
   constructor(private readonly store: MemoryDataStore) {}
 
-  summary(actor: AuthUser): DashboardSummary {
+  summary(actor: AuthUser, exact?: DashboardExactMetrics): DashboardSummary {
     const visibleUsers = this.visibleUsers(actor);
     const visibleUserIds = new Set(visibleUsers.map((user) => user.id));
     const visibleTickets = this.visibleTickets(actor, visibleUserIds);
@@ -107,29 +107,38 @@ export class DashboardService {
     const visibleLeaveRequests = this.visibleLeaveRequests(actor, visibleUserIds);
     const visibleWfhRequests = this.visibleWfhRequests(actor, visibleUserIds);
     const visibleAssets = this.visibleAssets(actor, visibleUserIds);
-    const pendingManagerExpenses = visibleTickets.filter((ticket) => this.isManagerPendingFor(actor, ticket)).length;
-    const pendingFinanceExpenses = visibleTickets.filter((ticket) => this.isFinancePendingFor(actor, ticket)).length;
-    const pendingTimesheets = visibleSubmissions.filter((submission) => this.isTimesheetPendingFor(actor, submission)).length;
-    const pendingLeaves = visibleLeaveRequests.filter((request) => this.isLeaveWfhPendingFor(actor, request)).length;
-    const pendingWfh = visibleWfhRequests.filter((request) => this.isLeaveWfhPendingFor(actor, request)).length;
-    const pendingDocuments = this.pendingDocumentVerificationCount(actor, visibleTickets, visibleUserIds);
+    const pendingManagerExpenses = exact?.expense_manager_pending ??
+      visibleTickets.filter((ticket) => this.isManagerPendingFor(actor, ticket)).length;
+    const pendingFinanceExpenses = exact?.expense_finance_pending ??
+      visibleTickets.filter((ticket) => this.isFinancePendingFor(actor, ticket)).length;
+    const pendingTimesheets = exact?.timesheet_pending ??
+      visibleSubmissions.filter((submission) => this.isTimesheetPendingFor(actor, submission)).length;
+    const pendingLeaves = exact?.leave_pending ??
+      visibleLeaveRequests.filter((request) => this.isLeaveWfhPendingFor(actor, request)).length;
+    const pendingWfh = exact?.wfh_pending ??
+      visibleWfhRequests.filter((request) => this.isLeaveWfhPendingFor(actor, request)).length;
+    const pendingDocuments = exact?.document_verification_pending ??
+      this.pendingDocumentVerificationCount(actor, visibleTickets, visibleUserIds);
     const operations = {
-      assets_total: visibleAssets.length,
-      assets_assigned: visibleAssets.filter((asset) => asset.status === AssetStatuses.Assigned).length,
-      assets_recovery_pending: this.store.assetRecoveryTickets.filter(
+      assets_total: exact?.assets_total ?? visibleAssets.length,
+      assets_assigned: exact?.assets_assigned ?? visibleAssets.filter((asset) => asset.status === AssetStatuses.Assigned).length,
+      assets_recovery_pending: exact?.assets_recovery_pending ?? this.store.assetRecoveryTickets.filter(
         (ticket) => visibleUserIds.has(ticket.employee_user_id) && ticket.status !== "closed"
       ).length,
-      notifications_pending: this.store.notifications.filter((notification) => this.isNotificationVisible(actor, visibleUserIds, notification.target_user_id) && notification.status === "pending").length,
-      outbox_pending: this.visibleOutboxEvents(actor, visibleUserIds).filter((event) => event.status === "pending" || event.status === "retry").length
+      notifications_pending: exact?.notifications_pending ?? this.store.notifications.filter((notification) => this.isNotificationVisible(actor, visibleUserIds, notification.target_user_id) && notification.status === "pending").length,
+      outbox_pending: exact?.outbox_pending ?? this.visibleOutboxEvents(actor, visibleUserIds).filter((event) => event.status === "pending" || event.status === "retry").length
     };
-    const workload = {
+    const workload = exact?.workload ?? {
       work_segments_total: visibleSegments.length,
       submitted_hours_total: sumDecimal(visibleSegments.map((segment) => segment.hours)),
       timesheet_submissions_total: visibleSubmissions.length,
       timesheet_submissions_approved: visibleSubmissions.filter((submission) => submission.status === TimesheetStatuses.Approved).length,
       timesheet_submissions_returned: visibleSubmissions.filter((submission) => submission.status === TimesheetStatuses.Returned).length
     };
-    const activeEmployees = visibleUsers.filter((user) => user.employment_status === EmploymentStatuses.Active).length;
+    const activeEmployees = exact?.workforce.active_employees ??
+      visibleUsers.filter((user) => user.employment_status === EmploymentStatuses.Active).length;
+    const attendanceExceptions = exact?.attendance_exception_count ??
+      this.attendanceExceptionCount(visibleAttendance);
     const expensePending = pendingManagerExpenses + pendingFinanceExpenses;
     return {
       generated_at: nowIso(),
@@ -145,17 +154,17 @@ export class DashboardService {
         metric("pending_expense_approvals", "Pending expense approvals", expensePending, "count", "expenses"),
         metric("pending_timesheet_approvals", "Pending timesheet approvals", pendingTimesheets, "count", "timesheets"),
         metric("pending_leave_wfh_approvals", "Pending Leave/WFH approvals", pendingLeaves + pendingWfh, "count", "leave_wfh"),
-        metric("attendance_exceptions", "Attendance exceptions", this.attendanceExceptionCount(visibleAttendance), "count", "attendance"),
+        metric("attendance_exceptions", "Attendance exceptions", attendanceExceptions, "count", "attendance"),
         metric("assigned_assets", "Assigned assets", operations.assets_assigned, "count", "assets"),
         metric("documents_pending_verification", "Documents pending verification", pendingDocuments, "count", "documents"),
         metric("submitted_hours", "Submitted hours", workload.submitted_hours_total, "hours", "timesheets")
       ],
       workforce: {
-        visible_employees: visibleUsers.length,
+        visible_employees: exact?.workforce.visible_employees ?? visibleUsers.length,
         active_employees: activeEmployees,
-        inactive_employees: visibleUsers.filter((user) => user.employment_status !== EmploymentStatuses.Active).length,
-        new_joiners_30d: visibleUsers.filter((user) => user.joined_on && user.joined_on >= daysAgoDate(30)).length,
-        departments: this.departmentHeadcount(actor, visibleUsers)
+        inactive_employees: exact?.workforce.inactive_employees ?? visibleUsers.filter((user) => user.employment_status !== EmploymentStatuses.Active).length,
+        new_joiners_30d: exact?.workforce.new_joiners_30d ?? visibleUsers.filter((user) => user.joined_on && user.joined_on >= daysAgoDate(30)).length,
+        departments: exact?.workforce.departments ?? this.departmentHeadcount(actor, visibleUsers)
       },
       approvals: {
         expense_manager_pending: pendingManagerExpenses,
@@ -168,23 +177,23 @@ export class DashboardService {
       },
       operations,
       attendance: {
-        evidence_categories: canSeeAttendance
+        evidence_categories: exact?.attendance_evidence_categories ?? (canSeeAttendance
           ? countAttendanceReportingEvidenceCategories(
               attendanceEvidence.map((evidence) => evidence.reporting_evidence_category),
             )
-          : emptyAttendanceReportingEvidenceCounts(),
-        source_categories: canSeeAttendance
+          : emptyAttendanceReportingEvidenceCounts()),
+        source_categories: exact?.attendance_source_categories ?? (canSeeAttendance
           ? countAttendanceReportSourceCategories(
               attendanceEvidence.map((evidence) => evidence.source_categories),
             )
-          : emptyAttendanceReportSourceCategoryCounts()
+          : emptyAttendanceReportSourceCategoryCounts())
       },
       workload,
       attention: [
         metric("pending_expense_approvals", "Expense approvals waiting", expensePending, "count", "expenses"),
         metric("pending_timesheet_approvals", "Timesheets waiting", pendingTimesheets, "count", "timesheets"),
         metric("pending_leave_wfh_approvals", "Leave/WFH approvals waiting", pendingLeaves + pendingWfh, "count", "leave_wfh"),
-        metric("attendance_exceptions", "Attendance exceptions", this.attendanceExceptionCount(visibleAttendance), "count", "attendance"),
+        metric("attendance_exceptions", "Attendance exceptions", attendanceExceptions, "count", "attendance"),
         metric("asset_recovery_pending", "Asset recoveries pending", operations.assets_recovery_pending, "count", "assets"),
         metric("outbox_pending", "Integration events pending", operations.outbox_pending, "count", "outbox")
       ].filter((item) => Number(item.value) > 0),

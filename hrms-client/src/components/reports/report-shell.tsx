@@ -21,7 +21,6 @@ import { useAttendanceExportMutation } from "@/domains/attendance";
 import { useCreateReportExportMutation } from "@/domains/reports";
 import { ATTENDANCE_REPORTING_EVIDENCE_OPTIONS } from "@/domains/attendance/reporting-evidence";
 import { useApiRouteEnabled, userFacingErrorMessage } from "@/shared/api";
-import { useAuth } from "@/lib/auth";
 
 export interface ReportFilters {
   from: string;
@@ -110,7 +109,6 @@ export function ReportShell<T extends { id: string }>({
   onRowClick,
 }: Props<T>) {
   const { departments, employees } = useEmployees();
-  const { user, activeRole } = useAuth();
   const path = useRouterState({ select: (state) => state.location.pathname });
   const apiMode = useApiRouteEnabled(["/reports"]);
   const filterId = useId();
@@ -182,10 +180,7 @@ export function ReportShell<T extends { id: string }>({
     ? "Search attendance records"
     : `Search ${title.toLowerCase()} records`;
   const reportType = reportTypeForPath(path);
-  const canRenderExport =
-    !apiMode ||
-    reportType !== "attendance/summary" ||
-    canUseAttendanceExport(user?.roles, activeRole);
+  const canRenderExport = !apiMode;
 
   const handleExport = async () => {
     if (apiMode) {
@@ -248,6 +243,11 @@ export function ReportShell<T extends { id: string }>({
           <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
           {description && <p className="text-sm text-muted-foreground">{description}</p>}
         </div>
+        {apiMode && (
+          <p className="text-xs text-muted-foreground">
+            Downloads are temporarily unavailable while private export delivery is being enabled.
+          </p>
+        )}
         {canRenderExport && (
           <Button
             size="sm"
@@ -624,14 +624,6 @@ function reportTypeForPath(path: string): string | null {
   if (path.startsWith("/reports/helpdesk")) return "helpdesk/summary";
   if (path.startsWith("/reports/audit")) return "audit";
   return null;
-}
-
-function canUseAttendanceExport(
-  roles: readonly string[] | null | undefined,
-  activeRole: string | null | undefined,
-): boolean {
-  const roleSet = new Set([...(roles ?? []), activeRole].filter(Boolean));
-  return roleSet.has("main_admin") || roleSet.has("hr_admin") || roleSet.has("auditor");
 }
 
 function buildBackendFilters(

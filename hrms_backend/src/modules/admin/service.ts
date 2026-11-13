@@ -71,7 +71,7 @@ import {
 } from "./policy.js";
 import { badRequest, conflict, notFound } from "../../platform/errors.js";
 import { resolveActiveCompanyMembershipContext } from "../../platform/company-membership-context.js";
-import { DocumentService } from "../documents/service.js";
+import { DocumentService, presentDocument, type PublicDocumentMetadata } from "../documents/service.js";
 
 export interface CompanyLogoUploadInput {
   file_buffer: Buffer;
@@ -82,7 +82,7 @@ export interface CompanyLogoUploadInput {
 
 export interface CompanyLogoUploadResponse {
   company: CompanyProfileResponse;
-  document: DocumentMetadata;
+  document: PublicDocumentMetadata;
 }
 
 function page<T>(
@@ -171,18 +171,10 @@ export class AdminService {
       mime_type: input.mime_type.trim().toLowerCase(),
       size_bytes: input.size_bytes,
       file_buffer: input.file_buffer,
-      storage_metadata: {
-        "x-cloudinary-transformation":
-          this.store.documentProcessing.companyLogoUploads
-            .cloudinaryTransformation,
-      },
+      storage_metadata: { "x-hrms-company-logo": "true" },
     });
-    const objectUrl =
-      stringFromMetadata(document.metadata.cloudinary_url) ??
-      stringFromMetadata(document.metadata.object_url);
     company.logo_document_id = document.id;
-    company.logo_url =
-      objectUrl && /^https?:\/\//iu.test(objectUrl) ? objectUrl : null;
+    company.logo_url = `/api/v1/documents/${document.id}/content`;
     company.logo_file_name = document.file_name;
     company.logo_mime_type = document.mime_type;
     company.logo_size_bytes = document.size_bytes;
@@ -203,7 +195,7 @@ export class AdminService {
     });
     return {
       company: presentCompanyProfile(company),
-      document,
+      document: presentDocument(document),
     };
   }
 

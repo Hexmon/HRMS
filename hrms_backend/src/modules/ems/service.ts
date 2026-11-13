@@ -21,8 +21,9 @@ import {
 import type { MemoryDataStore } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
 import { badRequest, conflict, forbidden, missingRemarks, notFound } from "../../platform/errors.js";
+import { resolveActiveCompanyMembershipContext } from "../../platform/company-membership-context.js";
 import { canAccessDocument } from "../documents/policy.js";
-import { DocumentService, type DocumentUploadBody } from "../documents/service.js";
+import { DocumentService, presentDocument, type DocumentUploadBody } from "../documents/service.js";
 import { appendEmsOutboxEvent, emsEvents } from "./events.js";
 import { assertCanDecideProfileChange, assertCanManageEms, assertCanSeeEmsUser, canManageEms } from "./policy.js";
 import { EmsRepository } from "./repository.js";
@@ -471,31 +472,28 @@ export class EmsService {
     return { policy: this.presentPolicy(policy, actor.id), status: policy.status, version: policy.version };
   }
 
-  listEmployeeDocuments(actor: AuthUser, userId: UUID, query: EmsDocumentQuery) {
-    const user = this.requireUser(userId);
-    assertCanSeeEmsUser(actor, user);
+  async listEmployeeDocuments(actor: AuthUser, userId: UUID, query: EmsDocumentQuery) {
+    const authorizedActor = await this.assertEmployeeDocumentAccess(actor, userId, "read");
     const visible = this.store.documents
       .filter((document) => document.business_object_type === "employee" && document.business_object_id === userId && !document.deleted_at)
-      .filter((document) => canAccessDocument(actor, document, "read"));
+      .filter((document) => canAccessDocument(authorizedActor, document, "read"));
     const filtered = query.document_type
       ? visible.filter((document) => document.document_type === query.document_type)
       : visible;
+    const result = page(filtered, query.page, query.page_size);
     return {
-      ...page(filtered, query.page, query.page_size),
+      ...result,
+      items: result.items.map(presentDocument),
       document_summary: this.documentSummary(visible)
     };
   }
 
   async attachEmployeeDocument(actor: AuthUser, userId: UUID, input: EmsDocumentUploadInput) {
-    const user = this.requireUser(userId);
-    assertCanSeeEmsUser(actor, user);
-    if (actor.id !== userId && !canManageEms(actor)) {
-      throw forbidden("Only the employee or HR/Admin can attach EMS employee documents.");
-    }
+    const authorizedActor = await this.assertEmployeeDocumentAccess(actor, userId, "write");
     const replaceTarget = input.replace_document_id
-      ? this.requireReplaceTarget(actor, userId, input.replace_document_id)
+      ? this.requireReplaceTarget(authorizedActor, userId, input.replace_document_id)
       : null;
-    const document = await new DocumentService(this.store).upload(actor, {
+    const document = await new DocumentService(this.store).upload(authorizedActor, {
       ...input,
       business_object_type: "employee",
       business_object_id: userId
@@ -514,12 +512,12 @@ export class EmsService {
       replaceTarget.metadata = {
         ...replaceTarget.metadata,
         replaced_by_document_id: document.id,
-        replaced_by_user_id: actor.id,
+        replaced_by_user_id: authorizedActor.id,
         replaced_at: now
       };
     }
     return {
-      document,
+      document: presentDocument(document),
       access_policy: {
         business_object_type: "employee",
         business_object_id: userId,
@@ -541,6 +539,40 @@ export class EmsService {
       throw forbidden("Document replacement denied");
     }
     return document;
+  }
+
+  async assertEmployeeDocumentAccess(actor: AuthUser, userId: UUID, permission: "read" | "write"): Promise<AuthUser> {
+    if (this.store.kind === "postgres") {
+      const durableAccess = await this.store.persistence?.classifyEmsEmployeeDocumentAccess?.(
+        actor.id,
+        userId,
+        permission,
+      );
+      if (durableAccess === undefined || durableAccess.decision === "hidden") {
+        throw notFound("EMS employee not found", { user_id: userId });
+      }
+      if (durableAccess.decision !== "authorized") {
+        throw forbidden("EMS employee document access denied.");
+      }
+      return durableAccess.actor;
+    }
+    const user = this.requireUser(userId);
+    const companyId = resolveActiveCompanyMembershipContext(this.store, {
+      userId: actor.id,
+      operation: `ems.employee_documents.${permission}`,
+      requireActiveEmployment: true,
+    }).companyId;
+    const targetCompanyId = this.store.userSessionPreferences.find(
+      (preference) => preference.user_id === user.id,
+    )?.company_id;
+    if (targetCompanyId !== companyId) {
+      throw notFound("EMS employee not found", { user_id: userId });
+    }
+    assertCanSeeEmsUser(actor, user);
+    if (permission === "write" && actor.id !== userId && !canManageEms(actor)) {
+      throw forbidden("Only the employee or HR/Admin can attach EMS employee documents.");
+    }
+    return actor;
   }
 
   private profileFor(actor: AuthUser, userId: UUID) {

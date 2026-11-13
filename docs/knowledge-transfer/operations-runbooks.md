@@ -13,7 +13,7 @@ This document points new developers to the operational model and the most import
 | Background worker | Render Docker worker. |
 | Database | Neon PostgreSQL. |
 | Session/rate/outbox state | Upstash Redis over the TLS Valkey/Redis protocol. |
-| Media storage | Cloudinary. |
+| Media storage | Private Cloudflare R2 through the backend authorization gateway. |
 | Transactional email | Resend. |
 
 Primary reference: `../deployment/hosted-deployment.md`.
@@ -77,9 +77,11 @@ Backend hosted secrets include:
 - `VALKEY_URL`
 - `JWT_ACCESS_SECRET`
 - `JWT_REFRESH_SECRET`
-- `CLOUDINARY_CLOUD_NAME`
-- `CLOUDINARY_API_KEY`
-- `CLOUDINARY_API_SECRET`
+- `OBJECT_STORAGE_DRIVER=r2`
+- `R2_ACCOUNT_ID`
+- `R2_ACCESS_KEY_ID`
+- `R2_SECRET_ACCESS_KEY`
+- `R2_BUCKET_NAME`
 - `RESEND_API_KEY` when email send mode is enabled
 - `RESEND_WEBHOOK_SECRET` when Resend webhooks are enabled
 
@@ -99,7 +101,7 @@ Reference: `../deployment/secrets-checklist.md`.
 Do not ship production when any of these are true:
 
 - Weak/default JWT secrets.
-- `CLOUDINARY_MOCK_UPLOADS=true`.
+- `OBJECT_STORAGE_DRIVER` is missing or is not `r2`.
 - Frontend mock fallback enabled.
 - `OPENAPI_PUBLIC=true` without explicit approval.
 - Email send mode enabled without Resend API key, verified sender, and webhook secret.
@@ -153,12 +155,12 @@ Important points:
 
 ## Media Operations
 
-Cloudinary production rules:
+Private R2 production rules:
 
-- Use real Cloudinary credentials.
-- Keep per-environment product environments or strict folders.
-- Do not expose API secret to frontend.
-- Keep `CLOUDINARY_MOCK_UPLOADS=false` in hosted QA and production.
+- Use separately scoped R2 credentials and private buckets per environment.
+- Do not expose credentials, bucket, endpoint, object key, or direct provider URL to the frontend.
+- Keep all byte delivery behind current backend authentication and authorization.
+- Never permit a hosted API or worker to fall back to process-local memory storage.
 
 ## Incident Notes For Developers
 

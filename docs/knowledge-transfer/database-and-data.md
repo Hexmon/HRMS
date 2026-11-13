@@ -136,7 +136,7 @@ Main paths:
 - `hrms_backend/src/modules/documents/`
 - `hrms_backend/src/shared/uploads/` on the frontend
 
-Production and hosted environments must use real Cloudinary values and `CLOUDINARY_MOCK_UPLOADS=false`. Local development may use mock uploads when not testing persistence.
+Production and hosted environments must use environment-scoped private R2 credentials and `OBJECT_STORAGE_DRIVER=r2`. Local development and deterministic unit tests may use the in-memory adapter; S3-compatible behavior is verified against disposable MinIO.
 
 ## Sessions And Tokens
 

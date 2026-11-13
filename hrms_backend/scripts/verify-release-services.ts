@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Redis as Valkey } from "iovalkey";
-import { CloudinaryObjectStorage } from "../src/platform/object-storage.js";
+import { R2ObjectStorage } from "../src/platform/object-storage.js";
 import { loadRuntimeEnv, requireEnv } from "./env.js";
 import { fail } from "./lib.js";
 
@@ -48,9 +48,9 @@ try {
   const stat = await storage.statObject(key);
   if (!stat) failures.push("Object-storage smoke object was not readable after upload");
   await storage.removeObject(key);
-  notes.push(`${storage.kind} bucket ${storage.bucket} put/stat/delete passed`);
-} catch (error) {
-  failures.push(`Object storage verification failed: ${error instanceof Error ? error.message : String(error)}`);
+  notes.push("Private object storage put/stat/delete passed");
+} catch {
+  failures.push("Private object storage verification failed");
 }
 
 const result = {
@@ -68,14 +68,14 @@ if (failures.length > 0) {
 
 console.log("Valkey and object-storage release verification passed.");
 
-function objectStorage(): CloudinaryObjectStorage {
-  return new CloudinaryObjectStorage({
-    cloudName: requireEnv("CLOUDINARY_CLOUD_NAME"),
-    apiKey: requireEnv("CLOUDINARY_API_KEY"),
-    apiSecret: requireEnv("CLOUDINARY_API_SECRET"),
-    folder: process.env.CLOUDINARY_FOLDER ?? "hawkaii-hrms",
-    resourceType: (process.env.CLOUDINARY_RESOURCE_TYPE as "auto" | "image" | "raw" | "video" | undefined) ?? "auto",
-    uploadTransformation: process.env.CLOUDINARY_UPLOAD_TRANSFORMATION ?? "q_auto:eco,f_auto",
-    mockUploads: process.env.CLOUDINARY_MOCK_UPLOADS === "true"
+function objectStorage(): R2ObjectStorage {
+  return new R2ObjectStorage({
+    accountId: requireEnv("R2_ACCOUNT_ID"),
+    accessKeyId: requireEnv("R2_ACCESS_KEY_ID"),
+    secretAccessKey: requireEnv("R2_SECRET_ACCESS_KEY"),
+    bucket: requireEnv("R2_BUCKET_NAME"),
+    endpoint: process.env.R2_ENDPOINT,
+    requestTimeoutMs: Number(process.env.R2_REQUEST_TIMEOUT_MS ?? 10_000),
+    forcePathStyle: process.env.R2_FORCE_PATH_STYLE === "true",
   });
 }

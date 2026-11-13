@@ -74,7 +74,7 @@ pnpm test:e2e:frontend-theme
 | Frontend route/component | `pnpm lint`, `pnpm build`, relevant Playwright or route guard. |
 | Frontend API adapter | `pnpm build`, route/API contract guard, backend contract verification if shape changed. |
 | Auth/RBAC/security | Backend auth tests, frontend route guard checks, QA role matrix. |
-| Upload/document/media | Backend integration tests, frontend upload flow check, Cloudinary/mock mode confirmation. |
+| Upload/document/media | Backend integration tests, frontend authenticated-byte flow, private R2 configuration, and disposable S3-compatible persistence check. |
 | Deployment/env changes | Production config guard, hosted health checks, deployment runbook checks. |
 
 ## CI/CD Checks
@@ -155,7 +155,7 @@ Backend QA artifacts are generally written under `hrms_backend/docs/qa/runs/`. F
 
 - Production must use real backend APIs, not mock fallback.
 - Production must not run seed/demo data.
-- Production media uploads must use real Cloudinary config with mock uploads disabled.
+- Production media uploads must use private environment-scoped R2 configuration; production startup must never fall back to memory storage.
 - Production email delivery must use verified Resend sender/domain config when enabled.
 - OpenAPI docs, route coverage, build checks, and targeted E2E should pass before release.
 - User-facing actions should show success only after backend success.

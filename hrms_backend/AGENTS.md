@@ -7,7 +7,7 @@ This directory is the Fastify/PostgreSQL backend package inside the Hawkaii HRMS
 - Node.js and TypeScript with Fastify.
 - PostgreSQL schemas: `core`, `expenses`, `documents`, `assets`, `timesheets`, and `platform`.
 - Drizzle schema plus ordered SQL migrations under `src/db`.
-- Valkey for session/runtime state and S3-compatible/Cloudinary-backed media integration.
+- Valkey for session/runtime state and backend-only S3-compatible private R2 object storage.
 - Zod validation and typed route contracts.
 - Vitest unit, contract, integration, and E2E projects.
 - Cloudflare Queues and Cron Triggers for bounded background processing; no endless polling loop in Workers.

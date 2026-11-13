@@ -824,7 +824,7 @@ function StepProfile({
             <p className="text-sm font-medium">Company logo</p>
             <p className="text-xs text-muted-foreground">
               JPG, PNG, or WebP up to {formatBytes(logoOnlyPolicy(uploadPolicy).max_bytes)}. Images
-              are compressed before Cloudinary upload.
+              are compressed before private upload.
             </p>
             {profile.logoName && (
               <p className="mt-1 text-xs text-foreground">

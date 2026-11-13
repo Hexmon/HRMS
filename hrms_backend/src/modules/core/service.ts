@@ -4,7 +4,7 @@ import { DocumentClassifications, EmploymentStatuses, Roles } from "#shared";
 import { badRequest, conflict, forbidden, notFound } from "../../platform/errors.js";
 import type { AuthTokenRecord, MemoryDataStore } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
-import { createGeneratedExportDocument, type GeneratedExportFormat } from "../../platform/generated-exports.js";
+import { assertGeneratedExportAvailable, createGeneratedExportDocument, type GeneratedExportFormat } from "../../platform/generated-exports.js";
 import { resolveActiveCompanyMembershipContext } from "../../platform/company-membership-context.js";
 import { DocumentService } from "../documents/service.js";
 import { appendCoreOutboxEvent } from "./events.js";
@@ -207,7 +207,6 @@ export interface ProfilePhotoPolicy {
   jpeg_quality: number;
   allowed_mime_types: string[];
   output_mime_type: "image/jpeg";
-  cloudinary_transformation: string;
 }
 
 export interface ProfilePhotoUploadInput {
@@ -428,7 +427,6 @@ export class CoreService {
       size_bytes: input.size_bytes,
       file_buffer: input.file_buffer,
       storage_metadata: {
-        "x-cloudinary-transformation": policy.cloudinary_transformation,
         "x-hrms-profile-photo": "true"
       }
     });
@@ -716,6 +714,7 @@ export class CoreService {
     const jobId = randomUUID();
     const columns = input.columns ?? defaultEmployeeExportColumns;
     const filters = this.validateExportFilters(actor, companyId, input.filters);
+    assertGeneratedExportAvailable(this.store);
     const rows = this.exportUserRows(actor, companyId, filters, columns);
     const generated = await createGeneratedExportDocument(this.store, {
       actor,
@@ -1634,10 +1633,7 @@ function toDesignationReference(designation: Designation): DesignationReference 
 }
 
 function profilePhotoUrl(document: DocumentMetadata): string | null {
-  const objectUrl = typeof document.metadata.object_url === "string" ? document.metadata.object_url : "";
-  const cloudinaryUrl = typeof document.metadata.cloudinary_url === "string" ? document.metadata.cloudinary_url : "";
-  const candidate = cloudinaryUrl || objectUrl;
-  return /^https?:\/\//iu.test(candidate) ? candidate : null;
+  return `/api/v1/documents/${document.id}/content`;
 }
 
 function appliedFilters(params: UserDirectoryQuery): string[] {

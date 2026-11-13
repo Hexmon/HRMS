@@ -29,9 +29,9 @@ Migrations should be treated as forward-only unless a migration explicitly docum
 
 Use Vercel deployment history to promote or roll back the affected frontend project to the previous successful deployment.
 
-## Media / Cloudinary
+## Private Object Storage / R2
 
-Do not bulk-delete Cloudinary folders during rollback unless the release owner confirms the uploaded assets were created only by the failed release and are safe to remove.
+Do not bulk-delete R2 prefixes or buckets during rollback. Roll back API and worker binaries together; an old provider-specific binary cannot safely interpret new R2 metadata. Preserve private objects and use reviewed forward reconciliation for uncertain uploads or deletes.
 
 ## Signoff After Rollback
 

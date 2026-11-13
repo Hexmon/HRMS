@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { authHeader, loginAs, projectTravelPayload } from "#testing";
 import { buildRealApp } from "../../../__tests__/real-infra.js";
@@ -15,16 +15,15 @@ describe("document management integration", () => {
     await app?.close();
   });
 
-  it("denies restricted classifications to unauthorized managers", async () => {
+  it("fails closed before generic PostgreSQL document upload or classification access", async () => {
     const admin = await loginAs(app, "ADM");
-    const director = await loginAs(app, "S1");
     const upload = await app.inject({
       method: "POST",
       url: "/api/v1/documents",
       headers: authHeader(admin.token),
       payload: {
         business_object_type: "employee",
-        business_object_id: director.user.id,
+        business_object_id: admin.user.id,
         classification: "medical",
         document_type: "medical_record",
         file_name: "medical.pdf",
@@ -32,37 +31,11 @@ describe("document management integration", () => {
         size_bytes: 100
       }
     });
-    expect(upload.statusCode).toBe(200);
-    expect(upload.json().metadata.storage_adapter).toBe(app.store.objectStorage?.kind);
-    await expect(app.store.objectStorage?.statObject(upload.json().storage_key)).resolves.toMatchObject({
-      size: expect.any(Number)
-    });
-
-    const denied = await app.inject({
-      method: "POST",
-      url: `/api/v1/documents/${upload.json().id}/download-url`,
-      headers: authHeader(director.token)
-    });
-    expect(denied.statusCode).toBe(403);
-
-    const allowed = await app.inject({
-      method: "POST",
-      url: `/api/v1/documents/${upload.json().id}/download-url`,
-      headers: authHeader(admin.token)
-    });
-    expect(allowed.statusCode).toBe(200);
-    expect(allowed.json().url).toEqual(expect.any(String));
-
-    const accessLog = await app.inject({
-      method: "GET",
-      url: `/api/v1/documents/${upload.json().id}/access-log?page=1&page_size=20`,
-      headers: authHeader(admin.token)
-    });
-    expect(accessLog.statusCode).toBe(200);
-    expect(accessLog.json().total).toBeGreaterThanOrEqual(3);
+    expect(upload.statusCode).toBe(409);
+    expect(upload.json().message).toMatch(/immutable tenant ownership/u);
   });
 
-  it("stores multipart PDF, image, and general document uploads with compression metadata", async () => {
+  it("fails closed before parsing generic PostgreSQL multipart document uploads", async () => {
     const admin = await loginAs(app, "ADM");
     app.store.documentProcessing.pdfCompression = {
       enabled: true,
@@ -90,96 +63,8 @@ describe("document management integration", () => {
         body: pdfBody
       }
     });
-    expect(pdfUpload.statusCode).toBe(200);
-    expect(pdfUpload.json().metadata).toMatchObject({
-      storage_adapter: app.store.objectStorage?.kind,
-      pdf_compression_attempted: true,
-      pdf_compressed: false,
-      pdf_original_size_bytes: pdfBody.length,
-      pdf_output_size_bytes: pdfBody.length
-    });
-    expect(pdfUpload.json().metadata.pdf_compression_reason).toMatch(/^failed:/u);
-    await expect(app.store.objectStorage?.statObject(pdfUpload.json().storage_key)).resolves.toMatchObject({
-      size: pdfBody.length
-    });
-
-    const imageBody = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]);
-    const imageUpload = await multipartUpload(app, {
-      url: "/api/v1/documents",
-      token: admin.token,
-      fields: {
-        business_object_type: "employee",
-        business_object_id: admin.user.id,
-        classification: "normal",
-        document_type: "profile_photo"
-      },
-      file: {
-        fieldName: "file",
-        fileName: "profile-photo.png",
-        mimeType: "image/png",
-        body: imageBody
-      }
-    });
-    expect(imageUpload.statusCode).toBe(200);
-    expect(imageUpload.json().metadata).toMatchObject({
-      object_upload_compressed: app.store.objectStorage?.kind === "cloudinary",
-      pdf_compression_attempted: false,
-      pdf_compressed: false,
-      original_size_bytes: imageBody.length,
-      stored_size_bytes: imageBody.length
-    });
-
-    const textBody = Buffer.from("plain text supporting document", "utf8");
-    const textUpload = await multipartUpload(app, {
-      url: "/api/v1/documents",
-      token: admin.token,
-      fields: {
-        business_object_type: "employee",
-        business_object_id: admin.user.id,
-        classification: "normal",
-        document_type: "supporting_note"
-      },
-      file: {
-        fieldName: "file",
-        fileName: "supporting-note.txt",
-        mimeType: "text/plain",
-        body: textBody
-      }
-    });
-    expect(textUpload.statusCode).toBe(200);
-    expect(textUpload.json().metadata).toMatchObject({
-      object_upload_compressed: false,
-      pdf_compression_attempted: false,
-      pdf_compressed: false,
-      original_size_bytes: textBody.length,
-      stored_size_bytes: textBody.length
-    });
-
-    const list = await app.inject({
-      method: "GET",
-      url: `/api/v1/documents?page=1&page_size=10&business_object_type=employee&business_object_id=${admin.user.id}`,
-      headers: authHeader(admin.token)
-    });
-    expect(list.statusCode).toBe(200);
-    expect(list.json().total).toBeGreaterThanOrEqual(3);
-
-    const download = await app.inject({
-      method: "POST",
-      url: `/api/v1/documents/${pdfUpload.json().id}/download-url`,
-      headers: authHeader(admin.token)
-    });
-    expect(download.statusCode).toBe(200);
-    expect(download.json().url).toEqual(expect.any(String));
-    expect(download.json().url).toContain(`/api/v1/documents/${pdfUpload.json().id}/content`);
-
-    const content = await app.inject({
-      method: "GET",
-      url: `/api/v1/documents/${pdfUpload.json().id}/content`,
-      headers: authHeader(admin.token)
-    });
-    expect(content.statusCode).toBe(200);
-    expect(content.headers["content-type"]).toContain("application/pdf");
-    expect(content.body).toContain("%PDF");
+    expect(pdfUpload.statusCode).toBe(409);
+    expect(pdfUpload.json().message).toMatch(/immutable tenant ownership/u);
   });
 
   it("exposes and enforces the backend media upload policy", async () => {
@@ -216,8 +101,8 @@ describe("document management integration", () => {
         body: Buffer.from("unsafe", "utf8")
       }
     });
-    expect(disallowed.statusCode).toBe(400);
-    expect(disallowed.json().message).toBe("This file type is not allowed for media uploads");
+    expect(disallowed.statusCode).toBe(409);
+    expect(disallowed.json().message).toMatch(/immutable tenant ownership/u);
 
     app.store.documentProcessing.mediaUploads.maxBytes = 8;
     const oversized = await multipartUpload(app, {
@@ -236,46 +121,55 @@ describe("document management integration", () => {
         body: Buffer.from("too large", "utf8")
       }
     });
-    expect(oversized.statusCode).toBe(400);
-    expect(oversized.json().message).toBe("File is larger than the configured media upload limit");
+    expect(oversized.statusCode).toBe(409);
+    expect(oversized.json().message).toMatch(/immutable tenant ownership/u);
   });
 
-  it("stores multipart uploads through expense and EMS document wrapper paths", async () => {
+  it("keeps SQL expense receipt upload fail closed while the EMS wrapper remains available", async () => {
     const employee = await loginAs(app, "E1");
 
     const createExpense = await app.inject({
       method: "POST",
       url: "/api/v1/expenses",
-      headers: authHeader(employee.token),
+      headers: { ...authHeader(employee.token), "idempotency-key": "documents-expense-create-001" },
       payload: projectTravelPayload
     });
     expect(createExpense.statusCode).toBe(200);
 
     const receiptBody = Buffer.from("%PDF-1.4\nreceipt\n%%EOF\n", "utf8");
-    const expenseUpload = await multipartUpload(app, {
-      url: `/api/v1/expenses/${createExpense.json().id}/documents`,
-      token: employee.token,
-      fields: {
-        classification: "finance",
-        document_type: "receipt"
-      },
-      file: {
-        fieldName: "file",
-        fileName: "receipt.pdf",
-        mimeType: "application/pdf",
-        body: receiptBody
-      }
-    });
-    expect(expenseUpload.statusCode).toBe(200);
-    expect(expenseUpload.json()).toMatchObject({
-      business_object_type: "expense_ticket",
-      business_object_id: createExpense.json().id,
-      document_type: "receipt",
-      file_name: "receipt.pdf",
-      mime_type: "application/pdf",
-      size_bytes: receiptBody.length
-    });
-    expect(app.store.expenseDocuments.some((document) => document.document_id === expenseUpload.json().id)).toBe(true);
+    const beforeExpenseUpload = {
+      documents: app.store.documents.length,
+      expenseDocuments: app.store.expenseDocuments.length,
+      outbox: app.store.outbox.length
+    };
+    expect(app.store.objectStorage).toBeDefined();
+    const putObject = vi.spyOn(app.store.objectStorage!, "putObject");
+    try {
+      const expenseUpload = await multipartUpload(app, {
+        url: `/api/v1/expenses/${createExpense.json().id}/documents`,
+        token: employee.token,
+        fields: {
+          classification: "finance",
+          document_type: "receipt"
+        },
+        file: {
+          fieldName: "file",
+          fileName: "receipt.pdf",
+          mimeType: "application/pdf",
+          body: receiptBody
+        }
+      });
+      expect(expenseUpload.statusCode).toBe(409);
+      expect(expenseUpload.json()).toMatchObject({
+        message: "Expense receipt upload requires transaction-owned parent authorization"
+      });
+      expect(putObject).not.toHaveBeenCalled();
+      expect(app.store.documents).toHaveLength(beforeExpenseUpload.documents);
+      expect(app.store.expenseDocuments).toHaveLength(beforeExpenseUpload.expenseDocuments);
+      expect(app.store.outbox).toHaveLength(beforeExpenseUpload.outbox);
+    } finally {
+      putObject.mockRestore();
+    }
 
     const imageBody = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0x00]);
     const emsUpload = await multipartUpload(app, {
@@ -302,11 +196,8 @@ describe("document management integration", () => {
       mime_type: "image/jpeg",
       size_bytes: imageBody.length
     });
-    expect(emsUpload.json().document.metadata).toMatchObject({
-      object_upload_compressed: app.store.objectStorage?.kind === "cloudinary",
-      original_size_bytes: imageBody.length,
-      stored_size_bytes: imageBody.length
-    });
+    expect(emsUpload.json().document.metadata).toEqual({});
+    expect(emsUpload.json().document).not.toHaveProperty("storage_key");
 
     const emsList = await app.inject({
       method: "GET",
@@ -321,29 +212,24 @@ describe("document management integration", () => {
       url: `/api/v1/documents/${emsUpload.json().document.id}/download-url`,
       headers: authHeader(employee.token)
     });
-    expect(emsDownload.statusCode).toBe(200);
-    expect(emsDownload.json().url).toEqual(expect.any(String));
+    expect(emsDownload.statusCode).toBe(409);
+    expect(emsDownload.json().message).toMatch(/immutable tenant ownership/u);
 
     const emsContent = await app.inject({
       method: "GET",
       url: `/api/v1/documents/${emsUpload.json().document.id}/content`,
       headers: authHeader(employee.token)
     });
-    expect(emsContent.statusCode).toBe(200);
-    expect(emsContent.headers["content-type"]).toContain("image/jpeg");
-    expect(Buffer.from(emsContent.rawPayload).subarray(0, imageBody.length)).toEqual(imageBody);
+    expect(emsContent.statusCode).toBe(409);
+    expect(emsContent.json().message).toMatch(/immutable tenant ownership/u);
 
     const deleteDocument = await app.inject({
       method: "DELETE",
       url: `/api/v1/documents/${emsUpload.json().document.id}`,
       headers: authHeader(employee.token)
     });
-    expect(deleteDocument.statusCode).toBe(200);
-    expect(deleteDocument.json()).toMatchObject({
-      document_id: emsUpload.json().document.id,
-      status: "deleted"
-    });
-    await expect(app.store.objectStorage?.statObject(emsUpload.json().document.storage_key)).resolves.toBeNull();
+    expect(deleteDocument.statusCode).toBe(409);
+    expect(deleteDocument.json().message).toMatch(/immutable tenant ownership/u);
 
     const listAfterDelete = await app.inject({
       method: "GET",
@@ -353,7 +239,7 @@ describe("document management integration", () => {
     expect(listAfterDelete.statusCode).toBe(200);
     expect(
       listAfterDelete.json().items.some((document: { id: string }) => document.id === emsUpload.json().document.id)
-    ).toBe(false);
+    ).toBe(true);
   });
 });
 

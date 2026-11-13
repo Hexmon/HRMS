@@ -7,7 +7,7 @@ Production release requires:
 - P0 tests pass or have approved waiver.
 - No known cross-environment data leakage.
 - No default/weak production secrets.
-- Production Cloudinary mock disabled.
+- Every hosted environment uses a private, environment-isolated R2 bucket; the memory object-store adapter is forbidden.
 - Frontend API mock fallback disabled.
 - API health passes.
 - Login/logout passes.

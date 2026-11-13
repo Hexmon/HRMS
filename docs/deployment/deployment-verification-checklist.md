@@ -46,7 +46,7 @@ pnpm verify:regression
 | `APP_ENV` correct | `development` | `qa` | `production` |
 | `VITE_APP_ENV` correct | `development` | `qa` | `production` |
 | `VITE_API_MOCK_FALLBACK=false` | yes | yes | yes |
-| `CLOUDINARY_MOCK_UPLOADS=false` | yes for hosted dev | yes | yes |
+| `OBJECT_STORAGE_DRIVER=r2` and private environment bucket | yes | yes | yes |
 | Separate DB/Valkey | yes | yes | yes |
 | `OPENAPI_PUBLIC=false` | optional | optional | required unless approved |
 | Secure cookies | yes | yes | yes |

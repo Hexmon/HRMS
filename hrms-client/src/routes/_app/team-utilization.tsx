@@ -9,16 +9,17 @@ import {
   StatusBadge,
   DataTable,
   type Column,
-  ActionButton,
   EmptyState,
   UserAvatar,
 } from "@/components/ui-kit";
 import { useAuth } from "@/lib/auth";
 import { useEmployees } from "@/lib/employees-store";
 import { useProjects } from "@/lib/projects-store";
+import { downloadCsv } from "@/lib/csv";
 import { useTimesheets } from "@/lib/timesheets-store";
 import { DEMO_LAST_WEEK } from "@/lib/mock/timesheets";
 import { useTeamUtilizationSummary } from "@/domains/projects";
+import { TeamUtilizationExportAction } from "@/components/reports/team-utilization-export-action";
 import { asArray, asRecord, isApiEnabled, numberValue, text } from "@/shared/api";
 import {
   Activity,
@@ -29,7 +30,6 @@ import {
   TrendingUp,
   AlertTriangle,
   Sofa,
-  Download,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -185,28 +185,20 @@ function UtilizationPage() {
       "Utilization %",
       "Status",
     ];
-    const csvRows = rows.map((r) =>
-      [
-        r.name,
-        r.department,
-        r.designation,
-        r.available,
-        r.allocated.toFixed(1),
-        r.submitted.toFixed(1),
-        r.utilization,
-        r.status,
-      ]
-        .map((v) => `"${String(v).replace(/"/g, '""')}"`)
-        .join(","),
-    );
-    const csv = [headers.join(","), ...csvRows].join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `hawkaii-utilization-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const csvRows = rows.map((r) => [
+      r.name,
+      r.department,
+      r.designation,
+      r.available,
+      r.allocated.toFixed(1),
+      r.submitted.toFixed(1),
+      r.utilization,
+      r.status,
+    ]);
+    downloadCsv(`hawkaii-utilization-${new Date().toISOString().slice(0, 10)}.csv`, [
+      headers,
+      ...csvRows,
+    ]);
     toast.success("Exported", { description: `${rows.length} rows exported.` });
   };
 
@@ -289,16 +281,7 @@ function UtilizationPage() {
               ? "Utilization data could not be loaded from the backend."
               : `Capacity, allocation and billability across ${rows.length} ${rows.length === 1 ? "person" : "people"}.`
         }
-        actions={
-          <ActionButton
-            size="sm"
-            variant="secondary"
-            icon={<Download className="h-4 w-4" />}
-            onClick={handleExport}
-          >
-            Export
-          </ActionButton>
-        }
+        actions={<TeamUtilizationExportAction apiMode={apiMode} onExport={handleExport} />}
       />
 
       <Tabs defaultValue="dashboard" className="space-y-4">

@@ -79,6 +79,8 @@ const expectedOperations = [
   "GET /api/v1/admin/security-settings",
   "GET /api/v1/admin/workflows",
   "GET /api/v1/assets/",
+  "GET /api/v1/assets/assignees",
+  "GET /api/v1/assets/my",
   "GET /api/v1/assets/recovery-queue",
   "GET /api/v1/assets/requests/my",
   "GET /api/v1/assets/requests/queue",
@@ -1211,10 +1213,11 @@ describe("API contracts", () => {
     const previousAllowedOrigins = process.env.CORS_ALLOWED_ORIGINS;
     const previousLogLevel = process.env.LOG_LEVEL;
     const previousEmailMode = process.env.EMAIL_DELIVERY_MODE;
-    const previousCloudinaryCloudName = process.env.CLOUDINARY_CLOUD_NAME;
-    const previousCloudinaryApiKey = process.env.CLOUDINARY_API_KEY;
-    const previousCloudinaryApiSecret = process.env.CLOUDINARY_API_SECRET;
-    const previousCloudinaryMockUploads = process.env.CLOUDINARY_MOCK_UPLOADS;
+    const previousObjectStorageDriver = process.env.OBJECT_STORAGE_DRIVER;
+    const previousR2AccountId = process.env.R2_ACCOUNT_ID;
+    const previousR2AccessKeyId = process.env.R2_ACCESS_KEY_ID;
+    const previousR2SecretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
+    const previousR2BucketName = process.env.R2_BUCKET_NAME;
     const previousResendApiKey = process.env.RESEND_API_KEY;
     const previousResendFromEmail = process.env.RESEND_FROM_EMAIL;
     const previousResendWebhookSecret = process.env.RESEND_WEBHOOK_SECRET;
@@ -1223,10 +1226,11 @@ describe("API contracts", () => {
     process.env.CORS_ALLOWED_ORIGINS = "https://hrms.example.com";
     process.env.LOG_LEVEL = "warn";
     process.env.EMAIL_DELIVERY_MODE = "send";
-    process.env.CLOUDINARY_CLOUD_NAME = "prod-contract-cloud";
-    process.env.CLOUDINARY_API_KEY = "prod-contract-cloudinary-key";
-    process.env.CLOUDINARY_API_SECRET = "prod-contract-cloudinary-secret";
-    process.env.CLOUDINARY_MOCK_UPLOADS = "false";
+    process.env.OBJECT_STORAGE_DRIVER = "r2";
+    process.env.R2_ACCOUNT_ID = "0123456789abcdef0123456789abcdef";
+    process.env.R2_ACCESS_KEY_ID = "prod-contract-access-key";
+    process.env.R2_SECRET_ACCESS_KEY = "prod-contract-secret-key";
+    process.env.R2_BUCKET_NAME = "prod-contract-private-bucket";
     process.env.RESEND_API_KEY = "test-resend-api-key";
     process.env.RESEND_FROM_EMAIL = "verify@example.test";
     process.env.RESEND_WEBHOOK_SECRET = "test-resend-webhook-secret";
@@ -1299,25 +1303,30 @@ describe("API contracts", () => {
       } else {
         process.env.EMAIL_DELIVERY_MODE = previousEmailMode;
       }
-      if (previousCloudinaryCloudName === undefined) {
-        delete process.env.CLOUDINARY_CLOUD_NAME;
+      if (previousObjectStorageDriver === undefined) {
+        delete process.env.OBJECT_STORAGE_DRIVER;
       } else {
-        process.env.CLOUDINARY_CLOUD_NAME = previousCloudinaryCloudName;
+        process.env.OBJECT_STORAGE_DRIVER = previousObjectStorageDriver;
       }
-      if (previousCloudinaryApiKey === undefined) {
-        delete process.env.CLOUDINARY_API_KEY;
+      if (previousR2AccountId === undefined) {
+        delete process.env.R2_ACCOUNT_ID;
       } else {
-        process.env.CLOUDINARY_API_KEY = previousCloudinaryApiKey;
+        process.env.R2_ACCOUNT_ID = previousR2AccountId;
       }
-      if (previousCloudinaryApiSecret === undefined) {
-        delete process.env.CLOUDINARY_API_SECRET;
+      if (previousR2AccessKeyId === undefined) {
+        delete process.env.R2_ACCESS_KEY_ID;
       } else {
-        process.env.CLOUDINARY_API_SECRET = previousCloudinaryApiSecret;
+        process.env.R2_ACCESS_KEY_ID = previousR2AccessKeyId;
       }
-      if (previousCloudinaryMockUploads === undefined) {
-        delete process.env.CLOUDINARY_MOCK_UPLOADS;
+      if (previousR2SecretAccessKey === undefined) {
+        delete process.env.R2_SECRET_ACCESS_KEY;
       } else {
-        process.env.CLOUDINARY_MOCK_UPLOADS = previousCloudinaryMockUploads;
+        process.env.R2_SECRET_ACCESS_KEY = previousR2SecretAccessKey;
+      }
+      if (previousR2BucketName === undefined) {
+        delete process.env.R2_BUCKET_NAME;
+      } else {
+        process.env.R2_BUCKET_NAME = previousR2BucketName;
       }
       if (previousResendApiKey === undefined) {
         delete process.env.RESEND_API_KEY;
@@ -1543,7 +1552,7 @@ describe("API contracts", () => {
     expect(rows.map((row) => row.key).sort()).toEqual(
       [...expectedOperations].sort(),
     );
-    expect(rows.length).toBe(281);
+    expect(rows.length).toBe(283);
 
     const attendancePunch = spec.paths?.["/api/v1/attendance/punches"]?.post as
       | Record<string, any>
@@ -1845,6 +1854,17 @@ describe("API contracts", () => {
 
   it("documents finance bodies, grouping, and OCC 409 responses", async () => {
     const spec = await openApiSpec(app);
+    const durableExpenseCommands = [
+      "POST /api/v1/expenses",
+      "POST /api/v1/expenses/{id}/submit",
+      "POST /api/v1/expenses/{id}/withdraw",
+      "POST /api/v1/expenses/{id}/clarifications",
+      "POST /api/v1/expenses/{id}/manager/verify",
+      "POST /api/v1/expenses/{id}/bills",
+      "POST /api/v1/expenses/{id}/finance/approve",
+      "POST /api/v1/expenses/{id}/finance/payment",
+      "POST /api/v1/expenses/{id}/settlement",
+    ];
 
     for (const key of bodyRequiredOperations) {
       expect(hasJsonBody(operation(spec, key)), `${key} request body`).toBe(
@@ -1858,6 +1878,62 @@ describe("API contracts", () => {
         `${key} OCC response`,
       ).toBeDefined();
     }
+
+    for (const key of durableExpenseCommands) {
+      const command = operation(spec, key) as Record<string, any>;
+      expect(command.parameters).toContainEqual(expect.objectContaining({
+        name: "idempotency-key",
+        in: "header",
+        required: true,
+        schema: expect.objectContaining({
+          type: "string",
+          minLength: 8,
+          maxLength: 200,
+          pattern: "^[A-Za-z0-9._:-]+$",
+        }),
+      }));
+    }
+
+    for (const key of durableExpenseCommands) {
+      const command = operation(spec, key) as Record<string, any>;
+      expect(command.responses?.["200"]?.content?.["application/json"]?.schema)
+        .toMatchObject({
+          type: "object",
+          additionalProperties: false,
+          required: ["id", "status", "version"],
+          properties: {
+            id: { type: "string", format: "uuid" },
+            status: { type: "string" },
+            version: { type: "integer", minimum: 1 },
+          },
+        });
+    }
+
+    const clarification = operation(
+      spec,
+      "POST /api/v1/expenses/{id}/clarifications",
+    ) as Record<string, any>;
+    expect(
+      clarification.requestBody?.content?.["application/json"]?.schema
+        ?.properties?.document_ids,
+    ).toMatchObject({ maxItems: 20, uniqueItems: true });
+
+    const notificationReadAll = operation(
+      spec,
+      "POST /api/v1/notifications/read-all",
+    ) as Record<string, any>;
+    expect(notificationReadAll.description).toContain("Repeat while has_more is true");
+    expect(notificationReadAll.responses?.["200"]?.content?.["application/json"]?.schema)
+      .toMatchObject({
+        type: "object",
+        additionalProperties: false,
+        required: ["updated_count", "unread_count", "has_more"],
+        properties: {
+          updated_count: { type: "integer", minimum: 0 },
+          unread_count: { type: "integer", minimum: 0 },
+          has_more: { type: "boolean" },
+        },
+      });
 
     const financeKeys = operations(spec)
       .filter(
@@ -1958,7 +2034,7 @@ describe("API contracts", () => {
     const serialized = JSON.stringify(spec);
 
     expect(serialized).not.toMatch(/JWT_(ACCESS|REFRESH)_SECRET/iu);
-    expect(serialized).not.toMatch(/CLOUDINARY_API_SECRET|VALKEY_PASSWORD/iu);
+    expect(serialized).not.toMatch(/R2_(?:ACCESS_KEY_ID|SECRET_ACCESS_KEY)|VALKEY_PASSWORD/iu);
     expect(serialized).not.toMatch(/postgres:\/\/postgres:postgres/iu);
 
     const packageJson = readFileSync(

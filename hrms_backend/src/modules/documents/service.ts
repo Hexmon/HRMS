@@ -1,13 +1,14 @@
 import { randomUUID } from "node:crypto";
 import type { AuthUser, DocumentMetadata, UUID } from "#shared";
-import { documentUploadSchema, paginationQuerySchema, RetryableMutationScopes } from "#shared";
+import { documentUploadSchema, EmploymentStatuses, paginationQuerySchema, RetryableMutationScopes, Roles } from "#shared";
 import type { z } from "zod";
 import type { MediaUploadPolicy, MemoryDataStore } from "../../platform/data-store.js";
 import { makeStorageKey, nowIso } from "../../platform/data-store.js";
-import { badRequest, forbidden, notFound } from "../../platform/errors.js";
+import { badRequest, conflict, forbidden, notFound } from "../../platform/errors.js";
 import { compressPdfBuffer, isPdfUpload, type PdfCompressionResult } from "../../platform/pdf-compression.js";
 import { appendOutboxEvent } from "../expenses/events.js";
 import { ExpenseService } from "../expenses/service.js";
+import { isTerminalExpenseStatus } from "../expenses/state-machine.js";
 import { canAccessDocument } from "./policy.js";
 import { DocumentRepository } from "./repository.js";
 
@@ -34,6 +35,26 @@ export interface DocumentDeleteResult {
   status: "deleted";
 }
 
+export type PublicDocumentMetadata = Omit<DocumentMetadata, "storage_key" | "metadata"> & {
+  metadata: {
+    verified_at?: string;
+    verified_by?: UUID;
+    rejection_reason?: string;
+  };
+};
+
+export function presentDocument(document: DocumentMetadata): PublicDocumentMetadata {
+  const { storage_key: _storageKey, metadata, ...publicFields } = document;
+  return {
+    ...publicFields,
+    metadata: {
+      ...(typeof metadata.verified_at === "string" ? { verified_at: metadata.verified_at } : {}),
+      ...(typeof metadata.verified_by === "string" ? { verified_by: metadata.verified_by as UUID } : {}),
+      ...(typeof metadata.rejection_reason === "string" ? { rejection_reason: metadata.rejection_reason } : {}),
+    },
+  };
+}
+
 export interface DocumentUploadPolicyResponse {
   max_bytes: number;
   image_max_width: number;
@@ -41,7 +62,6 @@ export interface DocumentUploadPolicyResponse {
   image_jpeg_quality: number;
   allowed_mime_types: string[];
   image_output_mime_type: "image/jpeg";
-  cloudinary_transformation: string;
   company_logo: {
     max_bytes: number;
     image_max_width: number;
@@ -49,7 +69,6 @@ export interface DocumentUploadPolicyResponse {
     image_jpeg_quality: number;
     allowed_mime_types: string[];
     image_output_mime_type: "image/jpeg";
-    cloudinary_transformation: string;
   };
 }
 
@@ -58,6 +77,60 @@ export class DocumentService {
 
   constructor(private readonly store: MemoryDataStore) {
     this.repository = new DocumentRepository(store);
+  }
+
+  private expenseReceiptReadDecision(actor: AuthUser, document: DocumentMetadata, rawBytes: boolean): boolean | null {
+    const links = this.store.expenseDocuments.filter((item) => item.document_id === document.id);
+    if (document.business_object_type !== "expense_ticket" && links.length === 0) return null;
+    if (document.business_object_type !== "expense_ticket" || links.length !== 1 ||
+        links[0]?.ticket_id !== document.business_object_id ||
+        links[0]?.document_type !== document.document_type || document.classification !== "finance") return false;
+    const ticket = this.store.tickets.find((item) => item.id === document.business_object_id && !item.deleted_at);
+    const currentUser = this.store.users.find((item) => item.id === actor.id && !item.deleted_at);
+    const currentCompany = this.store.userSessionPreferences.find((item) => item.user_id === actor.id)?.company_id;
+    if (!ticket?.company_id || !currentUser || currentUser.employment_status !== EmploymentStatuses.Active ||
+        !currentCompany || !this.store.companyProfiles.some((item) => item.id === currentCompany && item.status === "active") ||
+        ticket.owner_resolution_status === "quarantined") {
+      return false;
+    }
+    const hasRole = (role: AuthUser["roles"][number]) => actor.roles.includes(role) && currentUser.roles.includes(role);
+    if (ticket.requester_user_id === actor.id) return true;
+    if (ticket.company_id !== currentCompany) return false;
+    if (hasRole(Roles.Admin)) return true;
+    if (hasRole(Roles.FinanceManager) && ticket.finance_approver_id === actor.id) return true;
+    if (hasRole(Roles.Reviewer) && ticket.manager_verifier_id === actor.id) return true;
+    if (rawBytes) return false;
+    return hasRole(Roles.Auditor);
+  }
+
+  private mayReadDocument(actor: AuthUser, document: DocumentMetadata, rawBytes: boolean): boolean {
+    return this.expenseReceiptReadDecision(actor, document, rawBytes) ??
+      canAccessDocument(actor, document, "read");
+  }
+
+  private assertExpenseReceiptUpload(actor: AuthUser, input: DocumentUploadBody): void {
+    const ticket = this.store.tickets.find((item) => item.id === input.business_object_id && !item.deleted_at);
+    if (!ticket?.company_id || ticket.owner_resolution_status === "quarantined") {
+      throw notFound("Expense ticket not found");
+    }
+    const currentUser = this.store.users.find((item) => item.id === actor.id && !item.deleted_at);
+    const currentCompany = this.store.userSessionPreferences.find((item) => item.user_id === actor.id)?.company_id;
+    if (!currentUser || currentUser.employment_status !== EmploymentStatuses.Active ||
+        currentCompany !== ticket.company_id ||
+        !this.store.companyProfiles.some((item) => item.id === currentCompany && item.status === "active")) {
+      throw notFound("Expense ticket not found");
+    }
+    if (isTerminalExpenseStatus(ticket.status)) {
+      throw conflict("This expense no longer accepts receipt uploads");
+    }
+    if (input.classification !== "finance") {
+      throw badRequest("Expense receipts require finance classification");
+    }
+    const hasRole = (role: AuthUser["roles"][number]) => actor.roles.includes(role) && currentUser.roles.includes(role);
+    if (ticket.requester_user_id === actor.id || hasRole(Roles.Admin) ||
+        (hasRole(Roles.Reviewer) && ticket.manager_verifier_id === actor.id) ||
+        (hasRole(Roles.FinanceManager) && ticket.finance_approver_id === actor.id)) return;
+    throw forbidden("Expense receipt upload denied");
   }
 
   uploadPolicy(): DocumentUploadPolicyResponse {
@@ -70,7 +143,6 @@ export class DocumentService {
       image_jpeg_quality: policy.imageJpegQuality,
       allowed_mime_types: [...policy.allowedMimeTypes],
       image_output_mime_type: policy.imageOutputMimeType,
-      cloudinary_transformation: policy.cloudinaryTransformation,
       company_logo: {
         max_bytes: companyLogoPolicy.maxBytes,
         image_max_width: companyLogoPolicy.imageMaxWidth,
@@ -78,12 +150,15 @@ export class DocumentService {
         image_jpeg_quality: companyLogoPolicy.imageJpegQuality,
         allowed_mime_types: [...companyLogoPolicy.allowedMimeTypes],
         image_output_mime_type: companyLogoPolicy.imageOutputMimeType,
-        cloudinary_transformation: companyLogoPolicy.cloudinaryTransformation
       }
     };
   }
 
   async upload(actor: AuthUser, input: DocumentUploadBody): Promise<DocumentMetadata> {
+    if (this.store.kind === "postgres" && input.business_object_type === "expense_ticket") {
+      throw conflict("Expense receipt upload requires transaction-owned parent authorization");
+    }
+    if (input.business_object_type === "expense_ticket") this.assertExpenseReceiptUpload(actor, input);
     const now = nowIso();
     const storageKey = makeStorageKey({
       actor,
@@ -114,7 +189,7 @@ export class DocumentService {
       updated_at: now,
       deleted_at: null
     };
-    if (!canAccessDocument(actor, document, "write")) {
+    if (input.business_object_type !== "expense_ticket" && !canAccessDocument(actor, document, "write")) {
       this.log(actor, document.id, "upload", "denied", "classification_policy");
       throw forbidden("You cannot upload this document classification");
     }
@@ -139,19 +214,11 @@ export class DocumentService {
     const stored = await this.store.objectStorage.putObject(document.storage_key, uploadBody, {
       "content-type": document.mime_type,
       "x-hrms-document-id": document.id,
-      "x-cloudinary-transformation": uploadPolicy.cloudinaryTransformation,
       ...input.storage_metadata
     });
     document.metadata = {
       ...document.metadata,
-      object_public_id: stored.publicId ?? null,
-      object_resource_type: stored.resourceType ?? null,
-      object_url: stored.url ?? null,
-      object_upload_compressed: stored.compressed ?? false,
-      cloudinary_public_id: this.store.objectStorage.kind === "cloudinary" ? stored.publicId ?? null : null,
-      cloudinary_resource_type: this.store.objectStorage.kind === "cloudinary" ? stored.resourceType ?? null : null,
-      cloudinary_url: this.store.objectStorage.kind === "cloudinary" ? stored.url ?? null : null,
-      cloudinary_upload_compressed: this.store.objectStorage.kind === "cloudinary" ? stored.compressed ?? false : false,
+      storage_etag: stored.etag ?? null,
       pdf_compression_attempted: pdfCompression?.attempted ?? false,
       pdf_compressed: pdfCompression?.compressed ?? false,
       pdf_compression_reason: pdfCompression?.reason ?? null,
@@ -236,11 +303,45 @@ export class DocumentService {
 
   metadata(actor: AuthUser, id: UUID): DocumentMetadata {
     const document = this.repository.find(id);
-    if (!canAccessDocument(actor, document, "read")) {
+    if (!this.mayReadDocument(actor, document, false)) {
       this.log(actor, id, "metadata", "denied", "classification_policy");
       throw forbidden("Document access denied");
     }
     this.log(actor, id, "metadata", "allowed", null);
+    return document;
+  }
+
+  tenantMediaMetadata(actor: AuthUser, id: UUID): DocumentMetadata {
+    const document = this.requireTenantMedia(id);
+    this.log(actor, id, "metadata", "allowed", null);
+    return document;
+  }
+
+  async tenantMediaDownloadUrl(actor: AuthUser, id: UUID, apiBaseUrl = "") {
+    this.requireTenantMedia(id);
+    this.log(actor, id, "download-url", "allowed", null);
+    return { document_id: id, url: documentContentUrl(apiBaseUrl, id), expires_in_seconds: 0 };
+  }
+
+  async tenantMediaContent(actor: AuthUser, id: UUID): Promise<DocumentContentResult> {
+    const document = this.requireTenantMedia(id);
+    if (!this.store.objectStorage) throw forbidden("Document object storage adapter is not configured for release acceptance");
+    const object = await this.store.objectStorage.getObject(document.storage_key);
+    if (!object) throw notFound("Document bytes are not available in private object storage.");
+    this.log(actor, id, "download-content", "allowed", null);
+    return {
+      body: object.body,
+      contentType: object.contentType || document.mime_type || "application/octet-stream",
+      fileName: document.file_name,
+      size: object.size,
+    };
+  }
+
+  private requireTenantMedia(id: UUID): DocumentMetadata {
+    const document = this.repository.find(id);
+    if (document.document_type !== "company_logo" && document.document_type !== "profile_photo") {
+      throw notFound("Document not found");
+    }
     return document;
   }
 
@@ -250,7 +351,7 @@ export class DocumentService {
     apiBaseUrl = ""
   ): Promise<{ document_id: UUID; url: string; expires_in_seconds: number }> {
     const document = this.repository.find(id);
-    if (!canAccessDocument(actor, document, "read")) {
+    if (!this.mayReadDocument(actor, document, true)) {
       this.log(actor, id, "download-url", "denied", "classification_policy");
       throw forbidden("Document access denied");
     }
@@ -258,19 +359,16 @@ export class DocumentService {
     if (!this.store.objectStorage) {
       throw forbidden("Document object storage adapter is not configured for release acceptance");
     }
-    const objectUrl = typeof document.metadata.object_url === "string" ? document.metadata.object_url : "";
-    const cloudinaryUrl = typeof document.metadata.cloudinary_url === "string" ? document.metadata.cloudinary_url : "";
-    const candidateUrl = objectUrl || cloudinaryUrl || await this.store.objectStorage.presignedGetUrl(document.storage_key, 900);
     return {
       document_id: id,
-      url: isBrowserOpenableUrl(candidateUrl) ? candidateUrl : documentContentUrl(apiBaseUrl, id),
-      expires_in_seconds: 900
+      url: documentContentUrl(apiBaseUrl, id),
+      expires_in_seconds: 0
     };
   }
 
   async downloadContent(actor: AuthUser, id: UUID): Promise<DocumentContentResult> {
     const document = this.repository.find(id);
-    if (!canAccessDocument(actor, document, "read")) {
+    if (!this.mayReadDocument(actor, document, true)) {
       this.log(actor, id, "download-content", "denied", "classification_policy");
       throw forbidden("Document access denied");
     }
@@ -280,7 +378,7 @@ export class DocumentService {
     const object = await this.store.objectStorage.getObject(document.storage_key);
     if (!object) {
       this.log(actor, id, "download-content", "denied", "object_not_available");
-      throw notFound("Document bytes are not available in the local object-storage adapter. Re-upload the file or disable mock uploads to use real Cloudinary storage.");
+      throw notFound("Document bytes are not available in private object storage.");
     }
     this.log(actor, id, "download-content", "allowed", null);
     return {
@@ -293,6 +391,9 @@ export class DocumentService {
 
   async delete(actor: AuthUser, id: UUID): Promise<DocumentDeleteResult> {
     const document = this.repository.find(id);
+    if (this.expenseReceiptReadDecision(actor, document, false) !== null) {
+      throw conflict("Expense receipt deletion requires a parent-authorized workflow");
+    }
     if (!canAccessDocument(actor, document, "write")) {
       this.log(actor, id, "delete", "denied", "classification_policy");
       throw forbidden("Document delete denied");
@@ -408,6 +509,9 @@ export class DocumentService {
 
   verify(actor: AuthUser, id: UUID): DocumentMetadata {
     const document = this.repository.find(id);
+    if (this.expenseReceiptReadDecision(actor, document, false) !== null) {
+      throw conflict("Expense receipt verification requires the expense workflow");
+    }
     if (!canAccessDocument(actor, document, "verify")) {
       this.log(actor, id, "verify", "denied", "classification_policy");
       throw forbidden("Document verification denied");
@@ -423,7 +527,7 @@ export class DocumentService {
       query.business_object_type && query.business_object_id
         ? this.repository.listForObject(query.business_object_type, query.business_object_id)
         : this.store.documents.filter((document) => !document.deleted_at);
-    const visible = base.filter((document) => canAccessDocument(actor, document, "read"));
+    const visible = base.filter((document) => this.mayReadDocument(actor, document, false));
     const start = (query.page - 1) * query.page_size;
     return {
       items: visible.slice(start, start + query.page_size),
@@ -435,7 +539,8 @@ export class DocumentService {
 
   accessLog(actor: AuthUser, id: UUID, page: number, pageSize: number) {
     const document = this.repository.find(id);
-    if (!canAccessDocument(actor, document, "audit")) {
+    if (!(this.expenseReceiptReadDecision(actor, document, false) ??
+      canAccessDocument(actor, document, "audit"))) {
       throw forbidden("Document access log denied");
     }
     const logs = this.repository.accessLogs(id);
@@ -464,10 +569,6 @@ export class DocumentService {
       created_at: nowIso()
     });
   }
-}
-
-function isBrowserOpenableUrl(url: string): boolean {
-  return /^https?:\/\//iu.test(url);
 }
 
 function documentContentUrl(apiBaseUrl: string, id: UUID): string {

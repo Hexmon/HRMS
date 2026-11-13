@@ -91,6 +91,46 @@ export async function apiRequest<T = ApiRecord>(
   return (await response.json()) as T;
 }
 
+export async function apiBlobRequest(
+  path: string,
+  options: Omit<ApiRequestOptions, "body"> = {},
+): Promise<Blob> {
+  if (!isApiEnabled()) {
+    throw new ApiUnavailableError(
+      "This feature is not connected to the HRMS server in this environment.",
+    );
+  }
+  await waitForClientRateLimit();
+  const headers = new Headers(options.headers);
+  const token = getApiAccessToken();
+  if (token && options.auth !== false) headers.set("Authorization", `Bearer ${token}`);
+
+  let response: Response;
+  try {
+    response = await fetch(buildUrl(path, options.query), {
+      method: options.method ?? "GET",
+      credentials: "include",
+      headers,
+      signal: options.signal,
+    });
+  } catch (error) {
+    throw new ApiUnavailableError(
+      "We could not reach the HRMS server. Please check your internet connection and try again.",
+      error,
+    );
+  }
+  if (!response.ok) {
+    const apiError = await apiErrorFromResponse(response);
+    if (response.status === 429) {
+      if (apiError.retryAfterSeconds != null) registerRetryAfter(apiError.retryAfterSeconds);
+      else registerDefaultCooldown();
+    }
+    if (response.status === 401 && options.auth !== false) notifyApiUnauthorized();
+    throw apiError;
+  }
+  return response.blob();
+}
+
 export async function withApiFallback<T>(apiCall: () => Promise<T>, fallback: () => T): Promise<T> {
   if (!isApiEnabled()) {
     if (isMockFallbackEnabled()) return fallback();

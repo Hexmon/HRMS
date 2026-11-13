@@ -76,7 +76,7 @@ The job starts isolated GitHub Actions service containers:
 
 PostgreSQL uses a dedicated `hrms_ci` user and `hrms_ci_test` database with a non-production, run-scoped password. The job exposes the isolated database through `TEST_DATABASE_URL`. `DATABASE_URL` is set only for the migration step, so the integration-test reset guard continues to verify that tests use their explicit test database.
 
-The job uses `NODE_ENV=test`, run-scoped CI-only JWT/demo credentials, mock Cloudinary storage, and log-only email delivery. `APP_ENV` is deliberately not forced at job scope so tests that validate production-mode configuration can derive the correct environment from their temporary `NODE_ENV` value. The job does not load `.env.local`, `.env.qa`, `.env.prod`, or any production credential. It does not call live Cloudinary, Resend, webhooks, production databases, or hosted services. No separate Redis, S3-compatible storage, worker, or email service is required by the current test adapters.
+The job uses `NODE_ENV=test`, run-scoped CI-only JWT/demo credentials, memory object storage, and log-only email delivery. `APP_ENV` is deliberately not forced at job scope so tests that validate production-mode configuration can derive the correct environment from their temporary `NODE_ENV` value. The job does not load `.env.local`, `.env.qa`, `.env.prod`, or any production credential. It does not call live R2, Resend, webhooks, production databases, or hosted services. No separate S3-compatible storage is required by ordinary unit/contract checks; the R2 adapter integration uses an explicitly disposable fixture when selected.
 
 ## Frontend Checks
 
@@ -139,7 +139,7 @@ The existing Render hook names are:
 
 Store hook values as GitHub environment or repository secrets; never as variables or committed text. No GitHub Actions variable is required by the workflow.
 
-Render still requires the application secrets documented in `secrets-checklist.md`, including isolated `DATABASE_URL`, JWT, Cloudinary, and optional Resend values. Vercel requires the matching environment's non-secret and secret frontend configuration from the tracked `.env.*.example` templates. These hosting-platform values are not exposed to pull-request jobs.
+Render still requires the application secrets documented in `secrets-checklist.md`, including isolated `DATABASE_URL`, JWT, private R2, and optional Resend values. Vercel requires the matching environment's non-secret and secret frontend configuration from the tracked `.env.*.example` templates. These hosting-platform values are not exposed to pull-request jobs.
 
 ## Rerunning A Failure
 

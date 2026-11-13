@@ -2,7 +2,7 @@
 
 Date: 2026-05-01
 
-Documents are stored through the backend Cloudinary object-storage adapter. Local/demo and test environments can use `CLOUDINARY_MOCK_UPLOADS=true` for credential-free flows; production must use real Cloudinary credentials with `CLOUDINARY_MOCK_UPLOADS=false`. API consumers never receive storage credentials.
+Documents are stored through the backend private object-storage adapter. Local and test environments use the in-memory adapter; every hosted environment must use a private Cloudflare R2 bucket with environment-isolated credentials. API consumers never receive storage credentials, object keys, bucket names, provider URLs, or provider metadata.
 
 ## List Documents
 
@@ -20,7 +20,7 @@ Optional filters:
 
 `POST /api/v1/documents`
 
-The endpoint accepts JSON metadata for generated/backend documents and `multipart/form-data` with a `file` field for browser uploads. Image files should be compressed by the frontend before upload; Cloudinary uploads also request upload-time quality optimization. PDF files can be compressed server-side before object storage with `PDF_COMPRESSION_ENABLED=true` and Ghostscript available at `PDF_COMPRESSION_BINARY` (default `gs`).
+The endpoint accepts JSON metadata for generated/backend documents and `multipart/form-data` with a `file` field for browser uploads. Image files should be compressed by the frontend before upload. PDF files can be compressed server-side before object storage with `PDF_COMPRESSION_ENABLED=true` and Ghostscript available at `PDF_COMPRESSION_BINARY` (default `gs`). Private bytes are downloaded only through the authenticated backend content route after authorization.
 
 ```json
 {
@@ -48,7 +48,7 @@ The path ticket id becomes the business object id.
 - `POST /api/v1/documents/{id}/verify`
 - `GET /api/v1/documents/{id}/access-log?page=1&page_size=25`
 
-`download-url` returns a backend-generated short-lived URL. It must not expose object-storage access keys.
+`download-url` returns the authenticated backend content endpoint. It is not a bearer capability: every byte request rechecks current authorization, and it must not expose object-storage credentials or locations.
 
 ## Upload Compression
 

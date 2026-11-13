@@ -26,7 +26,7 @@ PostgreSQL domain schemas
 
 Supporting services:
   - Valkey for session records, rate-limit state, and outbox stream publishing.
-  - Cloudinary-compatible storage for documents, profile photos, company logo, and media.
+  - Private Cloudflare R2 storage for documents, profile photos, company logo, and media; bytes remain behind backend authorization.
   - Resend for email verification and password reset delivery.
   - Background workers for outbox publishing and attendance auto punch-out.
 ```
@@ -111,7 +111,7 @@ The project intentionally avoids cross-schema SQL foreign keys. Domain relations
 ## Persistence And Events
 
 - `createMemoryDataStore()` supports tests and local generation tasks.
-- `createPostgresDataStore()` uses PostgreSQL plus Cloudinary object storage options.
+- `createPostgresDataStore()` uses PostgreSQL plus private R2 object-storage options.
 - Mutating routes trigger a targeted persistence flush when possible; otherwise the app logs and falls back to a full flush.
 - Business events are written to `platform.outbox_events`.
 - `OutboxWorker` publishes pending events to Valkey streams named like `hrms.<aggregate_type>`.
@@ -120,7 +120,7 @@ The project intentionally avoids cross-schema SQL foreign keys. Domain relations
 
 | Integration | Purpose | Main Code |
 | --- | --- | --- |
-| Cloudinary | Backend-owned media/document persistence. | `hrms_backend/src/platform/object-storage.ts` |
+| Cloudflare R2 | Private backend-owned media/document persistence. | `hrms_backend/src/platform/object-storage.ts` |
 | Resend | Email verification and password reset delivery. | `hrms_backend/src/platform/email/` |
 | Valkey | Sessions, rate limits, outbox stream publishing. | `hrms_backend/src/auth/index.ts`, `hrms_backend/src/workers/outbox-worker.ts` |
 | Neon/PostgreSQL | Hosted relational persistence. | `hrms_backend/src/platform/postgres-data-store.ts` |

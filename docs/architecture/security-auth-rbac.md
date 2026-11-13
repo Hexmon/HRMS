@@ -90,7 +90,7 @@ Production blockers:
 - `OPENAPI_PUBLIC=true` without approval
 - credentialed CORS reflecting arbitrary origins
 - frontend API mock fallback enabled
-- mock Cloudinary enabled
+- memory object storage enabled only for local/test
 - shared DB/Valkey across environments
 
 ## Rate Limits

@@ -25,7 +25,7 @@ const booleanEnv = z.preprocess((value) => {
   return value;
 }, z.boolean());
 
-const configSchema = z.object({
+export const configSchema = z.object({
   NODE_ENV: z.string().default("development"),
   APP_ENV: z.enum(["local", "development", "qa", "production"]).optional(),
   APP_VERSION: z.string().default("0.1.0"),
@@ -40,31 +40,29 @@ const configSchema = z.object({
   TEST_DATABASE_URL: z.string().optional(),
   VALKEY_URL: optionalValkeyUrl,
   HRMS_SEED_IF_EMPTY: booleanEnv.default(false),
-  CLOUDINARY_CLOUD_NAME: z.string().default("local-cloudinary-mock"),
-  CLOUDINARY_API_KEY: z.string().default("local-cloudinary-key"),
-  CLOUDINARY_API_SECRET: z.string().default("local-cloudinary-secret"),
-  CLOUDINARY_FOLDER: z.string().default("hawkaii-hrms"),
-  CLOUDINARY_RESOURCE_TYPE: z.enum(["auto", "image", "raw", "video"]).default("auto"),
-  CLOUDINARY_UPLOAD_TRANSFORMATION: z.string().default("q_auto:eco,f_auto"),
-  CLOUDINARY_MOCK_UPLOADS: booleanEnv.default(true),
+  OBJECT_STORAGE_DRIVER: z.enum(["memory", "r2"]).default("memory"),
+  R2_ACCOUNT_ID: z.string().default("local-r2-account"),
+  R2_ACCESS_KEY_ID: z.string().default("local-r2-access-key"),
+  R2_SECRET_ACCESS_KEY: z.string().default("local-r2-secret-key"),
+  R2_BUCKET_NAME: z.string().default("local-r2-bucket"),
+  R2_ENDPOINT: optionalUrl,
+  R2_REQUEST_TIMEOUT_MS: z.coerce.number().int().min(500).max(60_000).default(10_000),
+  R2_FORCE_PATH_STYLE: booleanEnv.default(false),
   MEDIA_UPLOAD_MAX_BYTES: z.coerce.number().int().min(128 * 1024).default(runtimeDefaults.MEDIA_UPLOAD_MAX_BYTES),
   MEDIA_IMAGE_MAX_WIDTH: z.coerce.number().int().min(256).max(4096).default(runtimeDefaults.MEDIA_IMAGE_MAX_WIDTH),
   MEDIA_IMAGE_MAX_HEIGHT: z.coerce.number().int().min(256).max(4096).default(runtimeDefaults.MEDIA_IMAGE_MAX_HEIGHT),
   MEDIA_IMAGE_JPEG_QUALITY: z.coerce.number().min(0.5).max(0.95).default(runtimeDefaults.MEDIA_IMAGE_JPEG_QUALITY),
   MEDIA_ALLOWED_MIME_TYPES: z.string().default(runtimeDefaults.MEDIA_ALLOWED_MIME_TYPES),
-  MEDIA_CLOUDINARY_UPLOAD_TRANSFORMATION: z.string().default(runtimeDefaults.MEDIA_CLOUDINARY_UPLOAD_TRANSFORMATION),
   COMPANY_LOGO_MAX_BYTES: z.coerce.number().int().min(50 * 1024).default(runtimeDefaults.COMPANY_LOGO_MAX_BYTES),
   COMPANY_LOGO_MAX_WIDTH: z.coerce.number().int().min(128).max(2048).default(runtimeDefaults.COMPANY_LOGO_MAX_WIDTH),
   COMPANY_LOGO_MAX_HEIGHT: z.coerce.number().int().min(128).max(2048).default(runtimeDefaults.COMPANY_LOGO_MAX_HEIGHT),
   COMPANY_LOGO_JPEG_QUALITY: z.coerce.number().min(0.5).max(0.95).default(runtimeDefaults.COMPANY_LOGO_JPEG_QUALITY),
   COMPANY_LOGO_ALLOWED_MIME_TYPES: z.string().default(runtimeDefaults.COMPANY_LOGO_ALLOWED_MIME_TYPES),
-  COMPANY_LOGO_CLOUDINARY_TRANSFORMATION: z.string().default(runtimeDefaults.COMPANY_LOGO_CLOUDINARY_TRANSFORMATION),
   PROFILE_PHOTO_MAX_BYTES: z.coerce.number().int().min(50 * 1024).default(runtimeDefaults.PROFILE_PHOTO_MAX_BYTES),
   PROFILE_PHOTO_MAX_WIDTH: z.coerce.number().int().min(128).max(2048).default(runtimeDefaults.PROFILE_PHOTO_MAX_WIDTH),
   PROFILE_PHOTO_MAX_HEIGHT: z.coerce.number().int().min(128).max(2048).default(runtimeDefaults.PROFILE_PHOTO_MAX_HEIGHT),
   PROFILE_PHOTO_JPEG_QUALITY: z.coerce.number().min(0.5).max(0.95).default(runtimeDefaults.PROFILE_PHOTO_JPEG_QUALITY),
   PROFILE_PHOTO_ALLOWED_MIME_TYPES: z.string().default(runtimeDefaults.PROFILE_PHOTO_ALLOWED_MIME_TYPES),
-  PROFILE_PHOTO_CLOUDINARY_TRANSFORMATION: z.string().default(runtimeDefaults.PROFILE_PHOTO_CLOUDINARY_TRANSFORMATION),
   PDF_COMPRESSION_ENABLED: booleanEnv.default(true),
   PDF_COMPRESSION_BINARY: z.string().default("gs"),
   PDF_COMPRESSION_QUALITY: z.enum(["screen", "ebook", "printer", "prepress", "default"]).default("ebook"),
@@ -129,11 +127,44 @@ const configSchema = z.object({
     requireField("FRONTEND_URL");
     requireField("RESEND_WEBHOOK_SECRET");
   }
-  if (config.CLOUDINARY_MOCK_UPLOADS && !localLikeEnvironments.has(appEnv)) {
+  if (config.OBJECT_STORAGE_DRIVER === "memory" &&
+      (config.NODE_ENV === "production" || !localLikeEnvironments.has(appEnv))) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
-      path: ["CLOUDINARY_MOCK_UPLOADS"],
-      message: "CLOUDINARY_MOCK_UPLOADS can only be true in local or development APP_ENV environments."
+      path: ["OBJECT_STORAGE_DRIVER"],
+      message: "Memory object storage can only be used in local or development APP_ENV environments."
+    });
+  }
+  if (config.OBJECT_STORAGE_DRIVER === "r2") {
+    for (const field of ["R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET_NAME"] as const) {
+      if (!config[field] || /^replace-|^local-|mock/iu.test(config[field])) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [field],
+          message: `${field} must be an environment-owned private R2 value when OBJECT_STORAGE_DRIVER is r2.`
+        });
+      }
+    }
+    if (!config.R2_ENDPOINT && !/^[a-f0-9]{32}$/iu.test(config.R2_ACCOUNT_ID)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["R2_ACCOUNT_ID"],
+        message: "R2_ACCOUNT_ID must be a 32-character Cloudflare account identifier."
+      });
+    }
+    if (!/^[a-z0-9](?:[a-z0-9-]{1,61}[a-z0-9])?$/u.test(config.R2_BUCKET_NAME)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["R2_BUCKET_NAME"],
+        message: "R2_BUCKET_NAME must be a 3-63 character lowercase bucket name."
+      });
+    }
+  }
+  if (["qa", "production"].includes(appEnv) && config.R2_ENDPOINT) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["R2_ENDPOINT"],
+      message: "Hosted environments derive the Cloudflare R2 endpoint from R2_ACCOUNT_ID; R2_ENDPOINT is local-integration only."
     });
   }
   if (appEnv === "production") {
@@ -147,21 +178,12 @@ const configSchema = z.object({
         });
       }
     }
-    if (config.CLOUDINARY_MOCK_UPLOADS) {
+    if (config.OBJECT_STORAGE_DRIVER !== "r2") {
       context.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["CLOUDINARY_MOCK_UPLOADS"],
-        message: "CLOUDINARY_MOCK_UPLOADS cannot be true in production."
+        path: ["OBJECT_STORAGE_DRIVER"],
+        message: "OBJECT_STORAGE_DRIVER must be r2 in production."
       });
-    }
-    for (const field of ["CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"] as const) {
-      if (!config[field] || /^replace-|^local-|mock/iu.test(config[field])) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [field],
-          message: `${field} must be a real Cloudinary value in production.`
-        });
-      }
     }
   }
 }).transform((config) => ({

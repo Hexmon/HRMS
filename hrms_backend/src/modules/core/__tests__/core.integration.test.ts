@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { randomUUID } from "node:crypto";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { authHeader, loginAs } from "#testing";
 import { buildRealApp } from "../../../__tests__/real-infra.js";
@@ -311,6 +312,8 @@ describe("core hierarchy API", () => {
     expect(importPoll.statusCode).toBe(200);
     expect(importPoll.json().job_id).toBe(importJob.json().job_id);
 
+    const exportDocumentCount = app.store.documents.length;
+    const exportEventCount = app.store.outbox.length;
     const exportJob = await app.inject({
       method: "POST",
       url: "/api/v1/core/users/exports",
@@ -321,16 +324,10 @@ describe("core hierarchy API", () => {
         columns: ["employee_code", "full_name", "roles"]
       }
     });
-    expect(exportJob.statusCode).toBe(200);
-    expect(exportJob.json()).toMatchObject({
-      status: "ready",
-      format: "csv",
-      adapter: `${app.store.objectStorage?.kind}-generated-csv`,
-      download_document_id: expect.any(String)
-    });
-    await expect(app.store.objectStorage?.statObject(app.store.documents.find((document) => document.id === exportJob.json().download_document_id)?.storage_key ?? "")).resolves.toMatchObject({
-      size: expect.any(Number)
-    });
+    expect(exportJob.statusCode).toBe(409);
+    expect(exportJob.json()).not.toHaveProperty("download_document_id");
+    expect(app.store.documents).toHaveLength(exportDocumentCount);
+    expect(app.store.outbox).toHaveLength(exportEventCount);
 
     const xlsxExport = await app.inject({
       method: "POST",
@@ -342,22 +339,10 @@ describe("core hierarchy API", () => {
         columns: ["employee_code", "full_name", "roles"]
       }
     });
-    expect(xlsxExport.statusCode).toBe(200);
-    expect(xlsxExport.json()).toMatchObject({
-      status: "ready",
-      format: "xlsx",
-      adapter: `${app.store.objectStorage?.kind}-generated-xlsx`,
-      file_name: expect.stringMatching(/\.xlsx$/u),
-      download_document_id: expect.any(String)
-    });
-    const xlsxDocument = app.store.documents.find((document) => document.id === xlsxExport.json().download_document_id);
-    expect(xlsxDocument).toMatchObject({
-      mime_type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      document_type: "core_user_export_export"
-    });
-    await expect(app.store.objectStorage?.statObject(xlsxDocument?.storage_key ?? "")).resolves.toMatchObject({
-      size: expect.any(Number)
-    });
+    expect(xlsxExport.statusCode).toBe(409);
+    expect(xlsxExport.json()).not.toHaveProperty("download_document_id");
+    expect(app.store.documents).toHaveLength(exportDocumentCount);
+    expect(app.store.outbox).toHaveLength(exportEventCount);
 
     const forbiddenExport = await app.inject({
       method: "POST",
@@ -408,6 +393,7 @@ describe("core hierarchy API", () => {
   it("uploads employee profile photos through the document storage policy", async () => {
     const admin = await loginAs(app, "ADM");
     const employee = await loginAs(app, "E1");
+    const peer = await loginAs(app, "E2");
 
     const policy = await app.inject({
       method: "GET",
@@ -448,9 +434,93 @@ describe("core hierarchy API", () => {
       mime_type: "image/jpeg"
     });
     expect(document?.metadata).toMatchObject({
-      cloudinary_upload_compressed: app.store.objectStorage?.kind === "cloudinary",
       stored_size_bytes: body.length
     });
+
+    const content = await app.inject({
+      method: "GET",
+      url: `/api/v1/documents/${document!.id}/content`,
+      headers: authHeader(employee.token)
+    });
+    expect(content.statusCode).toBe(200);
+    expect(content.headers["content-type"]).toBe("image/jpeg");
+    expect(content.rawPayload).toEqual(body);
+
+    const getObject = vi.spyOn(app.store.objectStorage!, "getObject");
+    const callsBeforeDeniedReads = getObject.mock.calls.length;
+    const peerRead = await app.inject({
+      method: "GET",
+      url: `/api/v1/documents/${document!.id}/content`,
+      headers: authHeader(peer.token)
+    });
+    const unknownRead = await app.inject({
+      method: "GET",
+      url: "/api/v1/documents/00000000-0000-4000-8000-000000000099/content",
+      headers: authHeader(peer.token)
+    });
+    expect(peerRead.statusCode).toBe(404);
+    expect(peerRead.json().code).toBe(unknownRead.json().code);
+    expect(peerRead.json().message).toBe(unknownRead.json().message);
+    expect(getObject.mock.calls).toHaveLength(callsBeforeDeniedReads);
+
+    await app.store.pgPool!.query(
+      "UPDATE core.users SET deleted_at=now() WHERE id=$1",
+      [employee.user.id],
+    );
+    const deletedTargetRead = await app.inject({
+      method: "GET",
+      url: `/api/v1/documents/${document!.id}/content`,
+      headers: authHeader(admin.token)
+    });
+    expect(deletedTargetRead.statusCode).toBe(404);
+    expect(deletedTargetRead.json().message).toBe(unknownRead.json().message);
+    expect(getObject.mock.calls).toHaveLength(callsBeforeDeniedReads);
+    await app.store.pgPool!.query(
+      "UPDATE core.users SET deleted_at=NULL WHERE id=$1",
+      [employee.user.id],
+    );
+
+    const companyA = app.store.userSessionPreferences.find(
+      (preference) => preference.user_id === employee.user.id,
+    )!.company_id!;
+    const companyB = randomUUID();
+    await app.store.pgPool!.query(
+      "INSERT INTO platform.company_profiles (id, company_name, company_slug, status, bootstrap_completed_at) VALUES ($1, 'Profile Company B', $2, 'active', now())",
+      [companyB, `profile-company-b-${companyB}`],
+    );
+    await app.store.pgPool!.query(
+      "UPDATE platform.user_session_preferences SET company_id=$2 WHERE user_id=$1",
+      [admin.user.id, companyB],
+    );
+    const callsBeforeForeignCompanyRead = getObject.mock.calls.length;
+    const foreignCompanyRead = await app.inject({
+      method: "GET",
+      url: `/api/v1/documents/${document!.id}/content`,
+      headers: authHeader(admin.token),
+    });
+    expect(foreignCompanyRead.statusCode).toBe(404);
+    expect(getObject.mock.calls).toHaveLength(callsBeforeForeignCompanyRead);
+
+    await app.store.pgPool!.query(
+      "UPDATE platform.user_session_preferences SET company_id=$2 WHERE user_id=$1",
+      [admin.user.id, companyA],
+    );
+    await app.store.pgPool!.query(
+      "UPDATE core.users SET employment_status='inactive' WHERE id=$1",
+      [admin.user.id],
+    );
+    const callsBeforeInactiveActorRead = getObject.mock.calls.length;
+    const inactiveActorRead = await app.inject({
+      method: "GET",
+      url: `/api/v1/documents/${document!.id}/content`,
+      headers: authHeader(admin.token),
+    });
+    expect(inactiveActorRead.statusCode).toBe(401);
+    expect(getObject.mock.calls).toHaveLength(callsBeforeInactiveActorRead);
+    await app.store.pgPool!.query(
+      "UPDATE core.users SET employment_status='active' WHERE id=$1",
+      [admin.user.id],
+    );
 
     const remove = await app.inject({
       method: "DELETE",

@@ -19,7 +19,7 @@ Use this runbook when QA, hosted dev, or production has a user-visible issue.
 | Frontend blank or route fails | Vercel deployment, browser console, frontend env `VITE_API_BASE_URL`. |
 | API health down | Render API logs, DB/Valkey/object storage dependency status. |
 | Login/session fails | cookies, CORS, `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS`, JWT/session secrets, Valkey. |
-| Upload/download fails | Cloudinary config, document service logs, object storage dependency in readiness. |
+| Upload/download fails | R2 bucket credential scope, document policy logs, bounded object-storage readiness. |
 | Email verification fails | Resend delivery mode, sender/domain, webhook secret, auth token records. |
 | Approval/workflow wrong | backend module service/policy, role mapping, expected version conflicts. |
 | Worker backlog | outbox worker logs, Valkey connectivity, dead-letter count. |

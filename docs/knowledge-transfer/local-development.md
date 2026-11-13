@@ -160,6 +160,6 @@ The frontend has mirrored API docs under `hrms-client/docs/api/`; keep them in s
 | Login fails after refresh | Check cookie settings, `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS`, and `COOKIE_SECURE` for local vs hosted mode. |
 | Frontend calls wrong API | Check `VITE_API_BASE_URL` and browser devtools network tab. |
 | Mock data appears unexpectedly | Check `VITE_API_ENABLED` and `VITE_API_MOCK_FALLBACK`; production mode forces fallback off. |
-| Uploads do not persist locally | Local may use `CLOUDINARY_MOCK_UPLOADS=true`; use real Cloudinary values and set mock mode false to test persistence. |
+| Uploads do not persist locally | The memory adapter is process-local; use the repository's disposable MinIO/R2-compatible integration setup when testing persistence across instances or restarts. |
 | PDF compression fails locally | Install Ghostscript or rely on fail-open behavior if `PDF_COMPRESSION_FAIL_OPEN=true`. |
 

@@ -7,7 +7,6 @@ export interface ProfilePhotoPolicy {
   jpeg_quality: number;
   allowed_mime_types: string[];
   output_mime_type: "image/jpeg";
-  cloudinary_transformation?: string;
 }
 
 export interface PreparedProfilePhotoFile {

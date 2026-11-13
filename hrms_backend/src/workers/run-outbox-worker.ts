@@ -43,7 +43,6 @@ const store = await createPostgresDataStore({
       imageJpegQuality: numberFromEnv("MEDIA_IMAGE_JPEG_QUALITY", runtimeDefaults.MEDIA_IMAGE_JPEG_QUALITY),
       allowedMimeTypes: listFromEnv("MEDIA_ALLOWED_MIME_TYPES", runtimeDefaults.MEDIA_ALLOWED_MIME_TYPES),
       imageOutputMimeType: "image/jpeg",
-      cloudinaryTransformation: process.env.MEDIA_CLOUDINARY_UPLOAD_TRANSFORMATION ?? runtimeDefaults.MEDIA_CLOUDINARY_UPLOAD_TRANSFORMATION
     },
     companyLogoUploads: {
       maxBytes: numberFromEnv("COMPANY_LOGO_MAX_BYTES", runtimeDefaults.COMPANY_LOGO_MAX_BYTES),
@@ -52,21 +51,25 @@ const store = await createPostgresDataStore({
       imageJpegQuality: numberFromEnv("COMPANY_LOGO_JPEG_QUALITY", runtimeDefaults.COMPANY_LOGO_JPEG_QUALITY),
       allowedMimeTypes: listFromEnv("COMPANY_LOGO_ALLOWED_MIME_TYPES", runtimeDefaults.COMPANY_LOGO_ALLOWED_MIME_TYPES),
       imageOutputMimeType: "image/jpeg",
-      cloudinaryTransformation: process.env.COMPANY_LOGO_CLOUDINARY_TRANSFORMATION ?? runtimeDefaults.COMPANY_LOGO_CLOUDINARY_TRANSFORMATION
     }
   },
   seedIfEmpty: false
 });
 
 function objectStorageOptions() {
+  const driver = process.env.OBJECT_STORAGE_DRIVER as "memory" | "r2" | undefined;
+  if (process.env.NODE_ENV === "production" && driver !== "r2") {
+    throw new Error("Hosted outbox workers require OBJECT_STORAGE_DRIVER=r2.");
+  }
   return {
-    cloudName: process.env.CLOUDINARY_CLOUD_NAME ?? "local-cloudinary-mock",
-    apiKey: process.env.CLOUDINARY_API_KEY ?? "local-cloudinary-key",
-    apiSecret: process.env.CLOUDINARY_API_SECRET ?? "local-cloudinary-secret",
-    folder: process.env.CLOUDINARY_FOLDER ?? "hawkaii-hrms",
-    resourceType: (process.env.CLOUDINARY_RESOURCE_TYPE as "auto" | "image" | "raw" | "video" | undefined) ?? "auto",
-    uploadTransformation: process.env.MEDIA_CLOUDINARY_UPLOAD_TRANSFORMATION ?? process.env.CLOUDINARY_UPLOAD_TRANSFORMATION ?? "q_auto:eco,f_auto",
-    mockUploads: booleanFromEnv("CLOUDINARY_MOCK_UPLOADS", true)
+    driver: driver ?? "memory",
+    accountId: process.env.R2_ACCOUNT_ID ?? "local-r2-account",
+    accessKeyId: process.env.R2_ACCESS_KEY_ID ?? "local-r2-access-key",
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY ?? "local-r2-secret-key",
+    bucket: process.env.R2_BUCKET_NAME ?? "local-r2-bucket",
+    endpoint: process.env.R2_ENDPOINT,
+    requestTimeoutMs: positiveIntegerFromEnv("R2_REQUEST_TIMEOUT_MS", 10_000),
+    forcePathStyle: booleanFromEnv("R2_FORCE_PATH_STYLE", false),
   };
 }
 

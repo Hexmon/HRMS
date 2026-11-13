@@ -46,7 +46,7 @@ The path ticket id becomes the business object id.
 - `POST /api/v1/documents/{id}/verify`
 - `GET /api/v1/documents/{id}/access-log?page=1&page_size=25`
 
-`download-url` returns a backend-generated short-lived URL. It must not expose object-storage access keys.
+`download-url` returns the authenticated backend content endpoint. It is not a bearer capability: every byte request rechecks current authorization, and it must not expose object-storage credentials or locations.
 
 ## Classification
 
