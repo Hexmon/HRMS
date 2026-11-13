@@ -150,7 +150,10 @@ describe("holiday create form retry", () => {
         expectedVersion: 4,
       },
     ];
-    const conflict = Object.assign(new Error("Conflict"), { status: 409 });
+    const conflict = Object.assign(new Error("Conflict"), {
+      status: 409,
+      details: { reason: "stale_version" },
+    });
     Object.setPrototypeOf(conflict, (await import("@/shared/api")).ApiError.prototype);
     mock.mutateAsync.mockRejectedValueOnce(conflict).mockResolvedValueOnce({});
     mock.refetch.mockResolvedValueOnce({
@@ -197,6 +200,39 @@ describe("holiday create form retry", () => {
       expect(mock.toastSuccess).toHaveBeenCalledWith("Regional Day Updated updated"),
     );
     expect(mock.mutateAsync.mock.calls[1]?.[0].input.expected_version).toBe(5);
+  });
+
+  it("keeps an editable draft for a duplicate conflict without showing stale-version recovery", async () => {
+    mock.holidays = [
+      {
+        id: firstId,
+        name: "Regional Day",
+        date: "2026-12-01",
+        region: "IN",
+        optional: false,
+        expectedVersion: 4,
+      },
+    ];
+    const conflict = Object.assign(new Error("Holiday with the same name already exists."), {
+      status: 409,
+      details: { reason: "duplicate_holiday" },
+    });
+    Object.setPrototypeOf(conflict, (await import("@/shared/api")).ApiError.prototype);
+    mock.mutateAsync.mockRejectedValueOnce(conflict);
+
+    render(<HolidaysPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit Regional Day" }));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Duplicate Day" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(mock.toastError).toHaveBeenCalledTimes(1));
+    expect(mock.toastError.mock.calls[0]?.[0]).toContain(
+      "Holiday with the same name already exists.",
+    );
+    expect(screen.getByLabelText("Name")).toHaveValue("Duplicate Day");
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled();
+    expect(screen.queryByText("A newer version is available")).not.toBeInTheDocument();
+    expect(mock.refetch).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the same ID and draft after a network error, refetches, and resets only after confirmed success", async () => {

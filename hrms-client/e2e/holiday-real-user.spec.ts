@@ -2,10 +2,21 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
 
 const API_BASE_URL = process.env.E2E_API_BASE_URL ?? "http://127.0.0.1:3001";
 const LOCAL_DEMO_PASSWORD = process.env.E2E_LOCAL_DEMO_PASSWORD ?? "LocalDev@123";
+const EXPECTED_APP_ENV = process.env.E2E_EXPECTED_APP_ENV ?? "local";
 
 test.beforeAll(async ({ request }) => {
+  expect(
+    process.env.E2E_ALLOW_HOLIDAY_MUTATIONS,
+    "Set E2E_ALLOW_HOLIDAY_MUTATIONS=true only for an isolated local or QA environment.",
+  ).toBe("true");
+  expect(["local", "qa"]).toContain(EXPECTED_APP_ENV);
   const ready = await request.get(`${API_BASE_URL}/api/v1/health/ready`, { timeout: 5_000 });
   expect(ready.ok(), `Holiday browser QA requires the local API at ${API_BASE_URL}`).toBe(true);
+  const identity = (await ready.json()) as { app_env?: string };
+  expect(
+    identity.app_env,
+    "API environment must match the explicitly selected test environment.",
+  ).toBe(EXPECTED_APP_ENV);
 });
 
 test.describe("holiday real-user journey", () => {
@@ -17,6 +28,9 @@ test.describe("holiday real-user journey", () => {
     const firstName = `QA Regional Day ${suffix}`;
     const secondName = `QA Optional Day ${suffix}`;
     const adminUpdatedName = `${firstName} Updated`;
+    const hrName = `QA HR Day ${suffix}`;
+    const hrUpdatedName = `${hrName} Updated`;
+    const forgedName = `QA Employee Forged ${suffix}`;
     const date = currentMonthDate();
 
     const adminContext = await browser.newContext();
@@ -57,6 +71,11 @@ test.describe("holiday real-user journey", () => {
     await login(hrPage, "hrm@example.test");
     await openHolidays(hrPage);
     await expect(hrPage.getByRole("button", { name: "Add holiday" })).toBeVisible();
+    await addHoliday(hrPage, { name: hrName, date, region: "IN-HR", optional: false });
+    await hrPage.getByRole("button", { name: `Edit ${hrName}` }).click();
+    await hrPage.getByLabel("Name", { exact: true }).fill(hrUpdatedName);
+    await saveHoliday(hrPage, 200);
+    await expect(hrPage.getByRole("button", { name: `Edit ${hrUpdatedName}` })).toBeVisible();
 
     const employeeContext = await browser.newContext();
     const employeePage = await employeeContext.newPage();
@@ -67,6 +86,34 @@ test.describe("holiday real-user journey", () => {
     await expect(
       employeePage.getByRole("button", { name: `Edit ${adminUpdatedName}` }),
     ).toHaveCount(0);
+    await expect(employeePage.getByText(hrUpdatedName, { exact: true })).toBeVisible();
+
+    const forgedId = crypto.randomUUID();
+    const deniedStatus = await employeePage.evaluate(
+      async ({ apiBaseUrl, id, name, holidayDate }) => {
+        const token = window.sessionStorage.getItem("hawkaii_api_access_token");
+        const response = await fetch(`${apiBaseUrl}/api/v1/holidays/${id}`, {
+          method: "PUT",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            name,
+            date: holidayDate,
+            region: "FORGED",
+            optional: false,
+          }),
+        });
+        return response.status;
+      },
+      { apiBaseUrl: API_BASE_URL, id: forgedId, name: forgedName, holidayDate: date },
+    );
+    expect(deniedStatus).toBe(403);
+    await adminPage.reload({ waitUntil: "networkidle" });
+    await expect(adminPage.getByText(hrUpdatedName, { exact: true })).toBeVisible();
+    await expect(adminPage.getByText(forgedName, { exact: true })).toHaveCount(0);
 
     await Promise.all([adminContext.close(), hrContext.close(), employeeContext.close()]);
   });
@@ -111,7 +158,15 @@ async function login(page: Page, email: string): Promise<void> {
   await page.goto("/login", { waitUntil: "networkidle" });
   await page.locator("#email").fill(email);
   await page.locator("#password").fill(LOCAL_DEMO_PASSWORD);
+  const loginResponse = page.waitForResponse(
+    (response) =>
+      response.request().method() === "POST" &&
+      new URL(response.url()).pathname === "/api/v1/auth/login",
+  );
   await page.getByRole("button", { name: /sign in/i }).click();
+  const response = await loginResponse;
+  expect(response.ok()).toBe(true);
+  expect(new URL(response.url()).origin).toBe(new URL(API_BASE_URL).origin);
   await expect(page).toHaveURL(/\/dashboard/);
 }
 

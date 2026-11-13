@@ -7,8 +7,10 @@ import { AssetStatuses, EmploymentStatuses, ExpenseSubTypes, Roles } from "#shar
 import { seedIds } from "../src/platform/data-store.js";
 import { getQaSeedEmails } from "../src/platform/seed-personas.js";
 import { loadRuntimeEnv, requireEnv } from "./env.js";
+import { requireQaPersonaIdentity, requireQaSeedTarget } from "./qa-seed-safety.js";
 
 loadRuntimeEnv();
+requireQaSeedTarget(process.env);
 const localDemoPassword = getLocalDemoPassword();
 const qaSeedEmails = getQaSeedEmails();
 
@@ -52,8 +54,14 @@ await client.connect();
 try {
   await client.query("BEGIN");
 
-  const defaultCompany = await client.query<{ company_id: string | null }>(
-    "SELECT company_id FROM platform.user_session_preferences WHERE user_id = $1",
+  const defaultCompany = await client.query<{ company_id: string }>(
+    `SELECT preference.company_id
+     FROM platform.user_session_preferences preference
+     JOIN core.users admin ON admin.id = preference.user_id
+     JOIN platform.company_profiles company ON company.id = preference.company_id
+     WHERE preference.user_id = $1
+       AND admin.deleted_at IS NULL AND admin.employment_status = 'active'
+       AND company.status = 'active'`,
     [seedIds.admin],
   );
   const defaultCompanyId = defaultCompany.rows[0]?.company_id;
@@ -103,7 +111,7 @@ try {
 
   for (const user of users) {
     const [id, employeeCode, email, fullName, departmentId, designationId, managerUserId, hierarchyPath, role, status] = user;
-    await client.query(
+    const seededUser = await client.query<{ id: string }>(
       `INSERT INTO core.users (
         id, employee_code, email, full_name, department_id, designation_id, manager_user_id,
         hierarchy_path, employment_status, timezone, joined_on, terminated_on
@@ -113,15 +121,18 @@ try {
       SET email = EXCLUDED.email, full_name = EXCLUDED.full_name, department_id = EXCLUDED.department_id,
           designation_id = EXCLUDED.designation_id, manager_user_id = EXCLUDED.manager_user_id,
           hierarchy_path = EXCLUDED.hierarchy_path, employment_status = EXCLUDED.employment_status,
-          updated_at = now(), deleted_at = NULL`,
+          updated_at = now(), deleted_at = NULL
+       RETURNING id`,
       [id, employeeCode, email, fullName, departmentId, designationId, managerUserId, hierarchyPath, status]
     );
+    requireQaPersonaIdentity(id, seededUser.rows[0]?.id, employeeCode);
     await client.query(
-      `INSERT INTO core.user_roles (id, user_id, role_key, status, effective_from)
-       VALUES ($1, $2, $3, 'active', '2026-01-01')
+      `INSERT INTO core.user_roles (id, company_id, user_id, role_key, status, effective_from)
+       VALUES ($1, $2, $3, $4, 'active', '2026-01-01')
        ON CONFLICT (id) DO UPDATE
-       SET user_id = EXCLUDED.user_id, role_key = EXCLUDED.role_key, status = EXCLUDED.status, updated_at = now()`,
-      [uuidFromName(`qa-role-${employeeCode}`), id, role]
+       SET company_id = EXCLUDED.company_id, user_id = EXCLUDED.user_id,
+           role_key = EXCLUDED.role_key, status = EXCLUDED.status, updated_at = now()`,
+      [uuidFromName(`qa-role-${employeeCode}`), defaultCompanyId, id, role]
     );
     await client.query(
       `INSERT INTO platform.user_session_preferences
@@ -155,8 +166,10 @@ try {
 
   const personaPreferences = await client.query<{ count: number }>(
     `SELECT count(*)::int AS count
-     FROM platform.user_session_preferences
-     WHERE company_id = $1 AND user_id = ANY($2::uuid[])`,
+     FROM platform.user_session_preferences preference
+     JOIN platform.company_profiles company ON company.id = preference.company_id
+     WHERE preference.company_id = $1 AND preference.user_id = ANY($2::uuid[])
+       AND company.status = 'active'`,
     [defaultCompanyId, users.map(([id]) => id)],
   );
   if (personaPreferences.rows[0]?.count !== users.length) {

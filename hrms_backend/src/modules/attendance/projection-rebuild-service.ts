@@ -803,6 +803,7 @@ async function loadUserContext(client: Pick<PoolClient | Pool, "query">, userId:
        ON preference.user_id = users.id
      LEFT JOIN core.user_roles user_role
        ON user_role.user_id = users.id
+      AND user_role.company_id = preference.company_id
       AND user_role.status = 'active'
       AND user_role.deleted_at IS NULL
       AND user_role.effective_from <= CURRENT_DATE

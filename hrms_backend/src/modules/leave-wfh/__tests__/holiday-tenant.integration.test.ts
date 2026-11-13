@@ -8,6 +8,7 @@ import { buildApp } from "../../../app.js";
 import { buildRealApp } from "../../../__tests__/real-infra.js";
 
 const originalDatabaseUrl = process.env.DATABASE_URL;
+const holidayRlsRole = "hrms_holiday_rls_test";
 const holidayBody = (name: string, expectedVersion?: number) => ({
   name, date: "2026-12-26", region: "A Region", optional: false,
   ...(expectedVersion === undefined ? {} : { expected_version: expectedVersion }),
@@ -104,8 +105,11 @@ describe("holiday tenant transaction boundary", () => {
     // attempts. The fixture assigns its B preference and Admin role directly;
     // this does not exercise the product's transfer-approval workflow.
     const bAdminUser = app.store.users.find((user) => user.employee_code === "AUD")!;
-    await pool.query("UPDATE platform.user_session_preferences SET company_id = $2 WHERE user_id = $1", [bAdminUser.id, companyB]);
-    await pool.query("INSERT INTO core.user_roles (user_id, role_key, status, effective_from) VALUES ($1, $2, 'active', CURRENT_DATE)", [bAdminUser.id, Roles.Admin]);
+    await pool.query(
+      "UPDATE platform.user_session_preferences SET company_id = $2, active_role = $3 WHERE user_id = $1",
+      [bAdminUser.id, companyB, Roles.Admin],
+    );
+    await pool.query("INSERT INTO core.user_roles (company_id, user_id, role_key, status, effective_from) VALUES ($1, $2, $3, 'active', CURRENT_DATE)", [companyB, bAdminUser.id, Roles.Admin]);
 
     const other = await secondApp();
     const adminOther = await loginAs(other, "ADM");
@@ -138,7 +142,7 @@ describe("holiday tenant transaction boundary", () => {
     expect(freshList.json().holidays.some((row: { id: string }) => row.id === ownId)).toBe(true);
 
     const hr = await loginAs(app, "E1");
-    await pool.query("INSERT INTO core.user_roles (user_id, role_key, status, effective_from) VALUES ($1, $2, 'active', CURRENT_DATE)", [hr.user.id, Roles.HRManager]);
+    await pool.query("INSERT INTO core.user_roles (company_id, user_id, role_key, status, effective_from) VALUES ($1, $2, $3, 'active', CURRENT_DATE)", [companyA, hr.user.id, Roles.HRManager]);
     // The selected Employee role and the hydrated JWT can lag the newly
     // assigned HR role; the SQL command must use current effective assignments.
     const hrId = randomUUID();
@@ -150,15 +154,32 @@ describe("holiday tenant transaction boundary", () => {
     // carry the old A preference. A's historical holiday keeps A ownership.
     await pool.query("UPDATE platform.user_session_preferences SET company_id = $2 WHERE user_id = $1", [admin.user.id, companyB]);
     const transferred = await app.inject({ method: "PUT", url: `/api/v1/holidays/${ownId}`, headers: authHeader(admin.token), payload: holidayBody("Moved Actor", 1) });
-    expect(transferred.statusCode).toBe(404);
+    expect(transferred.statusCode).toBe(403);
     expect(await holiday(ownId)).toMatchObject({ company_id: companyA, name: "A Own", version: 1 });
     expect(await events(ownId)).toHaveLength(1);
     const afterTransfer = await app.inject({ method: "GET", url: "/api/v1/holidays?year=2026&page=1&page_size=25", headers: authHeader(admin.token) });
-    expect(afterTransfer.json().holidays.some((row: { id: string }) => row.id === foreignId)).toBe(true);
-    expect(afterTransfer.json().holidays.some((row: { id: string }) => row.id === ownId)).toBe(false);
+    expect(afterTransfer.statusCode).toBe(403);
+
+    const ungrantedBId = randomUUID();
+    const ungrantedB = await app.inject({ method: "PUT", url: `/api/v1/holidays/${ungrantedBId}`,
+      headers: authHeader(admin.token), payload: holidayBody("No Carried Role") });
+    expect(ungrantedB.statusCode).toBe(403);
+    expect(await holiday(ungrantedBId)).toBeUndefined();
+    expect(await events(ungrantedBId)).toEqual([]);
+
+    // A transfer must explicitly grant the approved roles in the new company;
+    // changing the company preference never carries A's Admin grant into B.
+    await pool.query(
+      "INSERT INTO core.user_roles (company_id, user_id, role_key, status, effective_from) VALUES ($1, $2, $3, 'active', CURRENT_DATE)",
+      [companyB, admin.user.id, Roles.Admin],
+    );
+    const afterBGrant = await app.inject({ method: "GET", url: "/api/v1/holidays?year=2026&page=1&page_size=25", headers: authHeader(admin.token) });
+    expect(afterBGrant.statusCode).toBe(200);
+    expect(afterBGrant.json().holidays.some((row: { id: string }) => row.id === foreignId)).toBe(true);
+    expect(afterBGrant.json().holidays.some((row: { id: string }) => row.id === ownId)).toBe(false);
 
     // The old global UNIQUE(region,date,name) must not reject a legitimate
-    // same-label holiday in another company after holiday migration 0067.
+    // same-label holiday in another company after holiday migration 0065.
     const bSameLabelId = randomUUID();
     const bSameLabel = await app.inject({ method: "PUT", url: `/api/v1/holidays/${bSameLabelId}`,
       headers: authHeader(admin.token), payload: holidayBody("A Own") });
@@ -190,17 +211,20 @@ describe("holiday tenant transaction boundary", () => {
 
     const stale = await app.inject({ method: "PUT", url: `/api/v1/holidays/${id}`, headers: authHeader(admin.token), payload: holidayBody("Stale", 99) });
     expect(stale.statusCode).toBe(409);
+    expect(stale.json().details).toMatchObject({ reason: "stale_version", id });
     expect((await holiday(id))?.name).toBe("First");
     expect(await events(id)).toHaveLength(1);
 
     const missingVersion = await app.inject({ method: "PUT", url: `/api/v1/holidays/${id}`, headers: authHeader(admin.token), payload: holidayBody("Changed Without Version") });
     expect(missingVersion.statusCode).toBe(409);
+    expect(missingVersion.json().details).toMatchObject({ reason: "missing_expected_version", id });
     expect((await holiday(id))?.version).toBe(1);
     expect(await events(id)).toHaveLength(1);
 
     const duplicateId = randomUUID();
     const duplicate = await app.inject({ method: "PUT", url: `/api/v1/holidays/${duplicateId}`, headers: authHeader(admin.token), payload: holidayBody("first") });
     expect(duplicate.statusCode).toBe(409);
+    expect(duplicate.json().details).toMatchObject({ reason: "duplicate_holiday", holiday_id: id });
     expect(await holiday(duplicateId)).toBeUndefined();
     expect(await events(duplicateId)).toEqual([]);
 
@@ -212,12 +236,13 @@ describe("holiday tenant transaction boundary", () => {
     );
     const failed = await app.inject({ method: "PUT", url: `/api/v1/holidays/${id}`, headers: authHeader(admin.token), payload: holidayBody("Should Roll Back", 1) });
     expect(failed.statusCode).toBe(409);
+    expect(failed.json().details).toEqual({ reason: "write_conflict" });
     expect(await holiday(id)).toMatchObject({ company_id: companyA, name: "First", version: 1 });
     expect(await events(id)).toHaveLength(1);
     expect(app.store.holidays.find((row) => row.id === id)).toMatchObject({ name: "First", version: 1 });
 
     // The selected UI role can be Employee while an effective Admin role is assigned.
-    await pool.query("INSERT INTO core.user_roles (user_id, role_key, status, effective_from) VALUES ($1, $2, 'active', CURRENT_DATE)", [admin.user.id, Roles.Employee]);
+    await pool.query("INSERT INTO core.user_roles (company_id, user_id, role_key, status, effective_from) VALUES ($1, $2, $3, 'active', CURRENT_DATE)", [companyA, admin.user.id, Roles.Employee]);
     await pool.query("UPDATE platform.user_session_preferences SET active_role = $2 WHERE user_id = $1", [admin.user.id, Roles.Employee]);
     const allowed = await app.inject({ method: "PUT", url: `/api/v1/holidays/${randomUUID()}`, headers: authHeader(admin.token), payload: holidayBody("Role Union") });
     expect(allowed.statusCode).toBe(200);
@@ -306,4 +331,91 @@ describe("holiday tenant transaction boundary", () => {
     expect([...await events(firstId), ...await events(secondId)]).toHaveLength(1);
     expect([firstId, secondId]).toContain(rows[0]!.id);
   });
+
+  it("enforces company isolation for direct SQL through a restricted runtime role", async () => {
+    const admin = await loginAs(app, "ADM");
+    const companyA = app.store.userSessionPreferences.find((row) => row.user_id === admin.user.id)?.company_id;
+    expect(companyA).toBeTruthy();
+    const companyB = randomUUID();
+    const holidayA = randomUUID();
+    const holidayB = randomUUID();
+    const blocked = randomUUID();
+    await pool.query(
+      "INSERT INTO platform.company_profiles (id, company_name, company_slug, status) VALUES ($1, 'Holiday RLS B', $2, 'active')",
+      [companyB, `holiday-rls-${companyB}`],
+    );
+    await pool.query(
+      `INSERT INTO leave_wfh.holidays (id, company_id, name, holiday_date, region, optional)
+       VALUES ($1, $2, 'Tenant A Day', '2026-12-28', 'RLS', false),
+              ($3, $4, 'Tenant B Day', '2026-12-28', 'RLS', false)`,
+      [holidayA, companyA, holidayB, companyB],
+    );
+
+    await dropHolidayRlsRole();
+    await pool.query(
+      `CREATE ROLE ${holidayRlsRole}
+         NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS`,
+    );
+    await pool.query(`GRANT ${holidayRlsRole} TO CURRENT_USER`);
+    await pool.query(`GRANT USAGE ON SCHEMA leave_wfh TO ${holidayRlsRole}`);
+    await pool.query(
+      `GRANT SELECT, INSERT, UPDATE, DELETE ON leave_wfh.holidays TO ${holidayRlsRole}`,
+    );
+
+    const client = await pool.connect();
+    try {
+      await client.query(`SET ROLE ${holidayRlsRole}`);
+
+      await client.query("BEGIN");
+      expect((await client.query("SELECT id FROM leave_wfh.holidays")).rows).toEqual([]);
+      await client.query("COMMIT");
+
+      await client.query("BEGIN");
+      await client.query("SELECT set_config('app.current_company_id', $1, true)", [companyA]);
+      const visible = await client.query<{ id: string; company_id: string }>(
+        "SELECT id, company_id FROM leave_wfh.holidays ORDER BY id",
+      );
+      expect(visible.rows.some((row) => row.id === holidayA)).toBe(true);
+      expect(visible.rows.some((row) => row.id === holidayB)).toBe(false);
+      expect(visible.rows.every((row) => row.company_id === companyA)).toBe(true);
+      await expect(
+        client.query(
+          `INSERT INTO leave_wfh.holidays (id, company_id, name, holiday_date, region, optional)
+           VALUES ($1, $2, 'Blocked B Day', '2026-12-29', 'RLS', false)`,
+          [blocked, companyB],
+        ),
+      ).rejects.toMatchObject({ code: "42501" });
+      await client.query("ROLLBACK");
+
+      await client.query("BEGIN");
+      await client.query("SELECT set_config('app.current_company_id', $1, true)", [companyA]);
+      await expect(
+        client.query("UPDATE leave_wfh.holidays SET company_id = $2 WHERE id = $1", [holidayA, companyB]),
+      ).rejects.toMatchObject({ code: "42501" });
+      await client.query("ROLLBACK");
+    } finally {
+      await client.query("RESET ROLE").catch(() => undefined);
+      client.release();
+      await dropHolidayRlsRole();
+    }
+
+    expect(await holiday(holidayA)).toMatchObject({ company_id: companyA, name: "Tenant A Day" });
+    expect(await holiday(holidayB)).toMatchObject({ company_id: companyB, name: "Tenant B Day" });
+    expect(await holiday(blocked)).toBeUndefined();
+  });
+
+  async function dropHolidayRlsRole(): Promise<void> {
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '${holidayRlsRole}') THEN
+          REVOKE SELECT, INSERT, UPDATE, DELETE ON leave_wfh.holidays FROM ${holidayRlsRole};
+          REVOKE USAGE ON SCHEMA leave_wfh FROM ${holidayRlsRole};
+          REVOKE ${holidayRlsRole} FROM CURRENT_USER;
+          DROP ROLE ${holidayRlsRole};
+        END IF;
+      END
+      $$;
+    `);
+  }
 });

@@ -64,10 +64,11 @@ try {
         context.designation_id, persona.managerId, persona.path],
     );
     await client.query(
-      `INSERT INTO core.user_roles (id, user_id, role_key, status, effective_from)
-       VALUES ($1, $2, $3, 'active', '2026-01-01')
-       ON CONFLICT (id) DO UPDATE SET role_key = EXCLUDED.role_key, status = EXCLUDED.status`,
-      [idFor(`${persona.key}-role`), userId, persona.role],
+      `INSERT INTO core.user_roles (id, company_id, user_id, role_key, status, effective_from)
+       VALUES ($1, $2, $3, $4, 'active', '2026-01-01')
+       ON CONFLICT (id) DO UPDATE SET company_id = EXCLUDED.company_id,
+         role_key = EXCLUDED.role_key, status = EXCLUDED.status`,
+      [idFor(`${persona.key}-role`), context.company_id, userId, persona.role],
     );
     await client.query(
       `INSERT INTO platform.user_credentials (id, user_id, password_hash, status)

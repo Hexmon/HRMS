@@ -492,9 +492,10 @@ class PostgresPersistence {
       `SELECT ur.role_key FROM core.user_roles ur
        JOIN core.roles role ON role.role_key = ur.role_key
        WHERE ur.user_id = $1 AND ur.status = 'active' AND ur.deleted_at IS NULL
+         AND ur.company_id = $2
          AND ur.effective_from <= CURRENT_DATE AND (ur.effective_to IS NULL OR ur.effective_to >= CURRENT_DATE)
          AND role.status = 'active' AND role.deleted_at IS NULL${forWrite ? " FOR SHARE OF ur, role" : ""}`,
-      [actorUserId],
+      [actorUserId, assignment.company_id],
     );
     const assignedRoles = new Set(roles.rows.map((row) => row.role_key));
     if (!assignedRoles.has(assignment.active_role)) {
@@ -518,6 +519,7 @@ class PostgresPersistence {
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
       const companyId = await this.holidayCompanyForActor(client, actorUserId, false);
+      await client.query("SELECT set_config('app.current_company_id', $1, true)", [companyId]);
       const holidays = await this.loadHolidays(client, { companyId, year });
       await client.query("COMMIT");
       return holidays;
@@ -535,6 +537,7 @@ class PostgresPersistence {
     try {
       await client.query("BEGIN");
       const companyId = await this.holidayCompanyForActor(client, actorUserId, true);
+      await client.query("SELECT set_config('app.current_company_id', $1, true)", [companyId]);
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1::text))", [companyId]);
       const existing = await client.query<Record<string, unknown> & { company_id: UUID | null; version: number; deleted_at: Date | null; name: string; region: string; optional: boolean }>(
         "SELECT * FROM leave_wfh.holidays WHERE id = $1 FOR UPDATE",
@@ -551,10 +554,18 @@ class PostgresPersistence {
         saved = mapHolidayRow(row);
       } else {
         if (row && input.expected_version === undefined) {
-          throw conflict("expected_version is required to change an existing holiday.", { aggregate: "holiday", id });
+          throw conflict("expected_version is required to change an existing holiday.", {
+            aggregate: "holiday",
+            id,
+            reason: "missing_expected_version",
+          });
         }
         if (row && row.version !== input.expected_version) {
-          throw conflict("Holiday was modified by another actor.", { aggregate: "holiday", id });
+          throw conflict("Holiday was modified by another actor.", {
+            aggregate: "holiday",
+            id,
+            reason: "stale_version",
+          });
         }
         const duplicate = await client.query<{ id: UUID }>(
           `SELECT id FROM leave_wfh.holidays
@@ -563,7 +574,10 @@ class PostgresPersistence {
           [companyId, region, input.date, name, id],
         );
         if (duplicate.rows[0]) {
-          throw conflict("Holiday with the same name, date, and region already exists.", { holiday_id: duplicate.rows[0].id });
+          throw conflict("Holiday with the same name, date, and region already exists.", {
+            holiday_id: duplicate.rows[0].id,
+            reason: "duplicate_holiday",
+          });
         }
         const changed = row
           ? await client.query(
@@ -589,7 +603,9 @@ class PostgresPersistence {
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
       if ((error as { code?: string }).code === "23505") {
-        throw conflict("Holiday update conflicted with an existing record or event.");
+        throw conflict("Holiday update conflicted with an existing record or event.", {
+          reason: "write_conflict",
+        });
       }
       throw error;
     } finally {
@@ -657,7 +673,8 @@ class PostgresPersistence {
                   WHERE ur.role_key IS NOT NULL AND ur.status = 'active' AND ur.deleted_at IS NULL
                 ), '{}') AS roles
          FROM core.users u
-         LEFT JOIN core.user_roles ur ON ur.user_id = u.id
+         LEFT JOIN platform.user_session_preferences preference ON preference.user_id = u.id
+         LEFT JOIN core.user_roles ur ON ur.user_id = u.id AND ur.company_id = preference.company_id
          WHERE u.id = $1 GROUP BY u.id`,
         [userId],
       );
@@ -1363,7 +1380,8 @@ class PostgresPersistence {
         u.timezone, u.joined_on, u.terminated_on, u.deleted_at, u.version,
         COALESCE(array_agg(DISTINCT ur.role_key) FILTER (WHERE ur.role_key IS NOT NULL AND ur.status = 'active' AND ur.deleted_at IS NULL), '{}') AS roles
       FROM core.users u
-      LEFT JOIN core.user_roles ur ON ur.user_id = u.id
+      LEFT JOIN platform.user_session_preferences preference ON preference.user_id = u.id
+      LEFT JOIN core.user_roles ur ON ur.user_id = u.id AND ur.company_id = preference.company_id
       GROUP BY u.id
       ORDER BY u.employee_code
     `);
@@ -2948,14 +2966,23 @@ class PostgresPersistence {
           user.version,
         ],
       );
-      await client.query("DELETE FROM core.user_roles WHERE user_id = $1", [
-        user.id,
-      ]);
+      const roleCompanyId = this.store.userSessionPreferences.find(
+        (preference) => preference.user_id === user.id,
+      )?.company_id;
+      if (user.roles.length > 0 && !roleCompanyId) {
+        throw new Error(`Cannot persist roles without a company assignment for user ${user.id}`);
+      }
+      if (roleCompanyId) {
+        await client.query(
+          "DELETE FROM core.user_roles WHERE user_id = $1 AND company_id = $2",
+          [user.id, roleCompanyId],
+        );
+      }
       for (const role of user.roles) {
         await client.query(
-          `INSERT INTO core.user_roles (user_id, role_key, status, effective_from)
-           VALUES ($1, $2, 'active', '2026-01-01')`,
-          [user.id, role],
+          `INSERT INTO core.user_roles (company_id, user_id, role_key, status, effective_from)
+           VALUES ($1, $2, $3, 'active', '2026-01-01')`,
+          [roleCompanyId, user.id, role],
         );
       }
     }
