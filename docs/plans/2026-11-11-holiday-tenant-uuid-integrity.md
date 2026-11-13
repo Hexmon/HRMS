@@ -55,23 +55,27 @@ Implemented in the clean worktree:
 - Stable backend conflict reasons; the UI distinguishes stale, duplicate and generic failures.
 - Partial case-insensitive Holiday uniqueness; unsafe leaf-only RLS was removed after lifecycle review.
 - Company-owned role grants and transfer approval were removed from this slice because their broader identity/authentication design is unfinished.
-- QA seed checks for explicit safe target, active Admin/company, deterministic persona identity and active persona company preference.
+- The composite QA seed now checks the explicit safe target before either the broad release seed or QA extras can mutate data. It also checks active Admin/company, deterministic persona identity and active persona company preference.
 - Browser journey performs real Admin and HR mutations and a forged Employee PUT denial.
 
-Verified before the latest security changes: backend unit 8/8, frontend component 8/8, PostgreSQL 4/4 and Docker Chromium 1/1 at `10c8970a`; PostgreSQL 4/4 at `75f67754` after the migration rename. These are historical revision-specific results, not final-head evidence.
+Exact executable revision `8e0b04128db4deb836119aa84e00ae9399c637df` passed on 2026-11-13:
 
-Latest focused development evidence before the RLS correction: backend unit/seed-guard 16/16, frontend component 9/9, backend/frontend typecheck passed and PostgreSQL 5/5 passed. Independent QA then found the leaf-only RLS lifecycle incompatibility; final exact-head reruns are required after its removal.
+- backend unit 563/563 and contracts 27/27;
+- focused Holiday/seed guard 18/18 and frontend Holiday component 9/9;
+- disposable PostgreSQL Holiday transaction suite 4/4, including Admin/HR foreign-ID denial, rollback, concurrency, cross-company duplicate allowance and soft-delete key reuse;
+- clean migration/schema verification with 65 migrations, no unresolved cross-schema foreign keys, API docs and consumer contract checks;
+- backend/frontend typecheck, backend lint, frontend lint with 43 pre-existing warnings and no errors, and both production builds;
+- guarded seed production refusal before connection, isolated QA extras seed, and Docker Chromium real-user journey 1/1 (Admin, HR, Employee and two-tab stale edit).
+
+The trusted changed-coverage runner cannot execute on this candidate because QA-S25-003 is not present in `release-01` or this branch. Running the external validator against this exact SHA correctly failed closed on the missing candidate-owned scripts; that is a dependency blocker, not coverage evidence.
 
 ## Remaining Completion Gates
 
-1. Re-run the four-case disposable PostgreSQL suite, including Admin and HR foreign-UUID denial.
-2. Run migration-history/schema-drift/no-cross-schema-FK checks against the dedicated disposable database.
-3. Run backend/frontend lint, API contract/consumer checks, production builds and task change gate.
-4. Run the guarded QA seed, then the exact-head Docker Chromium journey with Admin, HR and Employee.
-5. Measure changed executable lines/branches against `origin/release-01`; list any remaining uncovered path rather than weakening the gate.
-6. Obtain exact-head independent senior, security/database and QA review; resolve material findings.
-7. Update Sprint 25 task/case rows only with exact verified evidence.
-8. Push the clean branch and create the isolated-QA PR/handoff. Do not merge or deploy without explicit owner approval.
+1. Land/reconcile QA-S25-003 in the approved dependency order, then measure changed executable lines/branches against `origin/release-01`; do not treat the current tooling refusal as a pass.
+2. Obtain independent senior, security/database and QA re-review of the final documentation head after the seed-ordering fix; resolve material findings.
+3. Update Sprint 25 task/case rows only with the verified evidence above and keep coverage/hosted/manual gates pending.
+4. Push the clean branch and create the isolated-QA PR/handoff. Do not merge or deploy without explicit owner approval.
+5. In hosted isolated QA, repeat migration preflight, smoke checks and the listed human journeys before QA acceptance.
 
 ## Hosted QA Requirements
 
