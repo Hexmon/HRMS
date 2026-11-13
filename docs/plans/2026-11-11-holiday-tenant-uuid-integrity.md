@@ -1,88 +1,93 @@
-# TEN-S25-016-HOL — Holiday UUID tenant integrity
+# TEN-S25-016-HOL — Isolated Holiday QA candidate
 
-## Objective And Success Criteria
+## Objective
 
-- Prevent a company actor from writing another company's holiday through `PUT /api/v1/holidays/:id`.
-- Authorized HR/Admin can create and update their own holidays; a foreign UUID leaves SQL, outbox and every running instance unchanged.
-- Same-company create/update remains usable; stale versions and duplicate names fail; two-instance and rollback evidence agrees with the response.
-- Two companies may use the same holiday date, region and name; a lost create response may be retried with the original UUID without a second version or outbox event.
+Prepare one coherent Sprint 25 product slice for isolated QA: active Admin and HR users can create and edit their company holidays; Employees can read but cannot mutate; another company cannot read or change the record by UUID; row and outbox commit atomically; stale and duplicate conflicts remain recoverable in the UI.
 
-## Scope
+This is a QA-candidate plan, not deployment authorization or production acceptance.
 
-- In: holiday PUT authorization, persistence transaction, response flush selection, outbox, GET read consistency, stable frontend create/edit UUID and version handling, multi-holiday calendar rendering, and focused regression.
-- Out: office-calendar policy and historical leave/timesheet calculations (TEN-S25-025, DEC-Q11), broad leave/WFH ownership (TEN-S25-014), other full-store writers.
-- Roles/tenants: active A/B Admin, HR Manager, Employee; local disposable PostgreSQL only.
+## Candidate Boundary
 
-## Clean QA Candidate Reconciliation — 2026-11-13
+- Branch: `sprint-25/ten-s25-016-holiday-qa`, cut directly from `origin/release-01=32b1358e9e96eac4346031e8077cbf311bdd1582`.
+- The branch contains no unfinished Asset implementation and no candidate-owned changed-coverage workflow.
+- The old stacked Holiday branch and PR are historical only and must not be deployed.
+- Product surface: Holiday list/calendar, Admin/HR create and versioned edit, Employee read-only view, direct API authorization, PostgreSQL persistence, transactional outbox and QA seed/browser harness.
+- Out of scope: office-specific calendar policy, leave/timesheet historical calculations, broad leave/WFH tenant remediation and hosted deployment.
 
-- The deployable candidate is `sprint-25/ten-s25-016-holiday-qa`, cut directly from the current `origin/release-01`. It contains no Asset implementation and no candidate-controlled changed-coverage workflow.
-- The older stacked Holiday branch and PR remain preserved as historical work. They must not be deployed because their ancestry includes unfinished Asset and QA-infrastructure changes.
-- Because `release-01` currently ends at migration 0064, this clean candidate owns `0065_holiday_company_unique_constraint.sql`. Any later Asset branch must rebase and take the next available migration numbers; applying 0067 first would make the repository migration order unsafe.
-- Local exact-head evidence at commit `10c8970a` passed backend unit 8/8, frontend component 8/8, disposable PostgreSQL integration 4/4, backend/frontend typecheck, backend lint, frontend lint with 43 pre-existing warnings and no errors, both production builds, API documentation verification, and the Docker Chromium Admin/HR/Employee journey 1/1. The migration-number correction requires a new exact-head PostgreSQL run and re-review before this evidence can become the final candidate record.
-- The browser journey found and fixed three test-oracle defects plus a real QA-seed defect: QA personas now receive and verify a company session preference copied from the release Admin company. No credential value is stored in tracked files or evidence.
+## Approved Rules And Security Invariants
 
-## Evidence And Decisions
+- A client UUID never grants ownership. A foreign holiday UUID returns 404 after actor/company authorization and causes no row, event or in-memory effect.
+- A new UUID creates; a missing UUID with `expected_version` is an edit intent and returns 404.
+- An unchanged same-UUID retry is idempotent. A changed existing holiday requires the current version.
+- Same-company duplicate name/date/region is case-insensitive and rejected. Soft-deleted rows do not reserve the key. Different companies may use the same key.
+- DEC-031 authorizes the union of current roles only inside the company that granted them. Selecting an Employee UI view does not remove another valid same-company role, but changing company context never carries an old-company Admin/HR grant.
+- Missing database tenant context fails closed for restricted runtime roles.
 
-- At QA parent `eb6e94a8`, `LeaveWfhRepository.upsertHoliday` treats a foreign ID as absent and pushes a same-ID A row; `PostgresPersistence.flushLeaveWfh` upserts by ID without a company match. `/holidays/:id` selects full-store flush. See `qa-artifacts/hrms/holiday-foreign-id-intake-2026-11-11/pending-holiday-foreign-uuid-cases.md`.
-- Independent disposable SQL probe at original `87618f88`: A Admin PUT B UUID returned 200; B SQL row retained B company but acquired A fields; a misleading event committed; second instance saw corruption. Employee PUT returned 403; new A UUID returned 200. This is historical pre-fix evidence.
-- A client ID cannot authorize a foreign record. Return 404 without naming its company and perform no write. Preserve PUT-create for a genuinely unused UUID. The differing 404/200 responses still expose an existence oracle to someone holding candidate UUIDs; fully indistinguishable behavior requires a separate create/update API decision.
-- A new UUID needs no `expected_version`; a missing UUID with `expected_version` is an edit intent and returns 404 without creating a row or event. An identical normalized retry of an existing UUID is a no-op even if the client missed the first response. Any changed update of an existing UUID requires its current `expected_version`, so two editors cannot silently overwrite each other.
-- A disposable fully migrated PostgreSQL database still had legacy `holidays_region_holiday_date_name_key` from migration 0004; migration 0027 dropped a differently named index. Migration 0028 already makes `company_id` NOT NULL and installs a full company-scoped unique index. Ordered holiday migration 0067 removes only the confirmed global constraint. Historical NULL company rows are rejected by 0028; this leaf does not assign an invented tenant to them.
-- Asset PR #118 (`2a682119`) already owns migrations 0065 and 0066. This holiday migration was initially numbered 0065 in an isolated worktree and was renumbered to 0067 before stacking. #118 must be merged/applied first; the migration runner does not safely apply a lower pending ID after a higher one. The final combined 0065/0066/0067 chain and shared persistence-file overlap need lead reconciliation and exact-head verification.
-- The service compares holiday names case-insensitively while migration 0067's index is case-sensitive. The SQL command serializes writes per company and performs the case-insensitive duplicate check inside that transaction, so supported API writes remain correct. A durable expression-index follow-up must be numbered only after the already-owned 0068–0071 migration chain; introducing 0072 into this narrow QA stack would make those lower migrations out-of-order later.
+## Database And Deployment Order
 
-## Implementation Steps
+`release-01` ends at migration 0064. This clean candidate owns:
 
-| Status | Step | Evidence/notes |
+1. `0065_holiday_company_unique_constraint.sql`: remove the legacy global constraint, add the partial case-insensitive company key, enable and force Holiday RLS, and create the company policy using transaction-local `app.current_company_id`.
+2. `0066_company_scoped_user_roles.sql`: add role-grant company ownership, backfill only from the current single-company preference, fail on unresolved ownership, make it required, and add company-scoped lookup/active-role uniqueness.
+
+The API resolves the actor/company before setting the transaction-local RLS context. The migration is forward-only after scoped writes resume. Old API instances must be drained before migration. Later Asset work must rebase and use migration numbers after 0066. See `docs/runbooks/holiday-sql-cutover.md`.
+
+## Changed Behaviour And Required Evidence
+
+| Area | Required result | Evidence gate |
 | --- | --- | --- |
-| In progress | Add failing-before regression for foreign UUID and SQL collision | Existing disposable SQL failure recorded |
-| Implemented, review pending | Make holiday write a company-authorized atomic SQL command with outbox; exclude only this exact route from full flush | SQL role/company locks, owner check, one event; no memory mutation before commit |
-| Implemented, review pending | Keep GET current for company and preserve isolated memory-mode behavior | Request-local SQL list; memory mode denies foreign/deleted UUID reuse |
-| Implemented, review pending | Remove global holiday uniqueness; align declared company ownership | 0067 drops the live legacy constraint after asset 0065/0066; cross-company equal label/date/region is allowed, same-company duplicate remains rejected |
-| Implemented, review pending | Make create retries safe from UI through SQL/outbox | Stable draft UUID, refetch after uncertain result, unchanged command no-op, changed update requires current version |
-| Implemented, verification pending | Complete the visible update and calendar journeys | Admin/HR edit sends the displayed version, preserves a stale draft after 409/refetch, and the calendar renders every same-day regional holiday |
-| Deferred to ordered migration follow-up | Add a durable case-insensitive expression index | Application transaction already enforces the rule; do not introduce 0072 before owned migrations 0068–0071 |
-| Pending | Run targeted checks, changed coverage, senior and independent QA | Exact revision required |
-| Pending | Commit, push, draft release-01 PR; publish/read back sheet cases when access exists | Stack on #116/#117 |
+| Admin/HR | Create and edit through the real UI/API | Component plus real Chromium journey |
+| Employee | Controls hidden and forged direct PUT denied 403 | Browser API attempt plus SQL integration no-row/no-outbox oracle |
+| Tenant UUID | A cannot read/change B; B can still read/edit | Real PostgreSQL A/B integration |
+| Transfer/roles | Preference change alone denies; explicit B grant enables | Real PostgreSQL integration |
+| Conflicts | Only `reason=stale_version` triggers stale recovery; duplicate remains editable | Backend response and component tests |
+| Transaction | Row and outbox commit together; injected event failure rolls back | Real PostgreSQL integration |
+| Concurrency/retry | One current-version edit wins; duplicate race creates one; unchanged retry emits no event | Two-instance PostgreSQL integration |
+| Database defense | Restricted role sees only current company; cross-company insert/update denied | RLS integration with `NOBYPASSRLS` role |
+| QA safety | Explicit local/QA opt-in and exact DB-name confirmation; production refused | Seed guard unit tests and isolated seed run |
+| QA identity | Employee-code collision fails before dependent persona records | Guard regression and isolated collision rehearsal |
 
-## Test Design And Shared Tracker
+## Current Implementation Status — 2026-11-13
 
-- Sprint 25 leaf `TEN-S25-016-HOL`, under parent TEN-S25-016; case IDs `S25-035-HOL-U/P/N/F` without an additional parent estimate. Full local bodies and pre-fix probe: `qa-artifacts/hrms/holiday-foreign-id-intake-2026-11-11/pending-holiday-foreign-uuid-cases.md`. The four leaf cases are published at `Sprint 25 Test Cases!A489:T492`, read back through the Sheets API and visually checked; all remain `Not Tested` until exact candidate evidence satisfies their complete steps.
-- U: A Admin/HR creates unused A UUID then updates it; correct company/version and one committed event per successful transition; B unchanged; Employee denied.
-- P: A Admin/HR PUT B UUID with absent/current/stale version; non-disclosing error; no A duplicate, B mutation, event or memory ghost, including a second instance and retry. Same-name A/B values independent.
-- N: malformed ID/body, protected client fields, missing UUID with supplied update version, stale/missing update version, same-company duplicate name/date/region; no write/event. A/B equal labels are allowed after holiday 0067.
-- F: concurrent A/B writes, SQL failure after row update before event commit, lost response/same-ID retry and restart; SQL/outbox/GET agree. Browser journey remains a separate Not Tested dependency.
-- Owner Anurag Kumar. Post-fix cases Not Tested until exact-head execution; historical foreign-ID denial at `87618f88` Failed.
-- The isolated SQL suite at the uncommitted worktree passed its initial focused 3/3 cases and the existing leave/WFH suite passed 2/2 after the first implementation pass. It covered Admin and HR roles, foreign IDs, old session after transfer, stale version, duplicate name, role revocation, outbox rollback, same-company concurrent version checks, second-instance read and stale full flush. Expanded migration/retry checks require a final rerun. This does not complete all `S25-035-HOL-*` bodies.
-- Expanded SQL reruns against one shared disposable Docker PostgreSQL database were **red due to fixture setup**, not a proven holiday command failure. A parallel two-file run hit three 30-second `buildRealApp` hook timeouts while files competed for the same schema-reset advisory lock. A serial `--maxWorkers=1` run had two 30-second setup timeouts, then a reset deadlock because timed-out async setup continued into the next case; the new holiday file was 1/4 and the existing leave/WFH file 2/2. Both runs dropped their unique databases and left Valkey DB 13 empty. No red case is retroactively marked Passed.
-- The expanded SQL verification before renumbering ran each of the four holiday test cases as a separate `pnpm exec vitest run --project integration --maxWorkers=1 src/modules/leave-wfh/__tests__/holiday-tenant.integration.test.ts -t <case>` invocation against its own unique disposable Docker PostgreSQL DB. All 4/4 invocations passed (total Vitest durations 21.55, 19.19, 23.08, 19.52 seconds; individual case plus fixture durations 17.79, 15.59, 19.30, 15.81 seconds). Each database was dropped and Valkey DB 13 returned size zero. This covered A/B equal labels after the then-numbered holiday 0065; foreign UUID 404 with no SQL/outbox/memory effect; fresh effective role union and revocation; changed update version 409; unchanged retry no new event/version; injected outbox failure rollback; one-winner/one-conflict same-ID edit; stale full flush/restart; and case-insensitive two-instance duplicate create with exactly one row/event. The bounded fixture hook is 120 seconds; command assertions retain the normal test timeout. A 0067 rerun after stacking on #118 is required.
-- After renumbering to 0067 and moving the component test outside the frontend route directory, `./scripts/agent/verify-change.sh --base sprint-25/qa-s25-003` passed task-locally: backend unit 548/548, contracts 27/27, migration history/schema drift 65/65 with the intentional 0065/0066 gap, no unresolved cross-schema FKs, API docs/consumer, frontend unit 4/4, lint/typecheck, route/contract guards and Vercel SSR HTTP 200. The driver restored ignored `.env.test` byte-for-byte, dropped its unique database and flushed Valkey DB 13 to size zero. A preceding gate attempt failed only at Vercel SSR because the test driver exported `NODE_ENV=test` into a production build; reproducing the same build with `NODE_ENV` unset returned HTTP 200. The component test's initial location under `src/routes` also produced a harmless route warning, resolved by moving it to `src/domains/leave-wfh/__tests__`.
-- Lead review then identified absent UUID plus supplied `expected_version` being treated as create. SQL and memory fallback now return 404 without row/outbox change; a missing-ID SQL test passed 1/1 (other three skipped) in 19.05 seconds in a new disposable database, and backend unit 7/7, frontend component 2/2, both typechecks, API docs/consumer passed. That database was dropped and Valkey DB 13 size zero. The full task-local gate above predates this final guard; the combined exact-head asset+holiday gate is required after the lead stacks #118.
-- Lead stacked the unpublished holiday commit onto asset head `2a682119`, preserving both SQL command implementations in the only content conflict. Independent senior/security source review at the resulting clean `1fbdc30e` found no new P0/P1, and independent QA source review found no foreign-UUID bypass; neither reviewer ran tests. QA found a P1 date-only UI timezone shift and missing independent B-owner read/edit proof, plus a P2 revoked-role no-effect oracle gap. The subsequent lead follow-up uses date-only month comparison and UTC display formatting, adds a negative-timezone regression, tests a separate B actor's GET/edit after A denial, verifies no row/event/fresh-instance visibility after role revocation, and rejects undocumented holiday body fields to match the existing OpenAPI `additionalProperties: false` contract. Those edits are not covered by the `1fbdc30e` review and require exact-head re-review.
-- Four independent combined-stack SQL integration invocations passed 4/4 on the follow-up WIP (foreign/B owner 20.50s, roles/protected/rollback 19.33s, version race 22.05s, duplicate race 19.66s). Each used a fresh guarded Docker PostgreSQL database with migrations 0065/0066/0067, confirmed the asset command-results table, asset writer trigger, recovery assignment identity, absent global holiday constraint and company holiday index, then dropped the database. Final matching temporary DB count was 0, Valkey DB 13 size 0 and `.env.test` hash unchanged. Frontend date/retry unit 4/4 under `TZ=America/Los_Angeles` includes a rendered December list/calendar regression, backend memory unit 7/7, backend lint and both typechecks passed after the follow-up; final combined change gate remains pending.
+Implemented in the clean worktree:
 
-## Verification
+- Tenant-authorized SQL GET/PUT, atomic outbox, optimistic versioning and idempotent unchanged retry.
+- Admin/HR edit UI, stale-draft preservation, explicit latest-version load and multiple same-day calendar rendering.
+- Stable backend conflict reasons; the UI distinguishes stale, duplicate and generic failures.
+- Partial case-insensitive Holiday uniqueness and Holiday RLS with transaction-local company context.
+- Company-owned role grants so old-company roles do not authorize a newly selected company.
+- QA seed checks for explicit safe target, active Admin/company, deterministic persona identity and active persona company preference.
+- Browser journey performs real Admin and HR mutations and a forged Employee PUT denial.
 
-| Status | Check | Evidence |
-| --- | --- | --- |
-| Local focused pass; independent QA pending | Failing-before/passing-after focused regression | Original foreign UUID 3/3 Failed before fix; backend memory unit 7/7, frontend component 2/2, four independent SQL test cases 4/4 Passed after fix; prior fixture-red runs preserved above |
-| Focused pass; combined stack pending | Backend typecheck, lint, unit, integration, contract/OpenAPI where changed | Final focused memory 7/7, SQL 1/1, API docs/consumer and typechecks passed; prior full task-local gate passed before final missing-ID guard |
-| Task-local pre-final-guard pass; combined stack pending | `./scripts/agent/verify-change.sh` and changed executable coverage | 0067 gate exit 0; exact combined #118+holiday gate and commit-based changed coverage remain required |
-| Partial, exact final head pending | Independent senior and QA review | Both reviewed clean `1fbdc30e` without running tests; lead follow-up fixes require re-review at the new commit |
-| Pending | Rendered real-backend browser journey | `hrms-client/e2e/holiday-real-user.spec.ts` is added and Playwright discovery passes; execution awaits the reconciled isolated candidate |
-| Published, Not Tested | Shared Sprint 25 leaf cases | `Sprint 25 Test Cases!A489:T492`; task row 35 is In Progress, not Completed |
+Verified before the latest security changes: backend unit 8/8, frontend component 8/8, PostgreSQL 4/4 and Docker Chromium 1/1 at `10c8970a`; PostgreSQL 4/4 at `75f67754` after the migration rename. These are historical revision-specific results, not final-head evidence.
 
-## Risks, Compatibility And Recovery
+Latest focused development evidence: backend unit/seed-guard 16/16, frontend component 9/9, backend/frontend typecheck passed. The expanded PostgreSQL suite reached 4/5 before a corrected expected authorization status; the four other cases, including restricted-role RLS, passed. A full exact-head rerun remains required.
 
-- Preserve PUT-create; SQL command must not fall back to full flush. A persistent adapter lacking this method fails with 500 before mutation. Changed updates now require `expected_version`; callers relying on implicit last-writer-wins must update.
-- The UI retains its draft UUID across a failed response and refetches the list. An unchanged same-UUID retry is idempotent. Editing sends the displayed `expected_version`; a 409 keeps the user's draft open while refreshing the underlying list, so the user can review rather than silently overwrite a concurrent change.
-- The SQL GET is fresh, but leave duration, timesheet expected days/hours and some reports still calculate from hydrated holiday arrays on other instances. TEN-S25-025 and report ownership work must replace those paths before calendar consistency is complete.
-- New-binary full flush is version/owner guarded, but an old Render binary lacks that guard and can still overwrite during overlap, including from unrelated API mutations. Quiesce those writes and drain old binaries before applying asset 0065/0066 then holiday 0067; verify the combined schema, promote the new binary and resume traffic. See `docs/runbooks/holiday-sql-cutover.md`.
-- `platform/data-store.ts` and `platform/postgres-data-store.ts` overlap TEN-S25-008 report WIP. The copied pre-fix artifact overlaps draft docs PR #119; reconcile both without losing historical evidence after merge order is chosen.
-- Previously corrupted B data needs owner-approved SQL/audit reconciliation; do not silently rewrite history.
-- Keep PR draft while asset #118 prerequisite, combined exact-head gate, changed coverage, browser/sheet and independent QA gates are open.
+## Remaining Completion Gates
 
-## Handoff
+1. Re-run the full five-case disposable PostgreSQL suite after the corrected transfer oracle.
+2. Run migration-history/schema-drift/no-cross-schema-FK checks against the dedicated disposable database.
+3. Run backend/frontend lint, API contract/consumer checks, production builds and task change gate.
+4. Run the guarded QA seed, then the exact-head Docker Chromium journey with Admin, HR and Employee.
+5. Measure changed executable lines/branches against `origin/release-01`; list any remaining uncovered path rather than weakening the gate.
+6. Obtain exact-head independent senior, security/database and QA review; resolve material findings.
+7. Update Sprint 25 task/case rows only with exact verified evidence.
+8. Push the clean branch and create the isolated-QA PR/handoff. Do not merge or deploy without explicit owner approval.
 
-- Worktree `/home/hexmon/Desktop/HRMS-holiday-s25-016`, branch `sprint-25/ten-s25-016-holiday`, forked from freshly fetched `origin/release-01=30783aa5`, fast-forwarded to QA parent `eb6e94a8`, then unpublished task commit rebased onto asset head `2a682119` for ordered migrations. The first stacked holiday commit is `1fbdc30e`; the QA follow-up is a separate child commit. Use Git HEAD and the eventual draft PR for its exact final SHA.
-- Combined exact-head change gate, committed coverage, re-review, branch push and draft PR remain pending. The local SQL fixture was cleaned; no hosted migration, browser run or sheet update occurred.
+## Hosted QA Requirements
+
+- Dedicated QA PostgreSQL, Valkey, object storage and email-delivery configuration; no production data or credentials.
+- `APP_ENV=qa`, `NODE_ENV=production` and environment-specific secret stores.
+- QA seed requires `HRMS_QA_SEED_ALLOW=true` and `HRMS_QA_SEED_CONFIRM_DATABASE=<exact QA database name>`; values belong in the approved runtime, not source.
+- Browser mutation run requires `E2E_ALLOW_HOLIDAY_MUTATIONS=true`, `E2E_EXPECTED_APP_ENV=qa`, the exact QA frontend/API URLs and synthetic role accounts.
+- Backup, old-binary drain, migration preflight, smoke monitoring and forward-recovery plan from the runbook.
+
+## Rollback And Known Limits
+
+- Before writes resume, a failed candidate can be rolled back by keeping traffic paused and restoring the reviewed pre-migration backup/build.
+- After cross-company duplicate holidays or scoped role history are written, do not reintroduce global uniqueness or the old global-role model. Pause writes and roll forward or repair from approved evidence.
+- The current candidate does not certify office calendar rules, broad transfer workflow, all modules' tenant isolation, penetration testing, load/soak, accessibility/mobile or human UAT. QA must report those as outside this slice or pending.
+
+## Historical Evidence
+
+The original disposable probe demonstrated the pre-fix foreign-UUID corruption: Company A received HTTP 200 while Company B's row acquired A fields and a misleading event committed. The older stacked branch later mixed Holiday with unfinished Asset/coverage ancestry and used migration 0067. That sequence is superseded by this clean 0065–0066 candidate and must not be used as current deployment instruction.
