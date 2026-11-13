@@ -308,6 +308,29 @@ describe("holiday tenant transaction boundary", () => {
     expect(rows).toHaveLength(1);
     expect([...await events(firstId), ...await events(secondId)]).toHaveLength(1);
     expect([firstId, secondId]).toContain(rows[0]!.id);
+
+    await pool.query(
+      "UPDATE leave_wfh.holidays SET deleted_at = now(), updated_at = now() WHERE id = $1",
+      [rows[0]!.id],
+    );
+    const replacementId = randomUUID();
+    const replacement = await app.inject({
+      method: "PUT",
+      url: `/api/v1/holidays/${replacementId}`,
+      headers: authHeader(admin.token),
+      payload: holidayBody("RACE DAY"),
+    });
+    expect(replacement.statusCode).toBe(200);
+    const replacementRows = await pool.query<{ id: string; deleted_at: Date | null }>(
+      `SELECT id, deleted_at FROM leave_wfh.holidays WHERE company_id = $1 AND region = 'A Region'
+         AND holiday_date = '2026-12-26' AND lower(name) = 'race day' ORDER BY created_at`,
+      [companyId],
+    );
+    expect(replacementRows.rows).toHaveLength(2);
+    expect(replacementRows.rows.filter((row) => row.deleted_at === null)).toEqual([
+      { id: replacementId, deleted_at: null },
+    ]);
+    expect(await events(replacementId)).toHaveLength(1);
   });
 
 });
