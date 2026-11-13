@@ -1356,6 +1356,38 @@ test("full coverage worker command validates its trust boundary before invoking 
   await assert.rejects(runFullCoverageWorkerCommand("/trusted/repository", args, {
     replaceEnvironment: () => {}, validateExecutable: () => {}, verifyClaim: async () => { throw new Error("claim missing"); },
   }), (error) => /service claim verification failed: claim missing/.test(error.message) && error.cause?.message === "claim missing");
+
+  const workerRoot = mkdtempSync(join(tmpdir(), "hrms-worker-command-default-"));
+  roots.push(workerRoot);
+  git(workerRoot, "init", "-q");
+  write(workerRoot, "README.md", "coverage worker fixture\n");
+  git(workerRoot, "add", ".");
+  git(workerRoot, "commit", "-qm", "worker fixture");
+  const workerHead = git(workerRoot, "rev-parse", "HEAD");
+  const workerOutput = mkdtempSync(join(tmpdir(), "hrms-worker-command-output-"));
+  roots.push(workerOutput);
+  const workerToken = `${workerHead}:worker-command-default`;
+  const workerArgs = ["--coverage-output", workerOutput, "--expected-head", workerHead,
+    "--service-claim-token", workerToken, ...Object.entries(tools).flatMap(([name, path]) => [`--${name}`, path])];
+  const commands = [];
+  const previousOutput = process.env.HRMS_COVERAGE_OUTPUT_DIR;
+  try {
+    process.env.HRMS_COVERAGE_OUTPUT_DIR = workerOutput;
+    const completed = await runFullCoverageWorkerCommand(workerRoot, workerArgs, {
+      replaceEnvironment: () => {},
+      validateExecutable: () => {},
+      verifyClaim: async () => {},
+      runCommand: (command, commandArgs) => commands.push([command, commandArgs]),
+    });
+    assert.equal(completed.length, 8);
+    assert.equal(commands.length, 8);
+    assert.deepEqual(commands[0], [tools.node, ["--test", "scripts/agent/resolve-push-coverage-base.test.mjs"]]);
+    assert.equal(commands.at(-1)[0], tools.pnpm);
+    assert.ok(commands.at(-1)[1].includes("hrms-client"));
+  } finally {
+    if (previousOutput === undefined) delete process.env.HRMS_COVERAGE_OUTPUT_DIR;
+    else process.env.HRMS_COVERAGE_OUTPUT_DIR = previousOutput;
+  }
 });
 
 test("full-suite dependency selection uses either exact injections or every trusted default", () => {

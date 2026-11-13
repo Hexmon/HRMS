@@ -1406,7 +1406,8 @@ export async function runFullCoverageWorkerCommand(root, args, dependencies = {}
   } catch (error) {
     throw new Error(`Full coverage worker service claim verification failed: ${error.message}`, { cause: error });
   }
-  return (dependencies.runWorker ?? runFullCoverageWorker)(root, outputRoot, expectedHead, tools);
+  if (dependencies.runWorker) return dependencies.runWorker(root, outputRoot, expectedHead, tools);
+  return runFullCoverageWorker(root, outputRoot, expectedHead, tools, dependencies.runCommand);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
