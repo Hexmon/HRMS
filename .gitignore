@@ -1,7 +1,7 @@
 # Hawkaii HRMS monorepo ignore rules
 
 # Dependencies
-node_modules/
+node_modules
 hrms_backend/node_modules/
 hrms-client/node_modules/
 

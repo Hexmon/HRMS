@@ -73,12 +73,13 @@ def check_file(source: Path) -> list[str]:
     return problems
 
 
-def main() -> int:
-    if len(sys.argv) < 2:
+def main(arguments: list[str] | None = None) -> int:
+    arguments = sys.argv[1:] if arguments is None else arguments
+    if not arguments:
         print("Usage: validate-doc-references.py FILE [FILE ...]", file=sys.stderr)
         return 2
     problems: list[str] = []
-    for argument in sys.argv[1:]:
+    for argument in arguments:
         source = Path(argument).resolve()
         if not source.is_file():
             problems.append(f"Missing guide: {argument}")
@@ -87,7 +88,7 @@ def main() -> int:
     if problems:
         print("\n".join(problems), file=sys.stderr)
         return 1
-    print(f"Agent documentation references passed ({len(sys.argv) - 1} files).")
+    print(f"Agent documentation references passed ({len(arguments)} files).")
     return 0
 
 

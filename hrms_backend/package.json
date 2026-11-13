@@ -48,6 +48,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "pnpm test:unit && pnpm test:contracts && pnpm test:integration && pnpm test:e2e",
     "test:unit": "vitest run --project unit",
+    "test:unit:coverage": "vitest run --project unit --coverage && node ../scripts/agent/changed-coverage.mjs --stamp backend",
     "test:integration": "vitest run --project integration",
     "test:contracts": "vitest run --project contracts",
     "test:e2e": "vitest run --project e2e",
@@ -122,6 +123,7 @@
   "devDependencies": {
     "@types/node": "^24.10.1",
     "@types/pg": "^8.15.6",
+    "@vitest/coverage-v8": "4.1.6",
     "miniflare": "5.20261019.2-beta",
     "tsc-alias": "^1.8.16",
     "tsx": "^4.20.6",

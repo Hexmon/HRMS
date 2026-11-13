@@ -53,6 +53,7 @@ New developers should start with the KT pack:
 - [Sprint 25 SaaS delivery backlog](discovery/sprint-25-saas-remediation.md): all 35 findings, ten workstreams, sole owner Anurag Kumar and modular test contracts.
 - [R2 document-storage review](discovery/r2-document-storage-remediation-2026-11-10.md): source-backed file/metadata/access/replacement failures, proposed private R2 lifecycle and Sprint 25 implementation/QA refinements. Proposed architecture, not deployed behavior.
 - [Test and QA completion](agent/test-and-qa-completion.md): meaningful unit inputs/outputs, changed executable line and branch coverage, independent review and PR evidence.
+- [Trusted changed-coverage bootstrap](agent/trusted-coverage-bootstrap.md): immutable required-workflow root of trust, owner/admin protection steps, external-App fallback and same-user isolation limits.
 
 
 ## Current Business-Rule Review
