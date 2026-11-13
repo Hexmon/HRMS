@@ -793,6 +793,8 @@ test("ordinary and trusted workflows provision the dedicated coverage services",
   assert.match(coverage, /- 56380:6379/);
   assert.match(coverage, /--confirm-disposable-services/);
   assert.match(trusted, /timeout-minutes: 90/);
+  assert.match(trusted, /image: postgis\/postgis@sha256:[0-9a-f]{64}/);
+  assert.match(trusted, /image: valkey\/valkey@sha256:[0-9a-f]{64}/);
   assert.match(trusted, /- 55433:5432/);
   assert.match(trusted, /- 56380:6379/);
   assert.match(trusted, /--confirm-disposable-services/);

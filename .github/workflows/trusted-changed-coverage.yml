@@ -23,7 +23,8 @@ jobs:
       COVERAGE_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
     services:
       postgres:
-        image: postgis/postgis:16-3.5-alpine
+        # postgis/postgis:16-3.5-alpine
+        image: postgis/postgis@sha256:47e961a569fd52ff31f0fe205ed91eeab17d9f5fff6722e6d7ea6b588748b293
         env:
           POSTGRES_DB: hrms_coverage_test
           POSTGRES_USER: hrms_coverage
@@ -36,7 +37,8 @@ jobs:
           --health-timeout 5s
           --health-retries 12
       valkey:
-        image: valkey/valkey:9.0.3-alpine
+        # valkey/valkey:9.0.3-alpine
+        image: valkey/valkey@sha256:e1095c6c76ee982cb2d1e07edbb7fb2a53606630a1d810d5a47c9f646b708bf5
         ports:
           - 56380:6379
         options: >-
