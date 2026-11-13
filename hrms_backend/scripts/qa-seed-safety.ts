@@ -76,16 +76,19 @@ export async function preflightQaAdminCompanyContext(
   client: QaSeedSqlClient,
   ids: QaAdminCompanyContextIds,
 ): Promise<void> {
-  const company = await client.query<{ id: string; status: string }>(
-    `SELECT id, status
+  const company = await client.query<{ id: string; company_slug: string; status: string }>(
+    `SELECT id, company_slug, status
      FROM platform.company_profiles
-     WHERE company_slug = $1`,
-    [qaCompanySlug],
+     WHERE id = $1 OR company_slug = $2
+     ORDER BY id`,
+    [ids.companyId, qaCompanySlug],
   );
-  const existingCompany = company.rows[0];
-  if (existingCompany && (existingCompany.id !== ids.companyId || existingCompany.status !== "active")) {
+  const exactCompany = company.rows.filter(
+    (row) => row.id === ids.companyId && row.company_slug === qaCompanySlug && row.status === "active",
+  );
+  if (company.rows.length > 0 && (company.rows.length !== 1 || exactCompany.length !== 1)) {
     throw new Error(
-      "QA seed preflight refused a company slug that does not exactly match the active deterministic QA company.",
+      "QA seed preflight refused a company identity that does not exactly match the active deterministic QA company.",
     );
   }
 
@@ -95,12 +98,16 @@ export async function preflightQaAdminCompanyContext(
     preference_id: string | null;
     company_id: string | null;
     active_role: string | null;
+    company_slug: string | null;
+    company_status: string | null;
   }>(
     `SELECT admin.employment_status, admin.deleted_at,
             preference.id AS preference_id,
-            preference.company_id, preference.active_role
+            preference.company_id, preference.active_role,
+            company.company_slug, company.status AS company_status
      FROM core.users admin
      LEFT JOIN platform.user_session_preferences preference ON preference.user_id = admin.id
+     LEFT JOIN platform.company_profiles company ON company.id = preference.company_id
      WHERE admin.id = $1`,
     [ids.adminUserId],
   );
@@ -111,7 +118,10 @@ export async function preflightQaAdminCompanyContext(
   }
   if (
     existingAdmin.preference_id !== null &&
-    (existingAdmin.company_id !== ids.companyId || existingAdmin.active_role !== "admin")
+    (existingAdmin.company_id !== ids.companyId ||
+      existingAdmin.active_role !== "admin" ||
+      existingAdmin.company_slug !== qaCompanySlug ||
+      existingAdmin.company_status !== "active")
   ) {
     throw new Error("QA seed preflight refused a non-admin or foreign deterministic release Admin preference.");
   }
