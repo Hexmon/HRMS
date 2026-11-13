@@ -20,17 +20,16 @@ This is a QA-candidate plan, not deployment authorization or production acceptan
 - A new UUID creates; a missing UUID with `expected_version` is an edit intent and returns 404.
 - An unchanged same-UUID retry is idempotent. A changed existing holiday requires the current version.
 - Same-company duplicate name/date/region is case-insensitive and rejected. Soft-deleted rows do not reserve the key. Different companies may use the same key.
-- DEC-031 authorizes the union of current roles only inside the company that granted them. Selecting an Employee UI view does not remove another valid same-company role, but changing company context never carries an old-company Admin/HR grant.
-- Missing database tenant context fails closed for restricted runtime roles.
+- Selecting an Employee UI view does not remove another effective role for the same user. Company-owned role grants and the employee-transfer workflow are not implemented by this candidate; QA must use separate Company A and Company B users and must not treat a preference edit as an approved transfer.
+- Database-level RLS remains the separate TEN-S25-017 production dependency. It cannot be safely enabled only for Holidays while startup reload and shared leave/timesheet/report consumers still hydrate cross-company holidays.
 
 ## Database And Deployment Order
 
 `release-01` ends at migration 0064. This clean candidate owns:
 
-1. `0065_holiday_company_unique_constraint.sql`: remove the legacy global constraint, add the partial case-insensitive company key, enable and force Holiday RLS, and create the company policy using transaction-local `app.current_company_id`.
-2. `0066_company_scoped_user_roles.sql`: add role-grant company ownership, backfill only from the current single-company preference, fail on unresolved ownership, make it required, and add company-scoped lookup/active-role uniqueness.
+1. `0065_holiday_company_unique_constraint.sql`: remove the legacy global constraint and add the partial case-insensitive company key.
 
-The API resolves the actor/company before setting the transaction-local RLS context. The migration is forward-only after scoped writes resume. Old API instances must be drained before migration. Later Asset work must rebase and use migration numbers after 0066. See `docs/runbooks/holiday-sql-cutover.md`.
+The API resolves the actor/company before every Holiday read/write. RLS was tested and then removed from this candidate after independent QA demonstrated it would make the existing shared startup reload/full-flush paths incorrect under a restricted role. TEN-S25-017 must migrate all hydrated consumers to request-scoped SQL and test the real restricted runtime lifecycle before production RLS. Company-owned role grants and transfer approval remain a separate identity/authorization prerequisite. Migration 0065 is forward-only after cross-company duplicate keys are written. Old API instances must be drained before migration. Later Asset work must rebase and take migration numbers after 0065. See `docs/runbooks/holiday-sql-cutover.md`.
 
 ## Changed Behaviour And Required Evidence
 
@@ -39,11 +38,11 @@ The API resolves the actor/company before setting the transaction-local RLS cont
 | Admin/HR | Create and edit through the real UI/API | Component plus real Chromium journey |
 | Employee | Controls hidden and forged direct PUT denied 403 | Browser API attempt plus SQL integration no-row/no-outbox oracle |
 | Tenant UUID | A cannot read/change B; B can still read/edit | Real PostgreSQL A/B integration |
-| Transfer/roles | Preference change alone denies; explicit B grant enables | Real PostgreSQL integration |
+| Effective roles | Employee-selected view still permits another effective Admin/HR role for the same user | Real PostgreSQL integration |
 | Conflicts | Only `reason=stale_version` triggers stale recovery; duplicate remains editable | Backend response and component tests |
 | Transaction | Row and outbox commit together; injected event failure rolls back | Real PostgreSQL integration |
 | Concurrency/retry | One current-version edit wins; duplicate race creates one; unchanged retry emits no event | Two-instance PostgreSQL integration |
-| Database defense | Restricted role sees only current company; cross-company insert/update denied | RLS integration with `NOBYPASSRLS` role |
+| Database defense | API/company predicates and company-aware keys prevent supported cross-tenant access | PostgreSQL A/B integration; RLS remains TEN-S25-017 |
 | QA safety | Explicit local/QA opt-in and exact DB-name confirmation; production refused | Seed guard unit tests and isolated seed run |
 | QA identity | Employee-code collision fails before dependent persona records | Guard regression and isolated collision rehearsal |
 
@@ -54,18 +53,18 @@ Implemented in the clean worktree:
 - Tenant-authorized SQL GET/PUT, atomic outbox, optimistic versioning and idempotent unchanged retry.
 - Admin/HR edit UI, stale-draft preservation, explicit latest-version load and multiple same-day calendar rendering.
 - Stable backend conflict reasons; the UI distinguishes stale, duplicate and generic failures.
-- Partial case-insensitive Holiday uniqueness and Holiday RLS with transaction-local company context.
-- Company-owned role grants so old-company roles do not authorize a newly selected company.
+- Partial case-insensitive Holiday uniqueness; unsafe leaf-only RLS was removed after lifecycle review.
+- Company-owned role grants and transfer approval were removed from this slice because their broader identity/authentication design is unfinished.
 - QA seed checks for explicit safe target, active Admin/company, deterministic persona identity and active persona company preference.
 - Browser journey performs real Admin and HR mutations and a forged Employee PUT denial.
 
 Verified before the latest security changes: backend unit 8/8, frontend component 8/8, PostgreSQL 4/4 and Docker Chromium 1/1 at `10c8970a`; PostgreSQL 4/4 at `75f67754` after the migration rename. These are historical revision-specific results, not final-head evidence.
 
-Latest focused development evidence: backend unit/seed-guard 16/16, frontend component 9/9, backend/frontend typecheck passed. The expanded PostgreSQL suite reached 4/5 before a corrected expected authorization status; the four other cases, including restricted-role RLS, passed. A full exact-head rerun remains required.
+Latest focused development evidence before the RLS correction: backend unit/seed-guard 16/16, frontend component 9/9, backend/frontend typecheck passed and PostgreSQL 5/5 passed. Independent QA then found the leaf-only RLS lifecycle incompatibility; final exact-head reruns are required after its removal.
 
 ## Remaining Completion Gates
 
-1. Re-run the full five-case disposable PostgreSQL suite after the corrected transfer oracle.
+1. Re-run the four-case disposable PostgreSQL suite, including Admin and HR foreign-UUID denial.
 2. Run migration-history/schema-drift/no-cross-schema-FK checks against the dedicated disposable database.
 3. Run backend/frontend lint, API contract/consumer checks, production builds and task change gate.
 4. Run the guarded QA seed, then the exact-head Docker Chromium journey with Admin, HR and Employee.
@@ -85,9 +84,10 @@ Latest focused development evidence: backend unit/seed-guard 16/16, frontend com
 ## Rollback And Known Limits
 
 - Before writes resume, a failed candidate can be rolled back by keeping traffic paused and restoring the reviewed pre-migration backup/build.
-- After cross-company duplicate holidays or scoped role history are written, do not reintroduce global uniqueness or the old global-role model. Pause writes and roll forward or repair from approved evidence.
+- After cross-company duplicate holidays are written, do not reintroduce global uniqueness. Pause writes and roll forward or repair from approved evidence.
 - The current candidate does not certify office calendar rules, broad transfer workflow, all modules' tenant isolation, penetration testing, load/soak, accessibility/mobile or human UAT. QA must report those as outside this slice or pending.
+- The candidate is not production-ready until TEN-S25-017 replaces shared holiday hydration/flush with tenant-scoped runtime access and verifies RLS using the real restricted application role. Company-owned role grants and the approved transfer workflow also remain separate authorization prerequisites.
 
 ## Historical Evidence
 
-The original disposable probe demonstrated the pre-fix foreign-UUID corruption: Company A received HTTP 200 while Company B's row acquired A fields and a misleading event committed. The older stacked branch later mixed Holiday with unfinished Asset/coverage ancestry and used migration 0067. That sequence is superseded by this clean 0065–0066 candidate and must not be used as current deployment instruction.
+The original disposable probe demonstrated the pre-fix foreign-UUID corruption: Company A received HTTP 200 while Company B's row acquired A fields and a misleading event committed. The older stacked branch later mixed Holiday with unfinished Asset/coverage ancestry and used migration 0067. That sequence is superseded by this clean migration-0065 candidate and must not be used as current deployment instruction.
