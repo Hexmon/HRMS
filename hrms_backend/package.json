@@ -73,7 +73,7 @@
     "release:verify:adapters": "tsx scripts/verify-release-adapters.ts",
     "release:uat": "tsx scripts/run-release-uat.ts",
     "qa:seed:extras": "tsx scripts/seed-qa-data.ts",
-    "qa:seed": "HRMS_ENV_FILE=.env.qa pnpm release:seed && HRMS_ENV_FILE=.env.qa pnpm qa:seed:extras",
+    "qa:seed": "HRMS_ENV_FILE=.env.qa tsx scripts/seed-qa.ts",
     "qa:uat": "HRMS_ENV_FILE=.env.qa HRMS_REPORT_DIR=docs/qa/runs/qa-readiness pnpm release:uat && HRMS_ENV_FILE=.env.qa HRMS_REPORT_DIR=docs/qa/runs/qa-readiness tsx scripts/run-qa-api-uat.ts && HRMS_ENV_FILE=.env.qa HRMS_REPORT_DIR=docs/qa/runs/qa-readiness tsx scripts/run-qa-security-rbac.ts",
     "verify:business": "tsx scripts/verify-business.ts",
     "verify:quality": "tsx scripts/verify-quality.ts",

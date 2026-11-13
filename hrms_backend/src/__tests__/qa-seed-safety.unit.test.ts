@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   requireQaPersonaIdentity,
   requireQaSeedTarget,
+  runGuardedQaSeed,
 } from "../../scripts/qa-seed-safety.js";
 
 const safe = {
@@ -49,5 +50,28 @@ describe("QA seed target guard", () => {
     expect(() => requireQaPersonaIdentity(null, undefined, "HRM")).toThrow(
       /employee-code collision for HRM/,
     );
+  });
+
+  it("guards the composite QA seed before either mutation phase starts", async () => {
+    const calls: string[] = [];
+    await expect(
+      runGuardedQaSeed(
+        { ...safe, APP_ENV: "production" },
+        {
+          releaseSeed: async () => calls.push("release"),
+          extrasSeed: async () => calls.push("extras"),
+        },
+      ),
+    ).rejects.toThrow(/only isolated local or QA/);
+    expect(calls).toEqual([]);
+  });
+
+  it("runs the guarded release seed before QA extras on an approved target", async () => {
+    const calls: string[] = [];
+    await runGuardedQaSeed(safe, {
+      releaseSeed: async () => calls.push("release"),
+      extrasSeed: async () => calls.push("extras"),
+    });
+    expect(calls).toEqual(["release", "extras"]);
   });
 });
