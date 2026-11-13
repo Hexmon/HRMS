@@ -907,8 +907,44 @@ test("unsupported package and deployment config changes fail instead of passing 
   git(root, "commit", "-qm", "config change");
   const diff = changedLines(root, head, "HEAD");
   assert.deepEqual(new Set(diff.outside), new Set(paths));
-  assert.throws(() => verify(root, head, "HEAD"), /invalid JSON|packageManager|lockfileVersion|root dependency directories|unmeasured executable\/config/);
+  assert.throws(() => verify(root, head, "HEAD"), /invalid JSON|packageManager|lockfileVersion|root dependency directories|unmeasured executable\/config|QA Compose/);
   assert.equal(outsideExecutableOrConfig("docs/architecture/design.md"), false);
+});
+
+test("QA holiday operational paths use explicit semantic contracts", () => {
+  const compose = `services:\n  postgres:\n  valkey:\n  migrate:\n    command: ["sh", "-lc", "pnpm db:migrate && pnpm qa:seed"]\n    environment:\n      HRMS_QA_SEED_ALLOW: "true"\n      HRMS_QA_SEED_CONFIRM_DATABASE: "hrms_platform_qa"\n`;
+  const migration = `BEGIN;\nDROP INDEX IF EXISTS holidays_name_date_unique;\nCREATE UNIQUE INDEX holidays_company_name_date_unique ON leave_wfh.holidays (company_id, lower(name), holiday_date) WHERE deleted_at IS NULL;\nCOMMIT;`;
+  const safety = `HRMS_QA_SEED_ALLOW; only isolated local or QA; HRMS_QA_SEED_CONFIRM_DATABASE; rethrowAfterQaSeedRollback`;
+  const entrypoint = `runGuardedQaSeed({ preflight: async () => {}, releaseSeed: async () => {}, extrasSeed: async () => {} });`;
+  const phase = `await client.query("BEGIN");\nawait client.query("COMMIT");\nawait rethrowAfterQaSeedRollback(client, error);\nawait client.end();`;
+  assert.match(validateSemanticPath("", "hrms_backend/infra/docker/docker-compose.qa.yml", compose, "base"), /semantic contract passed/);
+  assert.match(validateSemanticPath("", "hrms_backend/src/db/migrations/0065_holiday_company_unique_constraint.sql", migration, "base"), /semantic contract passed/);
+  assert.match(validateSemanticPath("", "hrms_backend/scripts/qa-seed-safety.ts", safety, "base"), /semantic contract passed/);
+  assert.match(validateSemanticPath("", "hrms_backend/scripts/seed-qa.ts", entrypoint, "base"), /semantic contract passed/);
+  assert.match(validateSemanticPath("", "hrms_backend/scripts/seed-qa-data.ts", phase, "base"), /semantic contract passed/);
+  assert.match(validateSemanticPath("", "hrms_backend/scripts/seed-release-data.ts", phase, "base"), /semantic contract passed/);
+  assert.throws(() => validateSemanticPath("", "hrms_backend/infra/docker/docker-compose.qa.yml", compose.replace("pnpm db:migrate && pnpm qa:seed", "pnpm qa:seed"), "base"), /migrations before/);
+  assert.throws(
+    () => validateSemanticPath("", "hrms_backend/infra/docker/docker-compose.qa.yml", `${compose}\\n      APP_ENV: production`, "base"),
+    /production APP_ENV/
+  );
+  assert.throws(() => validateSemanticPath("", "hrms_backend/src/db/migrations/0065_holiday_company_unique_constraint.sql", migration.replace("company_id", "name"), "base"), /company_id/);
+});
+
+test("Playwright specs are classified as test source, not uncovered product code", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-coverage-playwright-spec-"));
+  roots.push(root);
+  git(root, "init", "-q");
+  write(root, "hrms-client/e2e/holiday-real-user.spec.ts", "test('holiday', async ({ page }) => { await page.goto('/'); });\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "base spec");
+  const base = git(root, "rev-parse", "HEAD");
+  write(root, "hrms-client/e2e/holiday-real-user.spec.ts", "test('holiday', async ({ page }) => { await page.goto('/holidays'); });\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "change spec");
+  const diff = changedLines(root, base, "HEAD");
+  assert.deepEqual(diff.excludedGenerated, ["hrms-client/e2e/holiday-real-user.spec.ts"]);
+  assert.deepEqual(diff.outside, []);
 });
 
 test("workflow disablement and an untraced dangerous shell branch remain red", () => {

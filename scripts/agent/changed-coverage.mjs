@@ -57,7 +57,7 @@ export function outsideExecutableOrConfig(path) {
 }
 
 function isTestOrGenerated(path) {
-  return /(?:\.test\.[cm]?[jt]sx?$|\/tests\/test_[^/]+\.py$|\/src\/test\/|\.d\.ts$|\/routeTree\.gen\.ts$)/.test(path);
+  return /(?:\.(?:test|spec)\.[cm]?[jt]sx?$|\/e2e\/.*\.[cm]?[jt]sx?$|\/tests\/test_[^/]+\.py$|\/src\/test\/|\.d\.ts$|\/routeTree\.gen\.ts$)/.test(path);
 }
 
 function isProductTestPath(path) {
@@ -1471,6 +1471,50 @@ function validateShellVerifier(root, path, content, base) {
   }
 }
 
+function requireSemanticText(path, content, pattern, message) {
+  if (!pattern.test(content)) semanticFailure(path, message);
+}
+
+function validateQaCompose(path, content) {
+  requireSemanticText(path, content, /postgres:/, "QA Compose must define PostgreSQL");
+  requireSemanticText(path, content, /valkey:/, "QA Compose must define Valkey");
+  requireSemanticText(path, content, /pnpm db:migrate && pnpm qa:seed/, "QA migration service must run migrations before the guarded seed");
+  requireSemanticText(path, content, /HRMS_QA_SEED_ALLOW:/, "QA seed opt-in must be scoped to the migration service");
+  requireSemanticText(path, content, /HRMS_QA_SEED_CONFIRM_DATABASE:/, "QA seed database confirmation is required");
+  if (/APP_ENV:\s*prod(?:uction)?/i.test(content)) semanticFailure(path, "QA Compose must not use a production APP_ENV");
+}
+
+function validateHolidayMigration(path, content) {
+  requireSemanticText(path, content, /BEGIN\s*;/i, "holiday migration must be transactional");
+  requireSemanticText(path, content, /DROP\s+INDEX\s+IF\s+EXISTS\s+.*holiday/i, "holiday migration must remove the legacy global uniqueness rule");
+  requireSemanticText(path, content, /CREATE\s+UNIQUE\s+INDEX/i, "holiday migration must create a unique index");
+  requireSemanticText(path, content, /company_id/i, "holiday uniqueness must include company_id");
+  requireSemanticText(path, content, /lower\s*\(/i, "holiday uniqueness must be case-insensitive");
+  requireSemanticText(path, content, /deleted_at\s+IS\s+NULL/i, "holiday uniqueness must exclude soft-deleted rows");
+  requireSemanticText(path, content, /COMMIT\s*;/i, "holiday migration must commit transactionally");
+}
+
+function validateQaSeedSafety(path, content) {
+  requireSemanticText(path, content, /HRMS_QA_SEED_ALLOW/, "QA seed safety must require explicit opt-in");
+  requireSemanticText(path, content, /only isolated local or QA/, "QA seed safety must reject non-isolated targets");
+  requireSemanticText(path, content, /HRMS_QA_SEED_CONFIRM_DATABASE/, "QA seed safety must require exact database confirmation");
+  requireSemanticText(path, content, /rethrowAfterQaSeedRollback/, "QA seed safety must preserve primary errors after rollback failure");
+}
+
+function validateQaSeedEntrypoint(path, content) {
+  requireSemanticText(path, content, /runGuardedQaSeed/, "QA seed entrypoint must use the guarded orchestration");
+  requireSemanticText(path, content, /preflight:/, "QA seed entrypoint must run deterministic preflight");
+  requireSemanticText(path, content, /releaseSeed:/, "QA seed entrypoint must run the release seed phase");
+  requireSemanticText(path, content, /extrasSeed:/, "QA seed entrypoint must run the QA extras phase");
+}
+
+function validateQaSeedPhase(path, content) {
+  requireSemanticText(path, content, /client\.query\("BEGIN"\)/, "QA seed phase must begin a transaction");
+  requireSemanticText(path, content, /rethrowAfterQaSeedRollback/, "QA seed phase must roll back and preserve primary errors");
+  requireSemanticText(path, content, /client\.query\("COMMIT"\)/, "QA seed phase must commit only after all writes succeed");
+  requireSemanticText(path, content, /client\.end\(\)/, "QA seed phase must close its database client");
+}
+
 export function validateSemanticPath(root, path, content, base) {
   switch (path) {
     case ".github/workflows/branch-ci-cd.yml": validateWorkflow(path, content, false); break;
@@ -1483,6 +1527,12 @@ export function validateSemanticPath(root, path, content, base) {
     case "hrms-client/vitest.config.ts": validateVitestConfig(path, content, true); break;
     case "hrms_backend/vitest.config.ts": validateVitestConfig(path, content, false); break;
     case "scripts/agent/verify-change.sh": validateShellVerifier(root, path, content, base); break;
+    case "hrms_backend/infra/docker/docker-compose.qa.yml": validateQaCompose(path, content); break;
+    case "hrms_backend/src/db/migrations/0065_holiday_company_unique_constraint.sql": validateHolidayMigration(path, content); break;
+    case "hrms_backend/scripts/qa-seed-safety.ts": validateQaSeedSafety(path, content); break;
+    case "hrms_backend/scripts/seed-qa.ts": validateQaSeedEntrypoint(path, content); break;
+    case "hrms_backend/scripts/seed-qa-data.ts":
+    case "hrms_backend/scripts/seed-release-data.ts": validateQaSeedPhase(path, content); break;
     default: return null;
   }
   return `${path}: semantic contract passed`;
@@ -1499,6 +1549,12 @@ export const semanticCoveragePaths = new Set([
   "hrms_backend/pnpm-lock.yaml",
   "hrms_backend/vitest.config.ts",
   "scripts/agent/verify-change.sh",
+  "hrms_backend/infra/docker/docker-compose.qa.yml",
+  "hrms_backend/src/db/migrations/0065_holiday_company_unique_constraint.sql",
+  "hrms_backend/scripts/qa-seed-safety.ts",
+  "hrms_backend/scripts/seed-qa.ts",
+  "hrms_backend/scripts/seed-qa-data.ts",
+  "hrms_backend/scripts/seed-release-data.ts",
 ]);
 
 export function verify(root, base, head, suitePaths = fullSuitePaths(coverageOutputRoot(root))) {
