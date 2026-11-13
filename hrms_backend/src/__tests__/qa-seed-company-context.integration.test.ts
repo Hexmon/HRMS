@@ -122,6 +122,25 @@ describe.skipIf(!databaseUrl)("QA seed deterministic company boundary", () => {
     },
   );
 
+  it.each(["admin", "employee"])(
+    "refuses an existing null-company preference with role %s before any marker write",
+    async (role) => {
+      await client.query(
+        `INSERT INTO platform.user_session_preferences (id, user_id, active_role, company_id)
+         VALUES ($1, $2, $3, NULL)`,
+        [preferenceId, adminUserId, role],
+      );
+
+      await expect(runSeedContextWithMarker()).rejects.toThrow(/non-admin or foreign|exactly match/);
+      expect(await markerCount()).toBe(0);
+      const preference = await client.query<{ company_id: string | null; active_role: string | null }>(
+        "SELECT company_id, active_role FROM platform.user_session_preferences WHERE user_id = $1",
+        [adminUserId],
+      );
+      expect(preference.rows).toEqual([{ company_id: null, active_role: role }]);
+    },
+  );
+
   it("creates the exact deterministic context once and performs no writes on rerun", async () => {
     await expect(runSeedContextWithMarker()).resolves.toBe(expectedCompanyId);
     const first = await client.query<{
