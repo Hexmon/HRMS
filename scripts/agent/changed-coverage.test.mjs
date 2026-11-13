@@ -127,7 +127,23 @@ test("semantic contracts fail closed for each workflow, manifest, lock, runner a
   for (const negation of ["!node_modules", "!hrms_backend/node_modules", "!hrms-client/node_modules"]) {
     assert.throws(() => validateSemanticPath(root, ".gitignore", `${read(".gitignore")}\n${negation}\n`, "origin/release-01"), /negated/);
   }
+  for (const negation of ["!hrms_backend/node_modules", "!hrms-client/node_modules"]) {
+    assert.throws(() => validateSemanticPath(root, ".gitignore", ["node_modules", "hrms_backend/node_modules/", "hrms-client/node_modules/", negation].join("\n"), "origin/release-01"), /negated/);
+  }
+  assert.throws(() => validateSemanticPath(root, ".gitignore", "node_modules\nhrms_backend/node_modules/\nhrms-client/node_modules/\n!node_modules", "origin/release-01"), /negated/);
+  assert.throws(() => validateSemanticPath(root, ".gitignore", "node_modules\nhrms_backend/node_modules/\nhrms-client/node_modules/\n!hrms_backend/node_modules", "origin/release-01"), /negated/);
+  assert.throws(() => validateSemanticPath(root, ".gitignore", "node_modules\nhrms_backend/node_modules/\nhrms-client/node_modules/\n!hrms-client/node_modules", "origin/release-01"), /negated/);
   assert.throws(() => validateSemanticPath(root, "hrms-client/package.json", JSON.stringify({ packageManager: "pnpm@10.25.0" }), "origin/release-01"), /test:unit/);
+  assert.doesNotThrow(() => validateSemanticPath(root, "hrms-client/package.json", JSON.stringify({
+    packageManager: "pnpm@10.25.0",
+    scripts: { "test:unit": "vitest run", "test:unit:coverage": "vitest run --coverage" },
+    devDependencies: { vitest: "4.1.6", "@vitest/coverage-v8": "4.1.6", "@testing-library/react": "16.3.3", jsdom: "26.1.0" },
+  }), "origin/release-01"));
+  assert.doesNotThrow(() => validateSemanticPath(root, "hrms-client/package.json", JSON.stringify({
+    packageManager: "pnpm@10.25.0",
+    scripts: { "test:unit": "vitest run", "test:unit:coverage": "vitest run --coverage" },
+    dependencies: { vitest: "4.1.6", "@vitest/coverage-v8": "4.1.6", "@testing-library/react": "16.3.3", jsdom: "26.1.0" },
+  }), "origin/release-01"));
   expectMutation("hrms_backend/package.json", [
     ["pnpm@10.25.0", "pnpm@9.0.0"],
     ["\"test:unit\": \"vitest run --project unit\"", "\"test:unit\": \"node tests.js\""],
@@ -135,6 +151,12 @@ test("semantic contracts fail closed for each workflow, manifest, lock, runner a
     ["\"@vitest/coverage-v8\": \"4.1.6\"", "\"@vitest/coverage-v8\": \"3.0.0\""],
     ["\"engines\": {", "\"engines\": {} , \"removed\": {"],
   ]);
+  assert.doesNotThrow(() => validateSemanticPath(root, "hrms_backend/package.json", JSON.stringify({
+    packageManager: "pnpm@10.25.0",
+    engines: { node: ">=22" },
+    scripts: { "test:unit": "vitest run --project unit", "test:unit:coverage": "vitest run --project unit --coverage" },
+    devDependencies: { vitest: "^4.0.15", "@vitest/coverage-v8": "4.1.6" },
+  }), "origin/release-01"));
   expectMutation("hrms-client/pnpm-lock.yaml", [
     ["lockfileVersion: '9.0'", "lockfileVersion: '8.0'"],
     ["  .:\n", "  root:\n"],

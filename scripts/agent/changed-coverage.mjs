@@ -1380,7 +1380,8 @@ function validateIgnoreFile(path, content) {
   for (const required of ["hrms_backend/node_modules/", "hrms-client/node_modules/"]) {
     if (!lines.includes(required)) semanticFailure(path, `missing package ignore rule ${required}`);
   }
-  if (lines.some((line) => line === "!node_modules" || line === "!hrms_backend/node_modules" || line === "!hrms-client/node_modules")) {
+  const forbiddenNegations = new Set(["!node_modules", "!hrms_backend/node_modules", "!hrms-client/node_modules"]);
+  if (lines.some((line) => forbiddenNegations.has(line))) {
     semanticFailure(path, "dependency ignore rules are negated");
   }
 }
@@ -1399,7 +1400,7 @@ function validatePackageManifest(path, content, frontend) {
   if (manifest.scripts?.preinstall || manifest.scripts?.install || manifest.scripts?.postinstall || manifest.scripts?.prepare) {
     semanticFailure(path, "package lifecycle hooks are not permitted in coverage installs");
   }
-  const deps = { ...(manifest.dependencies ?? {}), ...(manifest.devDependencies ?? {}) };
+  const deps = { ...manifest.dependencies, ...manifest.devDependencies };
   if ((frontend && deps.vitest !== "4.1.6") || (!frontend && typeof deps.vitest !== "string")) {
     semanticFailure(path, "Vitest dependency is missing or not constrained");
   }
