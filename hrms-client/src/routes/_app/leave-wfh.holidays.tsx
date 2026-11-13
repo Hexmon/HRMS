@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,25 +10,32 @@ import { DataCard, EmptyState, Modal } from "@/components/ui-kit";
 import { useAuth } from "@/lib/auth";
 import type { Role } from "@/lib/mock/roles";
 import { toast } from "sonner";
-import { ChevronLeft, ChevronRight, Plus, MapPin, CalendarDays } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, MapPin, CalendarDays, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { holidaysFromResponse, useHolidayMutation, useHolidays } from "@/domains/leave-wfh";
-import { userFacingErrorMessage } from "@/shared/api";
+import { formatHolidayDate, isHolidayInMonth } from "@/domains/leave-wfh/calendar-date";
+import { ApiError, userFacingErrorMessage } from "@/shared/api";
+import type { Holiday } from "@/lib/leave-store";
 
 export const Route = createFileRoute("/_app/leave-wfh/holidays")({
   component: HolidaysPage,
 });
 
 const ADMIN: Role[] = ["hr_admin", "main_admin"];
+type HolidayView = Holiday & { expectedVersion: number };
 
-function HolidaysPage() {
+export function HolidaysPage() {
   const { activeRole } = useAuth();
   const isAdmin = !!activeRole && ADMIN.includes(activeRole);
   const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<HolidayView | null>(null);
+  const [latestConflict, setLatestConflict] = useState<HolidayView | null>(null);
   const [name, setName] = useState("");
   const [date, setDate] = useState("");
   const [region, setRegion] = useState("");
   const [optional, setOptional] = useState(false);
+  const draftId = useRef<string | null>(null);
+  const submissionInFlight = useRef(false);
 
   const today = new Date();
   const [cursor, setCursor] = useState({ y: today.getFullYear(), m: today.getMonth() });
@@ -45,34 +52,91 @@ function HolidaysPage() {
   const list = holidaysFromResponse(holidaysQuery.data);
 
   const monthHolidays = useMemo(
-    () =>
-      list.filter((h) => {
-        const d = new Date(h.date);
-        return d.getFullYear() === cursor.y && d.getMonth() === cursor.m;
-      }),
+    () => list.filter((h) => isHolidayInMonth(h.date, cursor.y, cursor.m)),
     [list, cursor],
   );
 
-  const add = async () => {
-    if (!name || !date) return toast.error("Name and date are required");
+  const openForm = () => {
+    setEditing(null);
+    setLatestConflict(null);
+    draftId.current ??= createId();
+    setOpen(true);
+  };
+
+  const openEditForm = (holiday: HolidayView) => {
+    draftId.current = holiday.id;
+    setEditing(holiday);
+    setLatestConflict(null);
+    setName(holiday.name);
+    setDate(holiday.date);
+    setRegion(holiday.region);
+    setOptional(holiday.optional);
+    setOpen(true);
+  };
+
+  const closeForm = () => {
+    if (submissionInFlight.current) return;
+    draftId.current = null;
+    setEditing(null);
+    setLatestConflict(null);
+    setOpen(false);
+    setName("");
+    setDate("");
+    setRegion("");
+    setOptional(false);
+  };
+
+  const save = async () => {
+    const normalizedName = name.trim();
+    const normalizedRegion = region.trim() || "All";
+    if (normalizedName.length < 2 || !date) {
+      return toast.error("Enter a holiday name of at least 2 characters and a date");
+    }
+    if (submissionInFlight.current) return;
+    submissionInFlight.current = true;
+    const id = draftId.current ?? (draftId.current = createId());
+    const editSnapshot = editing;
     try {
       await mutation.mutateAsync({
-        id: createId(),
+        id,
         input: {
-          name,
+          name: normalizedName,
           date,
-          region: region || "All",
+          region: normalizedRegion,
           optional,
+          ...(editSnapshot ? { expected_version: editSnapshot.expectedVersion } : {}),
         },
       });
-      toast.success(`${name} added to holidays`);
+      toast.success(
+        editSnapshot ? `${normalizedName} updated` : `${normalizedName} added to holidays`,
+      );
+      draftId.current = null;
+      setEditing(null);
       setOpen(false);
       setName("");
       setDate("");
       setRegion("");
       setOptional(false);
     } catch (error) {
-      toast.error(errorMessage(error));
+      const staleEdit =
+        Boolean(editSnapshot) &&
+        error instanceof ApiError &&
+        error.status === 409 &&
+        error.details?.reason === "stale_version";
+      const refreshed = await holidaysQuery.refetch();
+      if (staleEdit) {
+        const latest = holidaysFromResponse(refreshed.data).find(
+          (holiday) => holiday.id === editSnapshot?.id,
+        );
+        if (latest) setLatestConflict(latest);
+      }
+      toast.error(
+        staleEdit
+          ? "This holiday changed after you opened it. The latest version was loaded; review your draft before retrying."
+          : `${errorMessage(error)} If the connection dropped, check the refreshed list or retry with the same details.`,
+      );
+    } finally {
+      submissionInFlight.current = false;
     }
   };
 
@@ -81,7 +145,7 @@ function HolidaysPage() {
       <div className="flex items-center justify-between">
         <p className="text-sm text-muted-foreground">Company-wide holiday calendar.</p>
         {isAdmin && (
-          <Button size="sm" className="rounded-full" onClick={() => setOpen(true)}>
+          <Button size="sm" className="rounded-full" onClick={openForm}>
             <Plus className="mr-1.5 h-4 w-4" /> Add holiday
           </Button>
         )}
@@ -134,14 +198,20 @@ function HolidaysPage() {
                           </p>
                         </div>
                       </div>
-                      <p className="text-sm font-medium">
-                        {new Date(h.date).toLocaleDateString(undefined, {
-                          weekday: "short",
-                          day: "2-digit",
-                          month: "short",
-                          year: "numeric",
-                        })}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-sm font-medium">{formatHolidayDate(h.date)}</p>
+                        {isAdmin && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 rounded-full"
+                            onClick={() => openEditForm(h)}
+                            aria-label={`Edit ${h.name}`}
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
                     </li>
                   ))}
               </ul>
@@ -159,6 +229,7 @@ function HolidaysPage() {
                   size="icon"
                   className="h-8 w-8 rounded-full"
                   onClick={prev}
+                  aria-label="Previous month"
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
@@ -167,6 +238,7 @@ function HolidaysPage() {
                   size="icon"
                   className="h-8 w-8 rounded-full"
                   onClick={next}
+                  aria-label="Next month"
                 >
                   <ChevronRight className="h-4 w-4" />
                 </Button>
@@ -184,7 +256,7 @@ function HolidaysPage() {
               {Array.from({ length: days }).map((_, i) => {
                 const d = i + 1;
                 const dateStr = `${cursor.y}-${String(cursor.m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
-                const h = monthHolidays.find((x) => x.date === dateStr);
+                const dayHolidays = monthHolidays.filter((x) => x.date === dateStr);
                 const dow = new Date(cursor.y, cursor.m, d).getDay();
                 const isWknd = dow === 0 || dow === 6;
                 return (
@@ -192,15 +264,27 @@ function HolidaysPage() {
                     key={d}
                     className={cn(
                       "min-h-[68px] rounded-xl border p-2 text-left text-xs transition",
-                      h ? "bg-primary-soft border-primary/30" : isWknd ? "bg-muted/40" : "bg-card",
+                      dayHolidays.length > 0
+                        ? "bg-primary-soft border-primary/30"
+                        : isWknd
+                          ? "bg-muted/40"
+                          : "bg-card",
                     )}
                   >
-                    <div className={cn("font-semibold", h && "text-primary")}>{d}</div>
-                    {h && (
-                      <div className="mt-1 line-clamp-2 text-[10px] font-medium leading-tight text-primary">
-                        {h.name}
-                      </div>
-                    )}
+                    <div className={cn("font-semibold", dayHolidays.length > 0 && "text-primary")}>
+                      {d}
+                    </div>
+                    <div className="mt-1 space-y-0.5">
+                      {dayHolidays.map((holiday) => (
+                        <div
+                          key={holiday.id}
+                          className="line-clamp-2 text-[10px] font-medium leading-tight text-primary"
+                          title={`${holiday.name} (${holiday.region})`}
+                        >
+                          {holiday.name}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 );
               })}
@@ -211,24 +295,54 @@ function HolidaysPage() {
 
       <Modal
         open={open}
-        onOpenChange={setOpen}
-        title="Add holiday"
+        onOpenChange={(nextOpen) => (nextOpen ? openForm() : closeForm())}
+        title={editing ? "Edit holiday" : "Add holiday"}
         footer={
           <>
-            <Button variant="outline" className="rounded-full" onClick={() => setOpen(false)}>
+            <Button
+              variant="outline"
+              className="rounded-full"
+              disabled={mutation.isPending}
+              onClick={closeForm}
+            >
               Cancel
             </Button>
             <Button
               className="rounded-full"
-              disabled={mutation.isPending}
-              onClick={() => void add()}
+              disabled={mutation.isPending || latestConflict !== null}
+              onClick={() => void save()}
             >
-              Add
+              {editing ? "Save changes" : "Add"}
             </Button>
           </>
         }
       >
         <div className="space-y-3">
+          {latestConflict && (
+            <div role="alert" className="rounded-xl border border-warning/40 bg-warning/10 p-3">
+              <p className="text-sm font-medium">A newer version is available</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Your draft is preserved. Load the latest saved value before applying your changes
+                again: {latestConflict.name}, {latestConflict.date}, {latestConflict.region}.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="mt-2 rounded-full"
+                onClick={() => {
+                  setEditing(latestConflict);
+                  setName(latestConflict.name);
+                  setDate(latestConflict.date);
+                  setRegion(latestConflict.region);
+                  setOptional(latestConflict.optional);
+                  setLatestConflict(null);
+                }}
+              >
+                Load latest version
+              </Button>
+            </div>
+          )}
           <div>
             <Label htmlFor="hn">Name</Label>
             <Input
