@@ -91,14 +91,20 @@ Final executable revision `509f326a37c154951acf107af02bf18293eb2b6f` hardens det
 - repeating `docker ... compose ... up -d --wait` against the retained disposable volumes exited 0; migration logs recorded 0 applied/65 already applied and both seed phases successful;
 - the disposable Compose services, network and volumes were removed. The associated container `pnpm start` process exited with stack cleanup.
 
-The broader baseline suites were executed at `8e0b0412`; the focused startup delta was tested at `09a9e987`; the security/config hardening above is tested at final executable head `509f326a37c154951acf107af02bf18293eb2b6f`. These results do not substitute for changed-line/branch coverage, hosted QA or human acceptance.
+Final executable revision `8b652273` moves deterministic identity preflight before release-seed mutations, validates active Admin status/role, and preserves release-seed primary errors. Exact evidence at this head:
+
+- focused unit/config/Holiday suite: 34/34 passed;
+- real PostgreSQL deterministic-company suite: 7/7 passed, including preflight refusal before marker/release-equivalent writes for foreign preference, foreign same-slug UUID, inactive Admin, soft-deleted Admin and non-Admin role, plus exact-context idempotency;
+- fresh local-default Compose stack: 65 migrations and both guarded seeds passed, API/outbox worker/PostgreSQL/Valkey became healthy, `/health/ready` returned `status=ok`, and a retained-volume rerun reported 0 applied/65 already applied with both seed phases successful; disposable services/volumes were removed.
+
+The broader baseline suites were executed at `8e0b0412`; the focused startup/config delta was tested at `09a9e987` and `509f326a`; deterministic preflight hardening is tested at final executable head `8b652273`. These results do not substitute for changed-line/branch coverage, hosted QA or human acceptance.
 
 The trusted changed-coverage runner cannot execute on this candidate because QA-S25-003 is not present in `release-01` or this branch. Running the external validator against this exact SHA correctly failed closed on the missing candidate-owned scripts; that is a dependency blocker, not coverage evidence.
 
 ## Remaining Completion Gates
 
 1. Land/reconcile QA-S25-003 in the approved dependency order, then measure changed executable lines/branches against `origin/release-01`; do not treat the current tooling refusal as a pass.
-2. Obtain independent senior, security/database and QA re-review of the final documentation head after deterministic-company, rollback and effective-environment fixes; resolve material findings.
+2. Obtain independent senior, security/database and QA re-review of final executable/documentation head `8b652273` after deterministic preflight and Admin-role fixes; resolve material findings.
 3. Update Sprint 25 task/case rows only with the verified evidence above and keep coverage/hosted/manual gates pending.
 4. Push the clean branch and create the isolated-QA PR/handoff. Do not merge or deploy without explicit owner approval.
 5. In hosted isolated QA, repeat migration preflight, smoke checks and the listed human journeys before QA acceptance.
