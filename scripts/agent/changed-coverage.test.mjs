@@ -924,6 +924,10 @@ test("QA holiday operational paths use explicit semantic contracts", () => {
   assert.match(validateSemanticPath("", "hrms_backend/scripts/seed-qa-data.ts", phase, "base"), /semantic contract passed/);
   assert.match(validateSemanticPath("", "hrms_backend/scripts/seed-release-data.ts", phase, "base"), /semantic contract passed/);
   assert.throws(() => validateSemanticPath("", "hrms_backend/infra/docker/docker-compose.qa.yml", compose.replace("pnpm db:migrate && pnpm qa:seed", "pnpm qa:seed"), "base"), /migrations before/);
+  assert.throws(
+    () => validateSemanticPath("", "hrms_backend/infra/docker/docker-compose.qa.yml", `${compose}\\n      APP_ENV: production`, "base"),
+    /production APP_ENV/
+  );
   assert.throws(() => validateSemanticPath("", "hrms_backend/src/db/migrations/0065_holiday_company_unique_constraint.sql", migration.replace("company_id", "name"), "base"), /company_id/);
 });
 
