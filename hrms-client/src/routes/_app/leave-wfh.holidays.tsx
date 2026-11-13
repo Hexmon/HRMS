@@ -115,7 +115,11 @@ export function HolidaysPage() {
       setRegion("");
       setOptional(false);
     } catch (error) {
-      const staleEdit = editing && error instanceof ApiError && error.status === 409;
+      const staleEdit =
+        Boolean(editing) &&
+        error instanceof ApiError &&
+        error.status === 409 &&
+        error.details?.reason === "stale_version";
       const refreshed = await holidaysQuery.refetch();
       if (staleEdit) {
         const latest = holidaysFromResponse(refreshed.data).find(

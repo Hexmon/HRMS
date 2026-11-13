@@ -154,6 +154,7 @@ export const userRoles = core.table(
   "user_roles",
   {
     id: uuidPk.defaultRandom(),
+    companyId: uuid("company_id").notNull(),
     userId: uuid("user_id").notNull(),
     roleKey: text("role_key").notNull(),
     status: text("status").notNull().default("active"),
@@ -163,7 +164,12 @@ export const userRoles = core.table(
     updatedAt,
     deletedAt
   },
-  (table) => [index("core_user_roles_lookup_idx").on(table.userId, table.status, table.effectiveFrom, table.effectiveTo)]
+  (table) => [
+    index("core_user_roles_lookup_idx").on(table.companyId, table.userId, table.status, table.effectiveFrom, table.effectiveTo),
+    uniqueIndex("core_user_roles_active_company_role_uq")
+      .on(table.companyId, table.userId, table.roleKey)
+      .where(sql`${table.status} = 'active' AND ${table.deletedAt} IS NULL`)
+  ]
 );
 
 export const userSessions = platform.table(
@@ -1861,7 +1867,9 @@ export const holidays = leaveWfh.table(
     deletedAt
   },
   (table) => [
-    uniqueIndex("holidays_company_region_date_name_uq").on(table.companyId, table.region, table.holidayDate, table.name),
+    uniqueIndex("holidays_company_region_date_name_uq")
+      .on(table.companyId, table.region, table.holidayDate, sql`lower(${table.name})`)
+      .where(sql`${table.deletedAt} IS NULL`),
     index("holidays_company_date_idx").on(table.companyId, table.holidayDate)
   ]
 );
