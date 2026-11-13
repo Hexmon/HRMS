@@ -2277,7 +2277,7 @@ test("CLI builds and stamps an external Istanbul report", () => {
     cwd: root, env: { ...process.env, HRMS_COVERAGE_REPO_ROOT: root }, encoding: "utf8",
   });
   assert.equal(unclaimedWorker.status, 1);
-  assert.match(unclaimedWorker.stderr, /claim does not match|ECONNREFUSED/);
+  assert.match(unclaimedWorker.stderr, /Changed coverage gate failed:/);
   assert.equal(git(root, "rev-parse", "HEAD"), workerHead);
   assert.equal(git(root, "status", "--porcelain=v1", "--untracked-files=all"), "");
 });
