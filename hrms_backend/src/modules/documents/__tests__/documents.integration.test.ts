@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { authHeader, loginAs, projectTravelPayload } from "#testing";
 import { buildRealApp } from "../../../__tests__/real-infra.js";
@@ -62,7 +62,7 @@ describe("document management integration", () => {
     expect(accessLog.json().total).toBeGreaterThanOrEqual(3);
   });
 
-  it("stores multipart PDF, image, and general document uploads with compression metadata", async () => {
+  it("stores multipart uploads while the unscoped PostgreSQL document list stays fail closed", async () => {
     const admin = await loginAs(app, "ADM");
     app.store.documentProcessing.pdfCompression = {
       enabled: true,
@@ -155,13 +155,18 @@ describe("document management integration", () => {
       stored_size_bytes: textBody.length
     });
 
+    const documentsBeforeList = app.store.documents.length;
     const list = await app.inject({
       method: "GET",
       url: `/api/v1/documents?page=1&page_size=10&business_object_type=employee&business_object_id=${admin.user.id}`,
       headers: authHeader(admin.token)
     });
-    expect(list.statusCode).toBe(200);
-    expect(list.json().total).toBeGreaterThanOrEqual(3);
+    expect(list.statusCode).toBe(409);
+    expect(list.json()).toMatchObject({
+      message: "Document list requires tenant-scoped receipt filtering"
+    });
+    expect(list.json().items).toBeUndefined();
+    expect(app.store.documents).toHaveLength(documentsBeforeList);
 
     const download = await app.inject({
       method: "POST",
@@ -240,42 +245,51 @@ describe("document management integration", () => {
     expect(oversized.json().message).toBe("File is larger than the configured media upload limit");
   });
 
-  it("stores multipart uploads through expense and EMS document wrapper paths", async () => {
+  it("keeps SQL expense receipt upload fail closed while the EMS wrapper remains available", async () => {
     const employee = await loginAs(app, "E1");
 
     const createExpense = await app.inject({
       method: "POST",
       url: "/api/v1/expenses",
-      headers: authHeader(employee.token),
+      headers: { ...authHeader(employee.token), "idempotency-key": "documents-expense-create-001" },
       payload: projectTravelPayload
     });
     expect(createExpense.statusCode).toBe(200);
 
     const receiptBody = Buffer.from("%PDF-1.4\nreceipt\n%%EOF\n", "utf8");
-    const expenseUpload = await multipartUpload(app, {
-      url: `/api/v1/expenses/${createExpense.json().id}/documents`,
-      token: employee.token,
-      fields: {
-        classification: "finance",
-        document_type: "receipt"
-      },
-      file: {
-        fieldName: "file",
-        fileName: "receipt.pdf",
-        mimeType: "application/pdf",
-        body: receiptBody
-      }
-    });
-    expect(expenseUpload.statusCode).toBe(200);
-    expect(expenseUpload.json()).toMatchObject({
-      business_object_type: "expense_ticket",
-      business_object_id: createExpense.json().id,
-      document_type: "receipt",
-      file_name: "receipt.pdf",
-      mime_type: "application/pdf",
-      size_bytes: receiptBody.length
-    });
-    expect(app.store.expenseDocuments.some((document) => document.document_id === expenseUpload.json().id)).toBe(true);
+    const beforeExpenseUpload = {
+      documents: app.store.documents.length,
+      expenseDocuments: app.store.expenseDocuments.length,
+      outbox: app.store.outbox.length
+    };
+    expect(app.store.objectStorage).toBeDefined();
+    const putObject = vi.spyOn(app.store.objectStorage!, "putObject");
+    try {
+      const expenseUpload = await multipartUpload(app, {
+        url: `/api/v1/expenses/${createExpense.json().id}/documents`,
+        token: employee.token,
+        fields: {
+          classification: "finance",
+          document_type: "receipt"
+        },
+        file: {
+          fieldName: "file",
+          fileName: "receipt.pdf",
+          mimeType: "application/pdf",
+          body: receiptBody
+        }
+      });
+      expect(expenseUpload.statusCode).toBe(409);
+      expect(expenseUpload.json()).toMatchObject({
+        message: "Expense receipt upload requires transaction-owned parent authorization"
+      });
+      expect(putObject).not.toHaveBeenCalled();
+      expect(app.store.documents).toHaveLength(beforeExpenseUpload.documents);
+      expect(app.store.expenseDocuments).toHaveLength(beforeExpenseUpload.expenseDocuments);
+      expect(app.store.outbox).toHaveLength(beforeExpenseUpload.outbox);
+    } finally {
+      putObject.mockRestore();
+    }
 
     const imageBody = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43, 0x00]);
     const emsUpload = await multipartUpload(app, {

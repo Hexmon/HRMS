@@ -23,6 +23,7 @@ import {
   AttendanceReportSourceCategoryValues,
 } from "../modules/attendance/reporting-projection.js";
 import { AttendanceReportingEvidenceCategoryValues } from "../modules/attendance/reporting-evidence.js";
+import { ReportExportTypes } from "../modules/reports/export-boundary.js";
 
 type JsonSchema = Record<string, unknown>;
 type RouteSchema = Record<string, unknown>;
@@ -167,6 +168,8 @@ const qrHashParamSchema = {
     qr_hash: {
       type: "string",
       minLength: 1,
+      maxLength: 128,
+      pattern: "^[A-Za-z0-9_-]+$",
       description: "Public QR/hash lookup value.",
       example: "release-qr-hash-lap-available",
     },
@@ -242,6 +245,22 @@ const idempotencyKeyParameter = {
   schema: attendanceClientEventIdSchema,
   description:
     "Required client_event_id UUID. Reuse only to retry the same validated attendance punch request; a new logical action requires a new UUID.",
+};
+
+const expenseCommandIdempotencyHeaderObject = {
+  type: "object",
+  required: ["idempotency-key"],
+  properties: {
+    "idempotency-key": {
+      type: "string",
+      minLength: 8,
+      maxLength: 200,
+      pattern: "^[A-Za-z0-9._:-]+$",
+      description:
+        "Required client-generated key. Reuse it only for an exact retry of the same expense command payload.",
+      example: "expense-command-019fc5b7",
+    },
+  },
 };
 
 const errorResponseSchema = {
@@ -2730,7 +2749,7 @@ const coreUserExportJobSchema = {
     job_id: uuid("Employee export job UUID"),
     export_id: uuid("Employee export job UUID"),
     event_id: uuid("Source outbox event UUID"),
-    status: { type: "string", example: "ready" },
+    status: { type: "string", example: "unavailable", description: "Legacy export metadata is not downloadable until private delivery is enabled." },
     outbox_status: { type: "string", example: "pending" },
     format: { type: "string", enum: ["csv", "xlsx"], example: "csv" },
     filters: { type: "object", additionalProperties: true },
@@ -2742,7 +2761,7 @@ const coreUserExportJobSchema = {
     download_url: { type: "string", nullable: true },
     created_by_user_id: { ...uuid("Actor user UUID"), nullable: true },
     created_by: { type: "string", example: "ADM - Priya Menon" },
-    adapter: { type: "string", example: "cloudinary-generated-csv" },
+    adapter: { type: "string", example: "private-materializer-unavailable" },
     file_name: {
       type: "string",
       nullable: true,
@@ -3014,6 +3033,17 @@ const ticketSchema = {
     closed_at: { ...dateTime("Closure timestamp"), nullable: true },
   },
   additionalProperties: true,
+};
+
+const expenseCommandResultSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["id", "status", "version"],
+  properties: {
+    id: uuid("Expense ticket UUID"),
+    status: { type: "string", description: "Status after the command commits." },
+    version: { type: "integer", minimum: 1, description: "Committed optimistic-concurrency version." },
+  },
 };
 
 const expenseTimelineEventSchema = {
@@ -3346,6 +3376,9 @@ const assetRecoveryTicketSchema = {
     "id",
     "employee_user_id",
     "asset_id",
+    "assignment_id",
+    "assignment_assigned_at",
+    "review_required",
     "status",
     "version",
     "created_at",
@@ -3354,6 +3387,9 @@ const assetRecoveryTicketSchema = {
     id: uuid("Recovery ticket UUID"),
     employee_user_id: uuid("Employee user UUID"),
     asset_id: uuid("Asset UUID"),
+    assignment_id: { ...uuid("Custody assignment UUID"), nullable: true },
+    assignment_assigned_at: { ...dateTime("Original custody assignment timestamp"), nullable: true },
+    review_required: { type: "boolean", description: "Ticket cannot settle against the current custody assignment and requires HR review", example: false },
     status: {
       type: "string",
       enum: ["open", "in_progress", "closed"],
@@ -6440,7 +6476,10 @@ const holidayUpsertBody = {
     date: date("Holiday date", "2026-12-24"),
     region: { type: "string", default: "All", example: "All" },
     optional: { type: "boolean", default: false, example: true },
-    expected_version: { type: "integer", minimum: 1, example: 1 },
+    expected_version: {
+      type: "integer", minimum: 1, example: 1,
+      description: "Required when changing an existing holiday. Omit for a new ID or an unchanged retry of the same ID and body. A missing ID with this field returns 404 rather than creating a holiday.",
+    },
   },
   additionalProperties: false,
 };
@@ -7744,10 +7783,21 @@ const reportExportJobSchema = {
 
 const reportExportCreateBodySchema = {
   type: "object",
+  required: ["format", "report_type", "filters"],
   properties: {
-    format: { type: "string", enum: ["csv", "xlsx"], default: "csv" },
-    report_type: { type: "string", default: "expense", example: "attendance" },
-    filters: { type: "object", additionalProperties: true },
+    format: { type: "string", enum: ["csv", "xlsx"] },
+    report_type: { type: "string", enum: enumValues(ReportExportTypes), example: "attendance" },
+    filters: {
+      type: "object",
+      required: ["date_from", "date_to"],
+      description: "Both dates are required; the inclusive range may cover at most 12 calendar months. Results above 10,000 rows are rejected without truncation.",
+      properties: {
+        date_from: date("Inclusive export start date"),
+        date_to: date("Inclusive export end date"),
+        page_size: { type: "integer", minimum: 1, maximum: 10000 },
+      },
+      additionalProperties: true,
+    },
   },
   additionalProperties: false,
 };
@@ -8458,17 +8508,6 @@ const expenseWithdrawBody = {
   additionalProperties: false,
 };
 
-const expenseWithdrawResponseSchema = {
-  type: "object",
-  required: ["expense", "version", "timeline_event"],
-  properties: {
-    expense: ticketSchema,
-    version: { type: "integer", minimum: 1, example: 2 },
-    timeline_event: expenseTimelineEventSchema,
-  },
-  additionalProperties: true,
-};
-
 const expenseClarificationBody = {
   type: "object",
   required: ["message"],
@@ -8483,24 +8522,12 @@ const expenseClarificationBody = {
       type: "array",
       items: uuid("Document metadata UUID"),
       default: [],
+      maxItems: 20,
+      uniqueItems: true,
     },
     expected_version: { type: "integer", minimum: 1, example: 2 },
   },
   additionalProperties: false,
-};
-
-const expenseClarificationResponseSchema = {
-  type: "object",
-  required: ["clarification", "thread", "expense_version"],
-  properties: {
-    clarification: { type: "object", additionalProperties: true },
-    thread: {
-      type: "array",
-      items: { type: "object", additionalProperties: true },
-    },
-    expense_version: { type: "integer", minimum: 1, example: 3 },
-  },
-  additionalProperties: true,
 };
 
 const projectQuerySchema = {
@@ -9337,10 +9364,14 @@ const notificationMarkReadResponse = {
 
 const notificationReadAllResponse = {
   type: "object",
-  required: ["updated_count", "unread_count"],
+  required: ["updated_count", "unread_count", "has_more"],
   properties: {
     updated_count: { type: "integer", minimum: 0, example: 3 },
     unread_count: { type: "integer", minimum: 0, example: 0 },
+    has_more: {
+      type: "boolean",
+      description: "True when another bounded batch remains and the client should repeat this command.",
+    },
   },
   additionalProperties: false,
 };
@@ -9939,7 +9970,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/core/users/exports": operation(
     "Core / Employees & Hierarchy",
     "Create employee export job",
-    "Creates CSV or XLSX employee export documents for HR/Admin/Auditor users when object storage is configured.",
+    "Currently returns 409 before object/outbox mutation until private export delivery is enabled. HR/Admin/Auditor authorization still applies.",
     { body: coreUserExportBodySchema, response200: coreUserExportJobSchema },
   ),
   "GET /api/v1/core/users/{id}/subtree": operation(
@@ -10342,7 +10373,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/notifications/read-all": operation(
     "Notifications",
     "Mark all notifications read",
-    "Marks all visible unread notifications as read, optionally scoped by type/category or timestamp.",
+    "Marks up to 1,000 visible unread notifications as read, optionally scoped by type/category or timestamp. Repeat while has_more is true.",
     { body: notificationReadAllBody, response200: notificationReadAllResponse },
   ),
   "POST /api/v1/attendance/punches": operation(
@@ -10876,7 +10907,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/attendance/exports": operation(
     "Attendance",
     "Create attendance export job",
-    "Creates CSV, JSON, or XLSX attendance export documents for HR/Admin/Auditor users when object storage is configured.",
+    "Currently returns 409 before object/outbox mutation until private export delivery is enabled. HR/Admin/Auditor authorization still applies.",
     { body: attendanceExportBody, response200: attendanceExportResponseSchema },
   ),
   "GET /api/v1/leave/balances/my": operation(
@@ -11003,7 +11034,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/leave-wfh/exports": operation(
     "Leave / WFH / Holidays",
     "Create Leave/WFH export job",
-    "Creates CSV, JSON, or XLSX Leave/WFH export documents for HR/Admin/Auditor users when object storage is configured.",
+    "Currently returns 409 before object/outbox mutation until private export delivery is enabled. HR/Admin/Auditor authorization still applies.",
     { body: leaveWfhExportBody, response200: leaveWfhExportResponseSchema },
   ),
   "GET /api/v1/holidays": operation(
@@ -11015,7 +11046,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "PUT /api/v1/holidays/{id}": operation(
     "Leave / WFH / Holidays",
     "Upsert holiday",
-    "Creates or updates a holiday calendar entry. HR Manager or Admin role is required; expected_version enforces optimistic concurrency when updating.",
+    "Creates a company holiday at an unused ID without expected_version, or changes an existing same-company holiday with expected_version. Retrying the same ID and normalized body returns the current holiday without another version or event. A changed existing entry without the current expected_version returns 409; a missing ID with expected_version, foreign ID, or deleted ID returns 404. HR Manager or Admin role is required.",
     {
       params: idParamSchema,
       body: holidayUpsertBody,
@@ -11759,7 +11790,11 @@ const routeDocs: Record<string, RouteSchema> = {
     "Expenses / Requester",
     "Create expense",
     "Creates an expense draft or submitted ticket. Business routing and self-approval prevention remain backend-owned.",
-    { body: expenseCreateBody, response200: ticketSchema },
+    {
+      headers: expenseCommandIdempotencyHeaderObject,
+      body: expenseCreateBody,
+      response200: expenseCommandResultSchema,
+    },
   ),
   "GET /api/v1/expenses/my": operation(
     "Expenses / Requester",
@@ -11813,8 +11848,9 @@ const routeDocs: Record<string, RouteSchema> = {
     "Submits a draft or returned expense using OCC expected_version.",
     {
       params: idParamSchema,
+      headers: expenseCommandIdempotencyHeaderObject,
       body: expectedVersionBodySchema,
-      response200: ticketSchema,
+      response200: expenseCommandResultSchema,
     },
   ),
   "POST /api/v1/expenses/{id}/withdraw": operation(
@@ -11823,18 +11859,20 @@ const routeDocs: Record<string, RouteSchema> = {
     "Withdraws a requester-owned draft, submitted, pending-manager, or manager-returned expense with OCC expected_version. Remarks are required after submission.",
     {
       params: idParamSchema,
+      headers: expenseCommandIdempotencyHeaderObject,
       body: expenseWithdrawBody,
-      response200: expenseWithdrawResponseSchema,
+      response200: expenseCommandResultSchema,
     },
   ),
   "POST /api/v1/expenses/{id}/clarifications": operation(
     "Expenses / Requester",
     "Add expense clarification",
-    "Appends a durable object-scoped clarification message and returns the current thread. Requester, assigned manager, assigned finance actor, Admin, and Auditor can read according to expense object policy.",
+    "Appends a durable object-scoped clarification message and returns only the committed ticket identity/status/version. Up to 20 unique live documents coherently linked to this ticket may be referenced. Only the requester, currently authorized assigned manager, or currently authorized assigned finance actor may write; Admin/Auditor detail-read authority alone does not grant clarification write authority.",
     {
       params: idParamSchema,
+      headers: expenseCommandIdempotencyHeaderObject,
       body: expenseClarificationBody,
-      response200: expenseClarificationResponseSchema,
+      response200: expenseCommandResultSchema,
     },
   ),
   "GET /api/v1/expenses/queue/manager": operation(
@@ -11852,8 +11890,9 @@ const routeDocs: Record<string, RouteSchema> = {
     "Manager approve/reject/return decision. Reject/return require remarks; self-processing and OCC conflicts are enforced.",
     {
       params: idParamSchema,
+      headers: expenseCommandIdempotencyHeaderObject,
       body: expenseDecisionBody,
-      response200: ticketSchema,
+      response200: expenseCommandResultSchema,
     },
   ),
 
@@ -11932,8 +11971,9 @@ const routeDocs: Record<string, RouteSchema> = {
     "The assigned finance approver approves, holds, or requests clarification after manager verification. Normally this is the configured primary Finance Manager; for finance-manager self-requests it may be the configured Finance/Admin backup. Hold/clarification require remarks; self-processing and OCC conflicts are enforced.",
     {
       params: idParamSchema,
+      headers: expenseCommandIdempotencyHeaderObject,
       body: financeVerifyBody,
-      response200: ticketSchema,
+      response200: expenseCommandResultSchema,
     },
   ),
   "POST /api/v1/expenses/{id}/finance/payment": operation(
@@ -11942,18 +11982,20 @@ const routeDocs: Record<string, RouteSchema> = {
     "The assigned finance-stage actor releases advance or reimbursement payment with date, amount, mode, reference, and OCC expected_version.",
     {
       params: idParamSchema,
+      headers: expenseCommandIdempotencyHeaderObject,
       body: paymentReleaseBody,
-      response200: ticketSchema,
+      response200: expenseCommandResultSchema,
     },
   ),
   "POST /api/v1/expenses/{id}/bills": operation(
     "Finance Management",
     "Submit bills",
-    "Marks bills as submitted for a paid expense. Used before settlement and closure checks.",
+    "The requester or current assigned Finance actor marks bills as submitted for a paid expense. Admin, Auditor, and unassigned Finance roles do not receive this mutation authority.",
     {
       params: idParamSchema,
+      headers: expenseCommandIdempotencyHeaderObject,
       body: expectedVersionBodySchema,
-      response200: ticketSchema,
+      response200: expenseCommandResultSchema,
     },
   ),
   "POST /api/v1/expenses/{id}/documents/{documentId}/verify": operation(
@@ -11966,7 +12008,12 @@ const routeDocs: Record<string, RouteSchema> = {
     "Finance Management",
     "Approve settlement",
     "Finalizes settlement and calculates payable/recoverable/no-balance state. Required documents must be verified before closure.",
-    { params: idParamSchema, body: settlementBody, response200: ticketSchema },
+    {
+      params: idParamSchema,
+      headers: expenseCommandIdempotencyHeaderObject,
+      body: settlementBody,
+      response200: expenseCommandResultSchema,
+    },
   ),
   "GET /api/v1/expenses/{id}/timeline": operation(
     "Expenses / Requester",
@@ -11990,7 +12037,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/manager-backups": operation(
     "Admin / Configuration",
     "List manager backups",
-    "Lists active/effective-dated manager backup assignments.",
+    "Lists current-company manager backup assignments, including revoked history, for a currently authorized Admin.",
     {
       querystring: paginationQuerySchema,
       response200: paginated({ type: "object", additionalProperties: true }),
@@ -11999,8 +12046,9 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/manager-backups": operation(
     "Admin / Configuration",
     "Create manager backup",
-    "Creates an effective-dated manager backup assignment. Self mappings and inactive users are blocked.",
+    "Creates a transaction-owned, current-company effective-dated manager backup assignment. Current Admin authority, independent active Reviewer authority, tenant ownership and overlapping periods are enforced.",
     {
+      headers: expenseCommandIdempotencyHeaderObject,
       body: {
         type: "object",
         required: [
@@ -12021,11 +12069,13 @@ const routeDocs: Record<string, RouteSchema> = {
   "DELETE /api/v1/manager-backups/{id}": operation(
     "Admin / Configuration",
     "Revoke manager backup",
-    "Soft-revokes a manager backup assignment. Optional expected_version query supports OCC where available.",
+    "Soft-revokes a current-company manager backup assignment. expected_version is required for OCC and Idempotency-Key makes uncertain-response retries safe.",
     {
       params: idParamSchema,
+      headers: expenseCommandIdempotencyHeaderObject,
       querystring: {
         type: "object",
+        required: ["expected_version"],
         properties: {
           expected_version: { type: "integer", minimum: 1, example: 1 },
         },
@@ -12118,7 +12168,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/documents/{id}/content": operation(
     "Documents",
     "Download local document content",
-    "Streams document bytes through the backend for local/mock object storage after the same document access policy check. Real Cloudinary deployments continue to use provider HTTPS URLs from the download-url endpoint.",
+    "Streams permitted document bytes through the backend after policy checks. Generated export documents fail closed pending private storage migration; ordinary Cloudinary document policy is a separate prelaunch dependency.",
     {
       params: idParamSchema,
       response200: { type: "string", format: "binary" },
@@ -12144,7 +12194,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/reports/expenses/my": operation(
     "Reports & Analytics",
     "My expense report",
-    "Paginated requester-owned expense report with filters, dashboard cards, totals, document summary, payment summary, and workflow action hints for compact frontend list/cards.",
+    "Paginated requester-owned expense history across its persisted original companies, with filters, dashboard cards, totals, document summary, payment summary, and workflow action hints. It never grants access to another requester ticket.",
     {
       querystring: expenseReportQuerySchema,
       response200: expenseReportListSchema,
@@ -12225,7 +12275,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/reports/hr/employees": operation(
     "Reports & Analytics",
     "HR employee report",
-    "HR/Admin/Auditor employee master report with headcount, department/designation breakdowns, role access rows, and filters.",
+    "Temporarily returns 409 until historical employee company ownership is verified; no report rows are released.",
     {
       querystring: reportSummaryQuerySchema,
       response200: genericReportSummarySchema,
@@ -12234,7 +12284,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/reports/attendance/summary": operation(
     "Reports & Analytics",
     "Attendance report",
-    "Attendance report rows for daily status, work hours, late/early exceptions, and safe day-level geo/offline/mobile evidence fields. Exact coordinates are intentionally excluded.",
+    "Company-scoped attendance day and evidence rows. Historical employee name, code and department are unavailable until a source snapshot is verified. Department/manager filters and Reviewer/Director team reporting return 409. Employee self access is current-company only. Exact coordinates are excluded.",
     {
       querystring: reportSummaryQuerySchema,
       response200: attendanceReportSummarySchema,
@@ -12243,7 +12293,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/reports/leave-wfh/summary": operation(
     "Reports & Analytics",
     "Leave and WFH report",
-    "Leave/WFH report rows with balances, holidays, request status breakdowns, and duration totals.",
+    "Temporarily returns 409 until historical leave, balance and holiday company ownership is verified.",
     {
       querystring: reportSummaryQuerySchema,
       response200: genericReportSummarySchema,
@@ -12252,7 +12302,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/reports/projects/summary": operation(
     "Reports & Analytics",
     "Project portfolio report",
-    "Project report rows with allocations, utilization, assignment history, and cost rollups.",
+    "Temporarily returns 409 until historical project and allocation company ownership is verified.",
     {
       querystring: reportSummaryQuerySchema,
       response200: genericReportSummarySchema,
@@ -12261,7 +12311,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/reports/timesheets/summary": operation(
     "Reports & Analytics",
     "Timesheet report",
-    "Timesheet report rows with submitted hours, billable mix, project rollups, and productivity rows.",
+    "Temporarily returns 409 until timesheet and work-segment company ownership is verified.",
     {
       querystring: reportSummaryQuerySchema,
       response200: genericReportSummarySchema,
@@ -12270,7 +12320,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/reports/assets/summary": operation(
     "Reports & Analytics",
     "Asset report",
-    "Asset report rows with inventory status, maintenance history, recovery queue, and type/status breakdowns.",
+    "Temporarily returns 409 until historical asset and recovery company ownership is verified.",
     {
       querystring: reportSummaryQuerySchema,
       response200: genericReportSummarySchema,
@@ -12279,7 +12329,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/reports/helpdesk/summary": operation(
     "Reports & Analytics",
     "Helpdesk report",
-    "Helpdesk report rows with open/closed/SLA rollups, agent performance, category, employee, and resolution rows.",
+    "Temporarily returns 409 until historical helpdesk company ownership is verified.",
     {
       querystring: reportSummaryQuerySchema,
       response200: genericReportSummarySchema,
@@ -12288,7 +12338,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/reports/audit": operation(
     "Reports & Analytics",
     "Cross-module audit report",
-    "Admin/Auditor cross-module audit report assembled from expense audit logs, outbox events, asset events, and helpdesk events.",
+    "Current-company Admin/Auditor audit report from company-owned expense audit and outbox rows. Ambiguous asset/helpdesk legacy events are excluded.",
     {
       querystring: reportSummaryQuerySchema,
       response200: genericReportSummarySchema,
@@ -12297,7 +12347,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/reports/exports": operation(
     "Reports & Analytics",
     "List export jobs",
-    "Lists report export jobs backed by durable outbox events. Admin/Auditor can see all; other users see their own jobs.",
+    "Lists only current-company legacy export events. Their download references and ready status are suppressed until private delivery is enabled.",
     {
       querystring: reportSummaryQuerySchema,
       response200: paginated(reportExportJobSchema),
@@ -12306,13 +12356,13 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/reports/exports/{id}": operation(
     "Reports & Analytics",
     "Get export job",
-    "Returns one report export job and generated document reference when available.",
+    "Returns current-company legacy export metadata with unavailable status and no download reference.",
     { params: idParamSchema, response200: reportExportJobSchema },
   ),
   "POST /api/v1/reports/exports": operation(
     "Reports & Analytics",
     "Create export job",
-    "Creates a CSV or XLSX report export document backed by object storage and durable outbox metadata.",
+    "Currently returns 409 before object or outbox mutation while private storage and bounded materialization are unavailable. Requires both dates; future exports are limited to 10,000 rows and 12 months.",
     { body: reportExportCreateBodySchema, response200: reportExportJobSchema },
   ),
 
@@ -12507,6 +12557,41 @@ const routeDocs: Record<string, RouteSchema> = {
           },
         },
         additionalProperties: true,
+      },
+    },
+  ),
+  "GET /api/v1/assets/my": operation(
+    "Assets",
+    "My assigned assets",
+    "Lists only assets currently assigned to the authenticated employee.",
+    { querystring: paginationQuerySchema, response200: paginated(assetSchema) },
+  ),
+  "GET /api/v1/assets/assignees": operation(
+    "Assets",
+    "Asset assignment candidates",
+    "Lists active employees in the Asset Manager's assigned company with only ID and display name.",
+    {
+      querystring: {
+        type: "object",
+        properties: { q: { type: "string", maxLength: 120, description: "Optional employee name search." } },
+        additionalProperties: false,
+      },
+      response200: {
+        type: "object",
+        required: ["items", "has_more"],
+        properties: {
+          has_more: { type: "boolean", description: "True when more than 50 employees match; refine the search." },
+          items: {
+            type: "array",
+            items: {
+              type: "object",
+              required: ["id", "full_name"],
+              properties: { id: uuid("Employee UUID"), full_name: { type: "string" } },
+              additionalProperties: false,
+            },
+          },
+        },
+        additionalProperties: false,
       },
     },
   ),
@@ -13108,6 +13193,13 @@ export const swaggerTransform: NonNullable<
     schema: {
       ...(schema as RouteSchema | undefined),
       ...docs,
+      ...(url.startsWith("/api/v1/assets") && ["POST", "PATCH"].includes(method ?? "") &&
+      !url.includes("/scan/") && !url.endsWith("/licenses/validate")
+        ? { headers: {
+            type: "object", required: ["idempotency-key"],
+            properties: { "idempotency-key": { type: "string", minLength: 8, maxLength: 200, pattern: "^[A-Za-z0-9][A-Za-z0-9_-]{7,199}$", description: "Stable client command key. Reuse after an uncertain response; use a fresh key for a new action." } },
+          } }
+        : {}),
     },
     url,
   };

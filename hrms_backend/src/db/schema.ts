@@ -1850,7 +1850,7 @@ export const holidays = leaveWfh.table(
   "holidays",
   {
     id: uuidPk.defaultRandom(),
-    companyId: uuid("company_id"),
+    companyId: uuid("company_id").notNull(),
     name: text("name").notNull(),
     holidayDate: date("holiday_date").notNull(),
     region: text("region").notNull().default("All"),
@@ -1870,6 +1870,9 @@ export const expenseTickets = expenses.table(
   "expense_tickets",
   {
     id: uuidPk.defaultRandom(),
+    companyId: uuid("company_id"),
+    ownerResolutionStatus: text("owner_resolution_status").notNull().default("quarantined"),
+    ownerResolutionReason: text("owner_resolution_reason"),
     ticketNo: text("ticket_no").notNull(),
     requesterUserId: uuid("requester_user_id").notNull(),
     requesterRoleSnapshot: text("requester_role_snapshot").notNull(),
@@ -1907,6 +1910,9 @@ export const expenseTickets = expenses.table(
   },
   (table) => [
     uniqueIndex("expenses_tickets_ticket_no_uq").on(table.ticketNo),
+    index("expense_tickets_company_status_updated_idx")
+      .on(table.companyId, table.status, table.updatedAt.desc(), table.id)
+      .where(sql`${table.deletedAt} IS NULL AND ${table.companyId} IS NOT NULL`),
     index("expenses_tickets_requester_queue_idx").on(table.requesterUserId, table.status, table.createdAt),
     index("expenses_tickets_manager_queue_idx").on(table.managerVerifierId, table.status, table.createdAt),
     index("expenses_tickets_finance_queue_idx").on(table.financeApproverId, table.status, table.createdAt),
@@ -1957,6 +1963,9 @@ export const managerBackupAssignments = expenses.table(
   "employee_reviewer_mappings",
   {
     id: uuidPk.defaultRandom(),
+    companyId: uuid("company_id"),
+    ownerResolutionStatus: text("owner_resolution_status").notNull().default("quarantined"),
+    ownerResolutionReason: text("owner_resolution_reason"),
     employeeUserId: uuid("employee_user_id").notNull(),
     backupManagerUserId: uuid("reviewer_user_id").notNull(),
     assignedByUserId: uuid("assigned_by_user_id").notNull(),
@@ -1969,6 +1978,12 @@ export const managerBackupAssignments = expenses.table(
     version
   },
   (table) => [
+    index("employee_reviewer_mappings_company_created_idx")
+      .on(table.companyId, table.createdAt.desc(), table.id)
+      .where(sql`${table.deletedAt} IS NULL AND ${table.companyId} IS NOT NULL`),
+    index("employee_reviewer_mappings_company_employee_active_idx")
+      .on(table.companyId, table.employeeUserId, table.status, table.effectiveFrom, table.effectiveTo)
+      .where(sql`${table.deletedAt} IS NULL AND ${table.companyId} IS NOT NULL`),
     index("expenses_reviewer_mappings_employee_idx").on(table.employeeUserId, table.status, table.effectiveFrom, table.effectiveTo),
     index("expenses_reviewer_mappings_backup_idx").on(table.backupManagerUserId, table.status)
   ]
@@ -2030,6 +2045,47 @@ export const expenseAuditLogs = expenses.table(
     index("expenses_audit_actor_idx").on(table.actorUserId, table.createdAt),
     index("expenses_audit_event_idx").on(table.eventType, table.createdAt)
   ]
+);
+
+export const expenseOwnerRepairAudit = expenses.table("expense_owner_repair_audit", {
+  ticketId: uuid("ticket_id").primaryKey().references(() => expenseTickets.id, { onDelete: "restrict" }),
+  originalContextPayload: jsonb("original_context_payload").notNull(),
+  repairedCompanyId: uuid("repaired_company_id").notNull(),
+  evidenceReference: text("evidence_reference").notNull(),
+  evidenceSha256: text("evidence_sha256").notNull(),
+  reviewedBy: text("reviewed_by").notNull(),
+  appliedBy: text("applied_by").notNull(),
+  appliedAt: timestamp("applied_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const expenseCommandResults = expenses.table(
+  "expense_command_results",
+  {
+    id: uuidPk.defaultRandom(),
+    companyId: uuid("company_id").notNull(),
+    actorUserId: uuid("actor_user_id").notNull(),
+    ticketId: uuid("ticket_id").references(() => expenseTickets.id, { onDelete: "restrict" }),
+    resourceId: uuid("resource_id"),
+    action: text("action").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    requestHash: text("request_hash").notNull(),
+    responseBody: jsonb("response_body").notNull(),
+    createdAt,
+  },
+  (table) => [
+    check(
+      "expense_command_results_action_check",
+      sql`${table.action} IN ('create','submit','withdraw','clarification','manager.verify','bills','reviewer-routing.create','reviewer-routing.revoke','finance.approve','finance.payment','settlement')`,
+    ),
+    check(
+      "expense_command_results_subject_check",
+      sql`((${table.action} IN ('reviewer-routing.create','reviewer-routing.revoke') AND ${table.ticketId} IS NULL AND ${table.resourceId} IS NOT NULL) OR (${table.action} NOT IN ('reviewer-routing.create','reviewer-routing.revoke') AND ${table.ticketId} IS NOT NULL AND ${table.resourceId} IS NULL))`,
+    ),
+    unique("expense_command_results_company_id_actor_user_id_action_idempotency_key_key")
+      .on(table.companyId, table.actorUserId, table.action, table.idempotencyKey),
+    index("expense_command_results_actor_action_key_idx")
+      .on(table.actorUserId, table.action, table.idempotencyKey),
+  ],
 );
 
 export const expensePolicyRules = expenses.table("expense_policy_rules", {
@@ -2166,6 +2222,7 @@ export const assetRecoveryTickets = assets.table("asset_recovery_tickets", {
   id: uuidPk.defaultRandom(),
   employeeUserId: uuid("employee_user_id").notNull(),
   assetId: uuid("asset_id").notNull(),
+  assignmentId: uuid("assignment_id").references(() => assetAssignments.id),
   status: text("status").notNull(),
   settlementStatus: text("settlement_status"),
   settlementAmount: numeric("settlement_amount", { precision: 12, scale: 2 }),
@@ -2293,6 +2350,30 @@ export const compromisedKeys = assets.table("compromised_keys", {
   createdAt,
   updatedAt
 });
+
+export const assetCommandResults = assets.table(
+  "asset_command_results",
+  {
+    id: uuidPk.defaultRandom(),
+    companyId: uuid("company_id").notNull(),
+    actorUserId: uuid("actor_user_id").notNull(),
+    actionKey: text("action_key").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    requestHash: text("request_hash").notNull(),
+    responseStatus: integer("response_status").notNull(),
+    responseBody: jsonb("response_body").notNull(),
+    committedAt: timestamp("committed_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("asset_command_results_scope_key_uq").on(
+      table.companyId,
+      table.actorUserId,
+      table.actionKey,
+      table.idempotencyKey,
+    ),
+    index("asset_command_results_committed_idx").on(table.committedAt),
+  ],
+);
 
 export const workSegments = timesheets.table(
   "work_segments",
@@ -2825,6 +2906,8 @@ export const schema = {
   expenseDocuments,
   expensePayments,
   expenseAuditLogs,
+  expenseOwnerRepairAudit,
+  expenseCommandResults,
   expensePolicyRules,
   docMetadata,
   docVersions,
@@ -2840,6 +2923,7 @@ export const schema = {
   licenseEntitlements,
   licenseActivations,
   compromisedKeys,
+  assetCommandResults,
   workSegments,
   workflowDefinitions,
   timesheetSubmissions,

@@ -311,6 +311,8 @@ describe("core hierarchy API", () => {
     expect(importPoll.statusCode).toBe(200);
     expect(importPoll.json().job_id).toBe(importJob.json().job_id);
 
+    const exportDocumentCount = app.store.documents.length;
+    const exportEventCount = app.store.outbox.length;
     const exportJob = await app.inject({
       method: "POST",
       url: "/api/v1/core/users/exports",
@@ -321,16 +323,10 @@ describe("core hierarchy API", () => {
         columns: ["employee_code", "full_name", "roles"]
       }
     });
-    expect(exportJob.statusCode).toBe(200);
-    expect(exportJob.json()).toMatchObject({
-      status: "ready",
-      format: "csv",
-      adapter: `${app.store.objectStorage?.kind}-generated-csv`,
-      download_document_id: expect.any(String)
-    });
-    await expect(app.store.objectStorage?.statObject(app.store.documents.find((document) => document.id === exportJob.json().download_document_id)?.storage_key ?? "")).resolves.toMatchObject({
-      size: expect.any(Number)
-    });
+    expect(exportJob.statusCode).toBe(409);
+    expect(exportJob.json()).not.toHaveProperty("download_document_id");
+    expect(app.store.documents).toHaveLength(exportDocumentCount);
+    expect(app.store.outbox).toHaveLength(exportEventCount);
 
     const xlsxExport = await app.inject({
       method: "POST",
@@ -342,22 +338,10 @@ describe("core hierarchy API", () => {
         columns: ["employee_code", "full_name", "roles"]
       }
     });
-    expect(xlsxExport.statusCode).toBe(200);
-    expect(xlsxExport.json()).toMatchObject({
-      status: "ready",
-      format: "xlsx",
-      adapter: `${app.store.objectStorage?.kind}-generated-xlsx`,
-      file_name: expect.stringMatching(/\.xlsx$/u),
-      download_document_id: expect.any(String)
-    });
-    const xlsxDocument = app.store.documents.find((document) => document.id === xlsxExport.json().download_document_id);
-    expect(xlsxDocument).toMatchObject({
-      mime_type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      document_type: "core_user_export_export"
-    });
-    await expect(app.store.objectStorage?.statObject(xlsxDocument?.storage_key ?? "")).resolves.toMatchObject({
-      size: expect.any(Number)
-    });
+    expect(xlsxExport.statusCode).toBe(409);
+    expect(xlsxExport.json()).not.toHaveProperty("download_document_id");
+    expect(app.store.documents).toHaveLength(exportDocumentCount);
+    expect(app.store.outbox).toHaveLength(exportEventCount);
 
     const forbiddenExport = await app.inject({
       method: "POST",

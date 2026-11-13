@@ -267,11 +267,19 @@ const transactionOwnedMutationRoutes = new Set(["POST /api/v1/attendance/punches
 function isTransactionOwnedMutationRoute(routeKey: string): boolean {
   return (
     transactionOwnedMutationRoutes.has(routeKey) ||
+    routeKey === "POST /api/v1/expenses" ||
+    routeKey === "POST /api/v1/manager-backups" ||
+    /^DELETE \/api\/v1\/manager-backups\/[^/]+$/u.test(routeKey) ||
+    /^POST \/api\/v1\/expenses\/[^/]+\/(?:submit|withdraw|clarifications|manager\/verify|bills)$/u.test(routeKey) ||
+    /^PUT \/api\/v1\/holidays\/[^/]+$/u.test(routeKey) ||
     /^POST \/api\/v1\/attendance\/employees\/[^/]+\/(?:assisted-current-punches|historical-corrections)$/u.test(
       routeKey,
     ) ||
     /^POST \/api\/v1\/attendance\/regularizations\/[^/]+\/decision$/u.test(routeKey) ||
-    /^POST \/api\/v1\/attendance\/geofences\/[^/]+\/versions\/[^/]+\/publish$/u.test(routeKey)
+    /^POST \/api\/v1\/attendance\/geofences\/[^/]+\/versions\/[^/]+\/publish$/u.test(routeKey) ||
+    /^POST \/api\/v1\/expenses\/[^/]+\/(?:finance\/(?:approve|payment)|settlement)$/u.test(routeKey) ||
+    routeKey === "POST /api/v1/notifications/read-all" ||
+    /^POST \/api\/v1\/notifications\/[^/]+\/read$/u.test(routeKey)
   );
 }
 
@@ -284,6 +292,11 @@ function persistenceFlushTarget(method: string, url: string, statusCode: number)
   }
   const path = url.split("?")[0] ?? url;
   const routeKey = `${method.toUpperCase()} ${path}`;
+  // Asset mutations own their SQL transaction and durable command result.
+  // This also keeps the read-only POST scan/validate routes out of flushDomain.
+  if (path === "/api/v1/assets" || path.startsWith("/api/v1/assets/")) {
+    return { kind: "none" };
+  }
   if (sessionOnlyMutationRoutes.has(routeKey)) {
     return { kind: "none" };
   }

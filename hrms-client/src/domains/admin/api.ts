@@ -1,5 +1,6 @@
 import { apiRequest } from "@/shared/api";
-import type { ApiRecord } from "@/shared/api";
+import type { ApiRecord, PaginatedResponse } from "@/shared/api";
+import { withExpenseCommandKey } from "@/domains/expenses/command-key";
 
 export interface CompanyProfileResponse extends ApiRecord {
   id: string;
@@ -54,6 +55,31 @@ export interface MasterDataListResponse<T extends ApiRecord> extends ApiRecord {
   page: number;
   page_size: number;
   total: number;
+}
+
+const MANAGER_BACKUP_PAGE_SIZE = 100;
+const MANAGER_BACKUP_MAX_RECORDS = 10_000;
+
+function assertManagerBackupPage(
+  response: PaginatedResponse<ApiRecord>,
+  requestedPage: number,
+  expectedTotal?: number,
+): void {
+  if (
+    response.page !== requestedPage ||
+    response.page_size !== MANAGER_BACKUP_PAGE_SIZE ||
+    !Number.isSafeInteger(response.total) ||
+    response.total < 0 ||
+    response.items.length > MANAGER_BACKUP_PAGE_SIZE ||
+    (expectedTotal !== undefined && response.total !== expectedTotal)
+  ) {
+    throw new Error("Manager backup pagination changed while loading. Refresh and try again.");
+  }
+  if (response.total > MANAGER_BACKUP_MAX_RECORDS) {
+    throw new Error(
+      `Manager backup assignments exceed the ${MANAGER_BACKUP_MAX_RECORDS.toLocaleString("en-US")} record safety limit. Narrow or archive the assignments before retrying.`,
+    );
+  }
 }
 
 export interface DepartmentMasterRecord extends ApiRecord {
@@ -627,17 +653,62 @@ export const adminApi = {
       body: input,
     });
   },
-  listManagerBackups() {
-    return apiRequest<ApiRecord[]>("/api/v1/manager-backups");
-  },
-  createManagerBackup(input: ApiRecord) {
-    return apiRequest<ApiRecord>("/api/v1/manager-backups", {
-      method: "POST",
-      body: input,
+  listManagerBackupsPage(page: number) {
+    return apiRequest<PaginatedResponse<ApiRecord>>("/api/v1/manager-backups", {
+      query: { page, page_size: MANAGER_BACKUP_PAGE_SIZE },
     });
   },
-  deleteManagerBackup(id: string) {
-    return apiRequest<void>(`/api/v1/manager-backups/${id}`, { method: "DELETE" });
+  async listManagerBackups() {
+    const items: ApiRecord[] = [];
+    const seenIds = new Set<string>();
+    let page = 1;
+    let expectedTotal: number | undefined;
+
+    while (expectedTotal === undefined || items.length < expectedTotal) {
+      const response = await this.listManagerBackupsPage(page);
+      assertManagerBackupPage(response, page, expectedTotal);
+      expectedTotal ??= response.total;
+      if (response.items.length === 0 && items.length < expectedTotal) {
+        throw new Error("Manager backup pagination stopped before every assignment was loaded.");
+      }
+      for (const item of response.items) {
+        const id = typeof item.id === "string" ? item.id : null;
+        if (!id || seenIds.has(id)) {
+          throw new Error("Manager backup pagination returned a missing or duplicate assignment.");
+        }
+        seenIds.add(id);
+        items.push(item);
+      }
+      if (items.length > expectedTotal) {
+        throw new Error("Manager backup pagination returned more assignments than reported.");
+      }
+      page += 1;
+    }
+
+    return items;
+  },
+  createManagerBackup(input: ApiRecord) {
+    return withExpenseCommandKey(
+      String(input.employee_user_id ?? "reviewer-routing"),
+      "reviewer-routing.create",
+      input,
+      (key) =>
+        apiRequest<ApiRecord>("/api/v1/manager-backups", {
+          method: "POST",
+          body: input,
+          headers: { "Idempotency-Key": key },
+        }),
+    );
+  },
+  deleteManagerBackup(id: string, expectedVersion: number) {
+    const input = { expected_version: expectedVersion };
+    return withExpenseCommandKey(id, "reviewer-routing.revoke", input, (key) =>
+      apiRequest<ApiRecord>(`/api/v1/manager-backups/${id}`, {
+        method: "DELETE",
+        query: input,
+        headers: { "Idempotency-Key": key },
+      }),
+    );
   },
   createTimesheetWorkflowDefinition(input: ApiRecord) {
     return apiRequest<ApiRecord>("/api/v1/timesheets/workflow-definitions", {

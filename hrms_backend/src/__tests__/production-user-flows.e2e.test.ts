@@ -81,8 +81,42 @@ describe("production user-flow smoke", () => {
     });
     expect(timesheet).toMatchObject({ status: "Pending Approval" });
 
-    const expense = await requestJson("POST", "/api/v1/expenses", employee.token, projectTravelPayload);
-    expect(expense).toMatchObject({ requester_user_id: employee.user.id, status: "Pending Manager Verification" });
+    const expenseTicketsBefore = await app.store.pgPool!.query<{ count: number }>(
+      "SELECT count(*)::int AS count FROM expenses.expense_tickets WHERE requester_user_id = $1",
+      [employee.user.id],
+    );
+    const expenseCreateKey = randomUUID();
+    const expense = await requestJson("POST", "/api/v1/expenses", employee.token, projectTravelPayload, {
+      idempotencyKey: expenseCreateKey,
+    });
+    expect(expense).toMatchObject({
+      id: expect.any(String),
+      status: "Pending Manager Verification",
+      version: expect.any(Number),
+    });
+    const expenseReplay = await requestJson("POST", "/api/v1/expenses", employee.token, projectTravelPayload, {
+      idempotencyKey: expenseCreateKey,
+    });
+    expect(expenseReplay).toEqual(expense);
+    const expenseReplayEffects = await app.store.pgPool!.query<{ tickets: number; outbox_events: number }>(
+      `SELECT
+        (SELECT count(*)::int FROM expenses.expense_tickets WHERE requester_user_id = $1) AS tickets,
+        (SELECT count(*)::int FROM platform.outbox_events
+          WHERE aggregate_type = 'expense_ticket'
+            AND aggregate_id = $2
+            AND event_type = 'expense.submitted') AS outbox_events`,
+      [employee.user.id, expense.id],
+    );
+    expect(expenseReplayEffects.rows[0]).toEqual({
+      tickets: (expenseTicketsBefore.rows[0]?.count ?? 0) + 1,
+      outbox_events: 1,
+    });
+    const expenseDetail = await requestJson("GET", `/api/v1/expenses/${expense.id}`, employee.token);
+    expect(expenseDetail).toMatchObject({
+      id: expense.id,
+      requester_user_id: employee.user.id,
+      status: "Pending Manager Verification",
+    });
 
     const dashboard = await requestJson("GET", "/api/v1/dashboard/summary", manager.token);
     expect(dashboard.approvals.expense_manager_pending).toBeGreaterThanOrEqual(1);
@@ -182,28 +216,39 @@ describe("production user-flow smoke", () => {
     const markAll = await requestJson("POST", "/api/v1/notifications/read-all", employee.token, {});
     expect(markAll.unread_count).toBe(0);
 
+    const attendanceReport = await requestJson("GET", "/api/v1/reports/attendance/summary?page=1&page_size=10", admin.token);
+    expect(attendanceReport).toMatchObject({ page: 1, page_size: 10 });
+    expect(attendanceReport.totals).toBeDefined();
+
     for (const path of [
-      "/api/v1/reports/attendance/summary?page=1&page_size=10",
       "/api/v1/reports/leave-wfh/summary?page=1&page_size=10",
       "/api/v1/reports/projects/summary?page=1&page_size=10",
       "/api/v1/reports/helpdesk/summary?page=1&page_size=10"
     ]) {
-      const report = await requestJson("GET", path, admin.token);
-      expect(report).toMatchObject({ page: 1, page_size: 10 });
-      expect(report.totals).toBeDefined();
+      const report = await app.inject({ method: "GET", url: path, headers: authHeader(admin.token) });
+      expect(report.statusCode, report.body).toBe(409);
+      expect(report.json().code).toBe("WORKFLOW_CONFLICT");
     }
 
-    const reportExport = await requestJson("POST", "/api/v1/reports/exports", admin.token, {
-      report_type: "projects/summary",
-      format: "csv",
-      filters: { status: "active" }
+    const beforeExportOutbox = await app.store.pgPool!.query<{ count: number }>(
+      "SELECT count(*)::int AS count FROM platform.outbox_events",
+    );
+    const reportExport = await app.inject({
+      method: "POST",
+      url: "/api/v1/reports/exports",
+      headers: authHeader(admin.token),
+      payload: {
+        report_type: "projects/summary",
+        format: "csv",
+        filters: { status: "active", date_from: "2026-05-01", date_to: "2026-05-31" }
+      }
     });
-    expect(reportExport).toMatchObject({
-      report_type: "projects/summary",
-      status: "ready",
-      adapter: `${app.store.objectStorage?.kind}-generated-csv`,
-      download_document_id: expect.any(String)
-    });
+    expect(reportExport.statusCode, reportExport.body).toBe(409);
+    expect(reportExport.json().code).toBe("WORKFLOW_CONFLICT");
+    const afterExportOutbox = await app.store.pgPool!.query<{ count: number }>(
+      "SELECT count(*)::int AS count FROM platform.outbox_events",
+    );
+    expect(afterExportOutbox.rows[0]?.count).toBe(beforeExportOutbox.rows[0]?.count);
   });
 
   async function loginByEmail(email: string): Promise<LoginResult> {
@@ -217,8 +262,22 @@ describe("production user-flow smoke", () => {
     return { token: body.access_token, user: body.user };
   }
 
-  async function requestJson(method: "GET" | "POST" | "PATCH" | "PUT", url: string, token: string, payload?: Record<string, unknown>): Promise<any> {
-    const options = {
+  async function requestJson(
+    method: "GET" | "POST" | "PATCH" | "PUT",
+    url: string,
+    token: string,
+    payload?: Record<string, unknown>,
+    requestOptions?: { idempotencyKey?: string },
+  ): Promise<any> {
+    const isExpenseMutation = method !== "GET"
+      && (url === "/api/v1/expenses" || url.startsWith("/api/v1/expenses/"));
+    if (isExpenseMutation && !requestOptions?.idempotencyKey) {
+      throw new Error(`Expense mutation ${method} ${url} requires an explicit stable idempotency key.`);
+    }
+    if (method === "GET" && requestOptions?.idempotencyKey) {
+      throw new Error(`GET ${url} must not send an idempotency key.`);
+    }
+    const injectOptions = {
       method,
       url,
       headers: {
@@ -226,10 +285,13 @@ describe("production user-flow smoke", () => {
         ...(url === "/api/v1/attendance/punches"
           ? { "idempotency-key": randomUUID() }
           : {}),
+        ...(requestOptions?.idempotencyKey
+          ? { "idempotency-key": requestOptions.idempotencyKey }
+          : {}),
       },
       ...(payload === undefined ? {} : { payload })
     };
-    const response = await app.inject(options);
+    const response = await app.inject(injectOptions);
     expectOk(response, `${method} ${url}`);
     return response.json();
   }

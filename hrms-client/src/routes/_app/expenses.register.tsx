@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Download } from "lucide-react";
 import { toast } from "sonner";
+import { downloadCsv } from "@/lib/csv";
 import { pageItems, toastApiError, useApiRouteEnabled } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/expenses/register")({ component: ExpenseRegister });
@@ -30,9 +31,9 @@ function ExpenseRegister() {
 
   const sourceTickets = useMemo(() => {
     if (!apiMode) return tickets;
-    if (!registerQuery.data) return [];
+    if (registerQuery.isError || !registerQuery.data) return [];
     return mapApiExpenseTickets(pageItems(registerQuery.data), tickets);
-  }, [apiMode, registerQuery.data, tickets]);
+  }, [apiMode, registerQuery.data, registerQuery.isError, tickets]);
 
   const tableLoading = apiMode ? registerQuery.isLoading : loading;
   const tableError = apiMode
@@ -148,29 +149,20 @@ function ExpenseRegister() {
       "Status",
       "Submitted",
     ];
-    const csv = [
-      head.join(","),
-      ...rows.map((r) =>
-        [
-          r.id,
-          r.employee,
-          r.department,
-          r.expenseType,
-          r.project?.projectName ?? r.sales?.client ?? "",
-          ticketTotal(r),
-          r.paymentType,
-          r.status,
-          r.submittedAt ?? "",
-        ].join(","),
-      ),
-    ].join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "expense-register.csv";
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadCsv("expense-register.csv", [
+      head,
+      ...rows.map((r) => [
+        r.id,
+        r.employee,
+        r.department,
+        r.expenseType,
+        r.project?.projectName ?? r.sales?.client ?? "",
+        ticketTotal(r),
+        r.paymentType,
+        r.status,
+        r.submittedAt ?? "",
+      ]),
+    ]);
     toast.success("Register exported");
   };
 
@@ -232,15 +224,17 @@ function ExpenseRegister() {
               <SelectItem value="reimbursement">Reimbursement</SelectItem>
             </SelectContent>
           </Select>
-          <Button
-            onClick={exportCsv}
-            variant="outline"
-            size="sm"
-            className="rounded-full"
-            disabled={(apiMode || isApiBacked) && exportMutation.isPending}
-          >
-            <Download className="mr-1 h-4 w-4" /> Export
-          </Button>
+          {!(apiMode || isApiBacked) && (
+            <Button
+              onClick={exportCsv}
+              variant="outline"
+              size="sm"
+              className="rounded-full"
+              disabled={(apiMode || isApiBacked) && exportMutation.isPending}
+            >
+              <Download className="mr-1 h-4 w-4" /> Export
+            </Button>
+          )}
         </div>
       }
     />

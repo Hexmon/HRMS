@@ -17,6 +17,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useProjects } from "@/lib/projects-store";
+import { downloadCsv } from "@/lib/csv";
 import { useAuth } from "@/lib/auth";
 import { useEmployees } from "@/lib/employees-store";
 import { documentsApi } from "@/domains/documents";
@@ -170,31 +171,23 @@ function ProjectsPage() {
       }
       return;
     }
-    const rows = filtered.map((p) =>
-      [
-        p.code,
-        p.name,
-        p.client,
-        p.type,
-        p.manager,
-        p.startDate,
-        p.endDate,
-        p.members.length,
-        p.billingType,
-        p.status,
-        p.health,
-      ]
-        .map((v) => `"${String(v).replace(/"/g, '""')}"`)
-        .join(","),
-    );
-    const csv = [headers.join(","), ...rows].join("\n");
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `hawkaii-projects-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    const rows = filtered.map((p) => [
+      p.code,
+      p.name,
+      p.client,
+      p.type,
+      p.manager,
+      p.startDate,
+      p.endDate,
+      p.members.length,
+      p.billingType,
+      p.status,
+      p.health,
+    ]);
+    downloadCsv(`hawkaii-projects-${new Date().toISOString().slice(0, 10)}.csv`, [
+      headers,
+      ...rows,
+    ]);
     toast.success("Exported", { description: `${filtered.length} projects exported as CSV.` });
   };
 
@@ -295,15 +288,17 @@ function ProjectsPage() {
         }
         actions={
           <>
-            <ActionButton
-              variant="secondary"
-              size="sm"
-              icon={<Download className="h-4 w-4" />}
-              onClick={handleExport}
-              disabled={isApiBacked && exportMutation.isPending}
-            >
-              {isApiBacked && exportMutation.isPending ? "Exporting" : "Export"}
-            </ActionButton>
+            {!isApiBacked && (
+              <ActionButton
+                variant="secondary"
+                size="sm"
+                icon={<Download className="h-4 w-4" />}
+                onClick={handleExport}
+                disabled={isApiBacked && exportMutation.isPending}
+              >
+                {isApiBacked && exportMutation.isPending ? "Exporting" : "Export"}
+              </ActionButton>
+            )}
             {canEdit && (
               <ActionButton size="sm" icon={<Plus className="h-4 w-4" />} onClick={openAdd}>
                 Add project

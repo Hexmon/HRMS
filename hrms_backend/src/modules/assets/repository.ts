@@ -72,7 +72,12 @@ export class AssetRepository {
 
   createRequest(input: Omit<AssetRequestRecord, "id" | "request_code" | "version" | "created_at" | "updated_at" | "deleted_at">): AssetRequestRecord {
     const now = nowIso();
-    const nextNumber = this.store.assetRequests.length + 401;
+    // Asset commands load the current SQL snapshot under the DB command lock.
+    // Count-based allocation reuses codes after imports or deleted/gapped rows.
+    const nextNumber = Math.max(400, ...this.store.assetRequests.map((request) => {
+      const match = /^REQ-(\d+)$/u.exec(request.request_code);
+      return match ? Number(match[1]) : 400;
+    })) + 1;
     const request: AssetRequestRecord = {
       id: randomUUID(),
       request_code: `REQ-${nextNumber}`,

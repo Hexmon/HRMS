@@ -79,6 +79,8 @@ const expectedOperations = [
   "GET /api/v1/admin/security-settings",
   "GET /api/v1/admin/workflows",
   "GET /api/v1/assets/",
+  "GET /api/v1/assets/assignees",
+  "GET /api/v1/assets/my",
   "GET /api/v1/assets/recovery-queue",
   "GET /api/v1/assets/requests/my",
   "GET /api/v1/assets/requests/queue",
@@ -1543,7 +1545,7 @@ describe("API contracts", () => {
     expect(rows.map((row) => row.key).sort()).toEqual(
       [...expectedOperations].sort(),
     );
-    expect(rows.length).toBe(281);
+    expect(rows.length).toBe(283);
 
     const attendancePunch = spec.paths?.["/api/v1/attendance/punches"]?.post as
       | Record<string, any>
@@ -1845,6 +1847,17 @@ describe("API contracts", () => {
 
   it("documents finance bodies, grouping, and OCC 409 responses", async () => {
     const spec = await openApiSpec(app);
+    const durableExpenseCommands = [
+      "POST /api/v1/expenses",
+      "POST /api/v1/expenses/{id}/submit",
+      "POST /api/v1/expenses/{id}/withdraw",
+      "POST /api/v1/expenses/{id}/clarifications",
+      "POST /api/v1/expenses/{id}/manager/verify",
+      "POST /api/v1/expenses/{id}/bills",
+      "POST /api/v1/expenses/{id}/finance/approve",
+      "POST /api/v1/expenses/{id}/finance/payment",
+      "POST /api/v1/expenses/{id}/settlement",
+    ];
 
     for (const key of bodyRequiredOperations) {
       expect(hasJsonBody(operation(spec, key)), `${key} request body`).toBe(
@@ -1858,6 +1871,62 @@ describe("API contracts", () => {
         `${key} OCC response`,
       ).toBeDefined();
     }
+
+    for (const key of durableExpenseCommands) {
+      const command = operation(spec, key) as Record<string, any>;
+      expect(command.parameters).toContainEqual(expect.objectContaining({
+        name: "idempotency-key",
+        in: "header",
+        required: true,
+        schema: expect.objectContaining({
+          type: "string",
+          minLength: 8,
+          maxLength: 200,
+          pattern: "^[A-Za-z0-9._:-]+$",
+        }),
+      }));
+    }
+
+    for (const key of durableExpenseCommands) {
+      const command = operation(spec, key) as Record<string, any>;
+      expect(command.responses?.["200"]?.content?.["application/json"]?.schema)
+        .toMatchObject({
+          type: "object",
+          additionalProperties: false,
+          required: ["id", "status", "version"],
+          properties: {
+            id: { type: "string", format: "uuid" },
+            status: { type: "string" },
+            version: { type: "integer", minimum: 1 },
+          },
+        });
+    }
+
+    const clarification = operation(
+      spec,
+      "POST /api/v1/expenses/{id}/clarifications",
+    ) as Record<string, any>;
+    expect(
+      clarification.requestBody?.content?.["application/json"]?.schema
+        ?.properties?.document_ids,
+    ).toMatchObject({ maxItems: 20, uniqueItems: true });
+
+    const notificationReadAll = operation(
+      spec,
+      "POST /api/v1/notifications/read-all",
+    ) as Record<string, any>;
+    expect(notificationReadAll.description).toContain("Repeat while has_more is true");
+    expect(notificationReadAll.responses?.["200"]?.content?.["application/json"]?.schema)
+      .toMatchObject({
+        type: "object",
+        additionalProperties: false,
+        required: ["updated_count", "unread_count", "has_more"],
+        properties: {
+          updated_count: { type: "integer", minimum: 0 },
+          unread_count: { type: "integer", minimum: 0 },
+          has_more: { type: "boolean" },
+        },
+      });
 
     const financeKeys = operations(spec)
       .filter(

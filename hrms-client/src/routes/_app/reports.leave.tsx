@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { ReportShell } from "@/components/reports/report-shell";
+import { ReportError } from "@/components/reports/report-error";
 import { StatusBadge, type Column } from "@/components/ui-kit";
 import {
   useLeave,
@@ -51,7 +52,7 @@ function LeaveReports() {
   }
 
   if (apiMode && reportQuery.error instanceof Error) {
-    return <div className="p-6 text-sm text-destructive">{reportQuery.error.message}</div>;
+    return <ReportError error={reportQuery.error} onRetry={() => void reportQuery.refetch()} />;
   }
 
   const filter = (

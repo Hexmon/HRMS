@@ -2,7 +2,7 @@ import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { assetsApi, mapApiAssetRequests, mapApiAssets } from "@/domains/assets";
 import { useAuth } from "@/lib/auth";
-import { isUuid, pageItems, useApiRouteEnabled, withApiFallback } from "@/shared/api";
+import { ApiError, isUuid, pageItems, useApiRouteEnabled } from "@/shared/api";
 import { queryKeys, queryTimings } from "@/shared/query";
 import {
   ASSETS as SEED_ASSETS,
@@ -19,6 +19,10 @@ import {
 
 const A_KEY = "hawkaii_assets_v1";
 const R_KEY = "hawkaii_asset_requests_v1";
+
+function authorizationDenied(error: unknown): error is ApiError {
+  return error instanceof ApiError && (error.status === 401 || error.status === 403);
+}
 
 interface Ctx {
   assets: Asset[];
@@ -115,43 +119,34 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
   };
 
   const apiAssetsQuery = useQuery({
-    queryKey: queryKeys.list("assets", "inventory", { page_size: 100 }),
-    queryFn: () =>
-      withApiFallback(
-        async () => {
-          const response = await assetsApi.list({ page_size: 100 });
-          return mapApiAssets(pageItems(response), assets);
-        },
-        () => assets,
-      ),
-    enabled: apiEnabled && canUseAssetInventory,
+    queryKey: queryKeys.list("assets", canUseAssetInventory ? "inventory" : "my", {
+      page_size: 100,
+      actor_id: user?.id,
+    }),
+    queryFn: async () => {
+      const response = canUseAssetInventory
+        ? await assetsApi.list({ page_size: 100 })
+        : await assetsApi.myAssets({ page_size: 100 });
+      // API-backed identities never inherit mock/localStorage inventory or
+      // details after a denial, outage, or account switch.
+      return mapApiAssets(pageItems(response), []);
+    },
+    enabled: apiEnabled,
     staleTime: queryTimings.listStaleMs,
   });
 
   const apiMyRequestsQuery = useQuery({
-    queryKey: queryKeys.list("assets", "requests-my", { page_size: 100 }),
-    queryFn: () =>
-      withApiFallback(
-        async () => {
-          const response = await assetsApi.myRequests({ page_size: 100 });
-          return mapApiAssetRequests(pageItems(response));
-        },
-        () => requests.filter((request) => request.raisedBy === user?.name),
-      ),
+    queryKey: queryKeys.list("assets", "requests-my", { page_size: 100, actor_id: user?.id }),
+    queryFn: async () =>
+      mapApiAssetRequests(pageItems(await assetsApi.myRequests({ page_size: 100 }))),
     enabled: apiEnabled,
     staleTime: queryTimings.listStaleMs,
   });
 
   const apiQueueRequestsQuery = useQuery({
-    queryKey: queryKeys.list("assets", "requests-queue", { page_size: 100 }),
-    queryFn: () =>
-      withApiFallback(
-        async () => {
-          const response = await assetsApi.requestQueue({ page_size: 100 });
-          return mapApiAssetRequests(pageItems(response));
-        },
-        () => requests,
-      ),
+    queryKey: queryKeys.list("assets", "requests-queue", { page_size: 100, actor_id: user?.id }),
+    queryFn: async () =>
+      mapApiAssetRequests(pageItems(await assetsApi.requestQueue({ page_size: 100 }))),
     enabled: apiEnabled && isAssetAdmin,
     staleTime: queryTimings.listStaleMs,
   });
@@ -260,16 +255,20 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("assets") }),
   });
 
-  const hasApiResult = canUseAssetInventory ? apiAssetsQuery.data !== undefined : true;
+  const assetDenied = authorizationDenied(apiAssetsQuery.error);
+  const requestDenied =
+    authorizationDenied(apiMyRequestsQuery.error) ||
+    (isAssetAdmin && authorizationDenied(apiQueueRequestsQuery.error));
+  const hasApiResult = apiAssetsQuery.data !== undefined && !assetDenied;
   const visibleAssets = React.useMemo(() => {
     if (!apiEnabled) return assets;
-    if (!canUseAssetInventory) return [];
     if (!hasApiResult) return [];
     return apiAssetsQuery.data ?? [];
-  }, [apiAssetsQuery.data, apiEnabled, assets, canUseAssetInventory, hasApiResult]);
+  }, [apiAssetsQuery.data, apiEnabled, assets, hasApiResult]);
   const hasRequestApiResult =
-    apiMyRequestsQuery.data !== undefined ||
-    (isAssetAdmin && apiQueueRequestsQuery.data !== undefined);
+    !requestDenied &&
+    (apiMyRequestsQuery.data !== undefined ||
+      (isAssetAdmin && apiQueueRequestsQuery.data !== undefined));
   const visibleRequests = React.useMemo(() => {
     if (!apiEnabled) return requests;
     if (!hasRequestApiResult) return [];
@@ -286,16 +285,20 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
     requests,
   ]);
   const apiError =
-    apiEnabled && canUseAssetInventory && !hasApiResult && apiAssetsQuery.error instanceof Error
+    apiEnabled && (assetDenied || !hasApiResult) && apiAssetsQuery.error instanceof Error
       ? apiAssetsQuery.error
       : null;
   const requestError =
-    apiEnabled && !hasRequestApiResult && apiMyRequestsQuery.error instanceof Error
-      ? apiMyRequestsQuery.error
+    apiEnabled &&
+    !hasRequestApiResult &&
+    (apiMyRequestsQuery.error instanceof Error || apiQueueRequestsQuery.error instanceof Error)
+      ? apiMyRequestsQuery.error instanceof Error
+        ? apiMyRequestsQuery.error
+        : (apiQueueRequestsQuery.error as Error)
       : null;
   const loading =
     apiEnabled &&
-    ((canUseAssetInventory && !hasApiResult && apiAssetsQuery.isLoading) ||
+    ((!hasApiResult && apiAssetsQuery.isLoading) ||
       (!hasRequestApiResult && (apiMyRequestsQuery.isLoading || apiQueueRequestsQuery.isLoading)));
 
   const addAsset: Ctx["addAsset"] = async (a, actor = "Marco Rossi") => {
@@ -520,7 +523,7 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
         requests: visibleRequests,
         loading,
         error: apiError ?? requestError,
-        isApiBacked: apiEnabled && hasApiResult,
+        isApiBacked: apiEnabled,
         addAsset,
         updateAsset,
         deleteAsset,

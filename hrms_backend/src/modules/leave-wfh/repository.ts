@@ -158,7 +158,16 @@ export class LeaveWfhRepository {
   }
 
   upsertHoliday(id: UUID, input: Omit<Holiday, "id" | "created_at" | "updated_at" | "version" | "deleted_at"> & { expected_version?: number }): Holiday {
+    // A supplied UUID is never free for another tenant, including when its
+    // current row was soft-deleted. Otherwise a full-store flush can rewrite
+    // the original tenant's row through the primary-key conflict path.
+    if (this.store.holidays.some((candidate) => candidate.id === id && (candidate.company_id !== input.company_id || candidate.deleted_at))) {
+      throw notFound("Holiday not found");
+    }
     const existing = this.findHoliday(id, input.company_id ?? "");
+    if (!existing && input.expected_version !== undefined) {
+      throw notFound("Holiday not found");
+    }
     const duplicate = this.store.holidays.find(
       (candidate) =>
         candidate.id !== id &&
@@ -188,7 +197,14 @@ export class LeaveWfhRepository {
       this.store.holidays.push(holiday);
       return holiday;
     }
-    if (input.expected_version && existing.version !== input.expected_version) {
+    if (existing.name === input.name && existing.holiday_date === input.holiday_date &&
+        existing.region === input.region && existing.optional === input.optional) {
+      return existing;
+    }
+    if (input.expected_version === undefined) {
+      throw conflict("expected_version is required to change an existing holiday.", { aggregate: "holiday", id });
+    }
+    if (existing.version !== input.expected_version) {
       throw conflict("Holiday was modified by another actor.", { aggregate: "holiday", id });
     }
     existing.name = input.name;
