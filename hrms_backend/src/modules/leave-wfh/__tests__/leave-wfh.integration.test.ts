@@ -176,6 +176,29 @@ describe("leave / WFH / holidays", () => {
     expect(allowed.json().request.duration).toBe(1);
   });
 
+  it("uses the employee company working week instead of the startup company cache", async () => {
+    const companyB = randomUUID();
+    const employeeB = app.store.users.find((user) => user.employee_code === "E2")!;
+    await app.store.pgPool!.query(
+      "INSERT INTO platform.company_profiles (id, company_name, company_slug, status, working_week) VALUES ($1, 'Saturday Company', $2, 'active', 'Mon-Sat')",
+      [companyB, `saturday-${companyB}`],
+    );
+    await app.store.pgPool!.query(
+      "UPDATE platform.user_session_preferences SET company_id = $2 WHERE user_id = $1",
+      [employeeB.id, companyB],
+    );
+    const employee = await loginAs(app, "E2");
+
+    const wfh = await app.inject({
+      method: "POST",
+      url: "/api/v1/wfh/requests",
+      headers: authHeader(employee.token),
+      payload: { date_from: "2026-06-06", date_to: "2026-06-06", reason: "Saturday coverage" },
+    });
+    expect(wfh.statusCode).toBe(200);
+    expect(wfh.json().request.duration).toBe(1);
+  });
+
   it("submits WFH, supports HR monitor, and lets HR/Admin maintain holidays", async () => {
     const employee = await loginAs(app, "E1");
     const manager = await loginAs(app, "D1");

@@ -529,6 +529,25 @@ class PostgresPersistence {
     }
   }
 
+  async workingWeekForActor(actorUserId: UUID): Promise<string> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const companyId = await this.holidayCompanyForActor(client, actorUserId, false);
+      const result = await client.query<{ working_week: string }>(
+        "SELECT working_week FROM platform.company_profiles WHERE id = $1",
+        [companyId],
+      );
+      await client.query("COMMIT");
+      return result.rows[0]?.working_week ?? "Mon-Fri";
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async upsertHoliday(actorUserId: UUID, id: UUID, input: HolidayUpsertInput): Promise<Holiday> {
     const client = await this.pool.connect();
     let saved: Holiday;

@@ -583,6 +583,16 @@ export class LeaveWfhService {
     return this.activeCompany()?.working_week ?? "Mon-Fri";
   }
 
+  private async workingWeekForActor(actorUserId: UUID): Promise<string> {
+    if (!this.store.persistence) {
+      return this.workingWeek();
+    }
+    if (!this.store.persistence.workingWeekForActor) {
+      throw new Error("Company working-week SQL read is unavailable.");
+    }
+    return this.store.persistence.workingWeekForActor(actorUserId);
+  }
+
   private async holidayDatesForActor(actorUserId: UUID, dateFrom: string, dateTo: string): Promise<Set<string>> {
     if (!this.store.persistence) {
       return new Set(
@@ -610,16 +620,19 @@ export class LeaveWfhService {
 
   private async requestDurationDays(actorUserId: UUID, dateFrom: string, dateTo: string, halfDay: boolean): Promise<number> {
     durationDays(dateFrom, dateTo, halfDay);
-    const holidays = await this.holidayDatesForActor(actorUserId, dateFrom, dateTo);
+    const [holidays, workingWeek] = await Promise.all([
+      this.holidayDatesForActor(actorUserId, dateFrom, dateTo),
+      this.workingWeekForActor(actorUserId),
+    ]);
     if (halfDay) {
-      if (!isWorkingDate(dateFrom, this.workingWeek(), holidays)) {
+      if (!isWorkingDate(dateFrom, workingWeek, holidays)) {
         throw badRequest("Leave/WFH cannot be requested for a company non-working day.", {
           date: dateFrom
         });
       }
       return 0.5;
     }
-    const days = workdaysInclusive(dateFrom, dateTo, this.workingWeek(), holidays);
+    const days = workdaysInclusive(dateFrom, dateTo, workingWeek, holidays);
     if (days <= 0) {
       throw badRequest("Leave/WFH date range must include at least one company working day.", {
         date_from: dateFrom,
@@ -703,8 +716,11 @@ export class LeaveWfhService {
     workMode: "wfh" | null = null
   ): Promise<void> {
     const companyId = this.requireCompanyId(employeeUserId);
-    const holidays = await this.holidayDatesForActor(employeeUserId, dateFrom, dateTo);
-    for (const workDate of workingDatesInclusive(dateFrom, dateTo, this.workingWeek(), holidays)) {
+    const [holidays, workingWeek] = await Promise.all([
+      this.holidayDatesForActor(employeeUserId, dateFrom, dateTo),
+      this.workingWeekForActor(employeeUserId),
+    ]);
+    for (const workDate of workingDatesInclusive(dateFrom, dateTo, workingWeek, holidays)) {
       const existing = this.attendance.dayRecord(companyId, employeeUserId, workDate);
       const kind = status === AttendanceDayStatuses.Leave
         ? AttendanceApprovalKinds.Leave
