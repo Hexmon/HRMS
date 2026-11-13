@@ -99,12 +99,12 @@ Final executable revision `fbb0a8029b15f364fd04dc0c987d91d8d80b4261` moves deter
 
 The broader baseline suites were executed at `8e0b0412`; the focused startup/config delta was tested at `09a9e987` and `509f326a`; deterministic preflight hardening and the UUID-collision regression matrix are tested at final executable head `fbb0a802`. These results do not substitute for changed-line/branch coverage, hosted QA or human acceptance.
 
-The trusted changed-coverage runner cannot execute on this candidate because QA-S25-003 is not present in `release-01` or this branch. Running the external validator against this exact SHA correctly failed closed on the missing candidate-owned scripts; that is a dependency blocker, not coverage evidence.
+After reconciliation with `origin/release-01` at merge head `4cad5b4de728d3fe7541c4bfe3e4dd24c2adac02`, QA-S25-003's changed-coverage tooling is present in the candidate. Coverage must now be measured on this exact head by the repository and trusted CI jobs; no historical coverage result is being carried forward as current evidence.
 
 ## Remaining Completion Gates
 
-1. Land/reconcile QA-S25-003 in the approved dependency order, then measure changed executable lines/branches against `origin/release-01`; do not treat the current tooling refusal as a pass.
-2. Obtain independent senior, security/database and QA re-review of final executable/documentation head `37b1c8c7` after null-preference preflight hardening; resolve material findings.
+1. Complete the repository and trusted changed-executable line/branch coverage jobs on `4cad5b4de728d3fe7541c4bfe3e4dd24c2adac02`; do not treat pending or historical coverage as a pass.
+2. Obtain independent senior, security/database and QA re-review of exact head `4cad5b4de728d3fe7541c4bfe3e4dd24c2adac02` after the release reconciliation; resolve material findings.
 3. Update Sprint 25 task/case rows only with the verified evidence above and keep coverage/hosted/manual gates pending.
 4. Push the clean branch and create the isolated-QA PR/handoff. Do not merge or deploy without explicit owner approval.
 5. In hosted isolated QA, repeat migration preflight, smoke checks and the listed human journeys before QA acceptance.
