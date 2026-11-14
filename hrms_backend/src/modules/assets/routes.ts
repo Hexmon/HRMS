@@ -70,7 +70,7 @@ function authorizeAcknowledgement(store: DataStore, actor: AuthUser, id: string,
       assignment.id === recorded.assignment_id && assignment.asset_id === id && assignment.assigned_to_user_id === actor.id
     );
     if (recorded && originalEmployeeAssignment) return;
-    throw forbidden("Only the original assigned employee or a current Admin can replay this acknowledgement.");
+    throw forbidden("Only the original assigned employee can replay this acknowledgement.");
   }
   if (asset.current_assigned_user_id !== actor.id) {
     throw forbidden("Only the assigned employee can acknowledge this asset.");
