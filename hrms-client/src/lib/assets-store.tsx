@@ -289,16 +289,18 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
     apiEnabled && (assetDenied || !hasApiResult) && apiAssetsQuery.error instanceof Error
       ? apiAssetsQuery.error
       : null;
-  const requestError =
-    apiEnabled &&
-    (apiMyRequestsQuery.error instanceof Error ||
-      (isAssetAdmin && apiQueueRequestsQuery.error instanceof Error))
-      ? apiMyRequestsQuery.error instanceof Error
-        ? apiMyRequestsQuery.error
-        : (apiQueueRequestsQuery.error as Error)
+  const ownRequestError =
+    apiEnabled && !hasRequestApiResult && apiMyRequestsQuery.error instanceof Error
+      ? apiMyRequestsQuery.error
       : null;
-  const anyRequestLoading =
-    apiMyRequestsQuery.isLoading || (isAssetAdmin && apiQueueRequestsQuery.isLoading);
+  const queueRequestError =
+    apiEnabled && isAssetAdmin && apiQueueRequestsQuery.error instanceof Error
+      ? apiQueueRequestsQuery.error
+      : null;
+  const requestError = ownRequestError ?? queueRequestError;
+  const anyRequestLoading = Boolean(
+    apiMyRequestsQuery.isLoading || (isAssetAdmin && apiQueueRequestsQuery.isLoading),
+  );
   const requestsLoading = apiEnabled && !hasRequestApiResult && anyRequestLoading;
   const loading = apiEnabled && ((!hasApiResult && apiAssetsQuery.isLoading) || requestsLoading);
 

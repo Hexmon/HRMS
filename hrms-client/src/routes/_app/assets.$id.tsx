@@ -207,16 +207,11 @@ export function AssetDetail() {
                 <Info k="Invoice #" v={asset.invoiceNumber} />
                 <Info k="Purchased" v={overview.purchaseDate} />
                 <Info k="Warranty" v={overview.warranty} />
-                <Info
-                  k="Condition"
-                  v={
-                    overview.condition === null ? (
-                      "—"
-                    ) : (
-                      <span className="uppercase">{overview.condition}</span>
-                    )
-                  }
-                />
+                {overview.condition === null ? (
+                  <Info k="Condition" v="—" />
+                ) : (
+                  <Info k="Condition" v={<span className="uppercase">{asset.condition}</span>} />
+                )}
                 <Info k="Cost" v={overview.cost === null ? "—" : fmtMoney(overview.cost)} />
                 <Info k="Location" v={asset.location} />
               </dl>
@@ -609,7 +604,7 @@ export function ReturnDialog({
             {showDetails ? "Reclaim and set condition at return." : "Mark this asset as returned."}
           </DialogDescription>
         </DialogHeader>
-        {showDetails && (
+        {showDetails ? (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <Label htmlFor="asset-return-date">Return date</Label>
@@ -645,7 +640,7 @@ export function ReturnDialog({
               />
             </div>
           </div>
-        )}
+        ) : null}
         <DialogFooter>
           <Button
             variant="outline"

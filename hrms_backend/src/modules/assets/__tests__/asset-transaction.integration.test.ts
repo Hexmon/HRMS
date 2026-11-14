@@ -778,6 +778,74 @@ describe("asset transaction boundary", () => {
     expect((await pool.query<{ value: number }>("SELECT 1 AS value")).rows[0]?.value).toBe(1);
   });
 
+  it("preserves primary asset failures when rollback reporting also fails", async () => {
+    const manager = await loginAs(first, "AST");
+    const employee = await loginAs(first, "E1");
+    const persistence = first.store.persistence as typeof first.store.persistence & {
+      flushInitialAssetSeed(): Promise<void>;
+    };
+    if (!persistence?.assetReadStore || !persistence.flushInitialAssetSeed) {
+      throw new Error("Expected PostgreSQL asset persistence");
+    }
+    const pool = first.store.pgPool!;
+    const originalConnect = pool.connect.bind(pool);
+
+    const interceptNextClient = (primaryFailure?: (sql: string) => Error | undefined) => {
+      const spy = vi.spyOn(pool, "connect").mockImplementationOnce(async () => {
+        const client = await originalConnect();
+        const originalQuery = client.query.bind(client);
+        client.query = (async (sql: unknown, ...args: unknown[]) => {
+          if (typeof sql === "string") {
+            const failure = primaryFailure?.(sql);
+            if (failure) throw failure;
+            if (sql === "ROLLBACK") {
+              await (originalQuery as (...items: unknown[]) => Promise<unknown>)(sql, ...args);
+              throw new Error("simulated rollback report failure");
+            }
+          }
+          return (originalQuery as (...items: unknown[]) => Promise<unknown>)(sql, ...args);
+        }) as typeof client.query;
+        return client;
+      });
+      return spy;
+    };
+
+    let spy = interceptNextClient();
+    await expect(persistence.flushInitialAssetSeed()).rejects.toThrow(/requires empty asset tables/u);
+    spy.mockRestore();
+
+    spy = interceptNextClient((sql) => sql.includes("FROM assets.assets")
+      ? new Error("simulated snapshot read failure")
+      : undefined);
+    await expect(persistence.assetReadStore()).rejects.toThrow(/simulated snapshot read failure/u);
+    spy.mockRestore();
+
+    spy = interceptNextClient();
+    const deniedAssignees = await first.inject({
+      method: "GET",
+      url: "/api/v1/assets/assignees",
+      headers: authHeader(employee.token),
+    });
+    expect(deniedAssignees.statusCode).toBe(403);
+    expect(deniedAssignees.json().message).toMatch(/Asset Manager role required/u);
+    spy.mockRestore();
+
+    spy = interceptNextClient((sql) => sql.includes("pg_advisory_xact_lock")
+      ? Object.assign(new Error("simulated lock timeout"), { code: "55P03" })
+      : undefined);
+    const busy = await first.inject({
+      method: "POST",
+      url: "/api/v1/assets/",
+      headers: { ...authHeader(manager.token), "Idempotency-Key": randomUUID() },
+      payload: { asset_code: "BUSY-S25", asset_type: "Laptop", name: "Busy command" },
+    });
+    expect(busy.statusCode).toBe(409);
+    expect(busy.json().message).toMatch(/busy; retry with the same Idempotency-Key/u);
+    spy.mockRestore();
+
+    expect((await pool.query<{ value: number }>("SELECT 1 AS value")).rows[0]?.value).toBe(1);
+  });
+
   it("rechecks inactive actor, company, preference, and in-memory identity for every command", async () => {
     const manager = await loginAs(first, "AST");
     const pool = first.store.pgPool!;
@@ -867,6 +935,14 @@ describe("asset transaction boundary", () => {
       headers: authHeader(manager.token),
       payload,
     })).statusCode).toBe(400);
+
+    const missingAssetAcknowledgement = await first.inject({
+      method: "POST",
+      url: `/api/v1/assets/${randomUUID()}/acknowledgements`,
+      headers: { ...authHeader(employee.token), "Idempotency-Key": randomUUID() },
+      payload: { acknowledgement_type: "received", expected_version: 1 },
+    });
+    expect(missingAssetAcknowledgement.statusCode).toBe(403);
     expect((await first.inject({
       method: "POST",
       url: "/api/v1/assets/",
@@ -913,6 +989,20 @@ describe("asset transaction boundary", () => {
       throw error;
     } finally {
       tamper.release();
+    }
+    expect((await first.inject(acknowledgement)).statusCode).toBe(403);
+
+    const nullTamper = await first.store.pgPool!.connect();
+    try {
+      await nullTamper.query("BEGIN");
+      await nullTamper.query("SELECT set_config('hrms.asset_writer_v2', 'on', true)");
+      await nullTamper.query(
+        "UPDATE assets.asset_command_results SET response_body = 'null'::jsonb WHERE actor_user_id = $1 AND idempotency_key = $2",
+        [seedIds.employee1, replayKey],
+      );
+      await nullTamper.query("COMMIT");
+    } finally {
+      nullTamper.release();
     }
     expect((await first.inject(acknowledgement)).statusCode).toBe(403);
   });

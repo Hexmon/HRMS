@@ -633,7 +633,7 @@ class PostgresPersistence {
     const literalSearch = search.replace(/[\\%_]/gu, (character) => `\\${character}`);
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      const actor = await this.loadCurrentAssetActor(client, { actorUserId, companyId, actionKey: "assets.assignees" });
+      const actor = await this.loadCurrentAssetActor(client, { actorUserId, companyId, actionKey: "assets.assignees" }, false);
       if (!actor.roles.includes(Roles.AssetManager) && !actor.roles.includes(Roles.Admin)) {
         throw forbidden("Asset Manager role required");
       }
@@ -746,7 +746,7 @@ class PostgresPersistence {
   private async loadCurrentAssetActor(
     client: PoolClient,
     input: Pick<AssetCommandInput, "actorUserId" | "companyId" | "actionKey">,
-    lockAuthority = false,
+    lockAuthority: boolean,
   ): Promise<AuthUser> {
     const cached = this.store.users.find((user) => user.id === input.actorUserId);
     if (!cached) throw unauthorized("User no longer exists");

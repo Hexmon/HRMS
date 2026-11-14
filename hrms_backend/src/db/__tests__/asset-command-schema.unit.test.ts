@@ -16,7 +16,7 @@ describe("asset command schema and OpenAPI boundary", () => {
   });
 
   it("documents idempotency only for private asset mutations", () => {
-    const transform = (method: string, url: string) => swaggerTransform({
+    const transform = (method: string | string[], url: string) => swaggerTransform({
       schema: {},
       url,
       route: { method, url, handler: async () => undefined },
@@ -26,6 +26,7 @@ describe("asset command schema and OpenAPI boundary", () => {
     expect(transform("POST", "/api/v1/assets/").schema.headers).toMatchObject({
       required: ["idempotency-key"],
     });
+    expect(transform(["POST", "OPTIONS"], "/api/v1/assets/").schema.headers).toBeDefined();
     expect(transform("PATCH", "/api/v1/assets/vendors/:id").schema.headers).toBeDefined();
     expect(transform("GET", "/api/v1/assets/").schema.headers).toBeUndefined();
     expect(transform("POST", "/api/v1/assets/scan/token").schema.headers).toBeUndefined();
