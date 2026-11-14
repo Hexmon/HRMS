@@ -23,6 +23,7 @@ import {
   AttendanceReportSourceCategoryValues,
 } from "../modules/attendance/reporting-projection.js";
 import { AttendanceReportingEvidenceCategoryValues } from "../modules/attendance/reporting-evidence.js";
+import { ReportExportTypeValues } from "../modules/reports/export-contract.js";
 
 type JsonSchema = Record<string, unknown>;
 type RouteSchema = Record<string, unknown>;
@@ -7749,7 +7750,12 @@ const reportExportCreateBodySchema = {
   type: "object",
   properties: {
     format: { type: "string", enum: ["csv", "xlsx"], default: "csv" },
-    report_type: { type: "string", default: "expense", example: "attendance" },
+    report_type: {
+      type: "string",
+      enum: enumValues(ReportExportTypeValues),
+      default: "expense",
+      example: "attendance",
+    },
     filters: { type: "object", additionalProperties: true },
   },
   additionalProperties: false,

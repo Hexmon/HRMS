@@ -4,7 +4,7 @@ import { addMoney, AssetStatuses, AttendanceApprovalStates, AttendanceDayClassif
 import type { ExpenseApprovalRecord, MemoryDataStore } from "../../platform/data-store.js";
 import { ReportRepository } from "./repository.js";
 import { assertReportRole } from "./policy.js";
-import { forbidden, notFound } from "../../platform/errors.js";
+import { badRequest, forbidden, notFound } from "../../platform/errors.js";
 import { createGeneratedExportDocument, type GeneratedExportFormat } from "../../platform/generated-exports.js";
 import { resolveActiveCompanyMembershipContext } from "../../platform/company-membership-context.js";
 import { appendOutboxEvent } from "../expenses/events.js";
@@ -23,6 +23,7 @@ import {
   type AttendanceReportEvidenceSummary,
   type AttendanceReportSourceCategory,
 } from "../attendance/reporting-projection.js";
+import { normalizeReportExportType, type ReportExportType } from "./export-contract.js";
 
 export interface ExpenseReportQuery {
   page: number;
@@ -844,19 +845,23 @@ export class ReportService {
   }
 
   async createExport(actor: AuthUser, input: { format: "csv" | "xlsx"; report_type: string; filters: Record<string, unknown> }) {
+    const reportType = normalizeReportExportType(input.report_type);
+    if (!reportType) {
+      throw badRequest("Unsupported report type", { report_type: input.report_type });
+    }
     const aggregateId = randomUUID();
-    const rows = this.exportRows(actor, input.report_type, input.filters);
+    const rows = this.exportRows(actor, reportType, input.filters);
     const columns = exportColumns(rows);
     const generated = await createGeneratedExportDocument(this.store, {
       actor,
       businessObjectType: "report_export",
       businessObjectId: aggregateId,
-      reportType: input.report_type,
+      reportType,
       format: input.format as GeneratedExportFormat,
       rows,
       columns,
       filters: input.filters,
-      filePrefix: `report-${input.report_type}`
+      filePrefix: `report-${reportType}`
     });
     const event = appendOutboxEvent(this.store, {
       aggregateType: "report_export",
@@ -865,7 +870,7 @@ export class ReportService {
       payload: {
         actor_user_id: actor.id,
         company_id: this.store.userSessionPreferences.find((preference) => preference.user_id === actor.id)?.company_id ?? null,
-        report_type: input.report_type,
+        report_type: reportType,
         format: input.format,
         filters: input.filters,
         status: generated.status,
@@ -1086,11 +1091,11 @@ export class ReportService {
     };
   }
 
-  private exportRows(actor: AuthUser, reportType: string, filters: Record<string, unknown>): Array<Record<string, unknown>> {
+  private exportRows(actor: AuthUser, reportType: ReportExportType, filters: Record<string, unknown>): Array<Record<string, unknown>> {
     const summaryQuery = this.exportSummaryQuery(filters);
     const expenseQuery = this.exportExpenseQuery(filters);
     const result = (() => {
-      switch (reportType.trim().toLowerCase()) {
+      switch (reportType) {
         case "hr":
         case "hr/employees":
           return this.hrEmployees(actor, summaryQuery);
@@ -1128,7 +1133,6 @@ export class ReportService {
         case "expense":
         case "expenses":
         case "expenses/register":
-        default:
           return this.register(actor, expenseQuery);
       }
     })();
