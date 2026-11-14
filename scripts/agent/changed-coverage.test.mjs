@@ -1079,6 +1079,41 @@ test("frontend contract route discovery excludes test modules without hiding run
     ), "base"),
     /gap audit path must remain authoritative/,
   );
+  assert.throws(
+    () => validateSemanticPath(repositoryRoot, path, content.replace(
+      '  (file) => file.endsWith(".tsx") && !file.endsWith(".test.tsx"),\n);',
+      '  (file) => file.endsWith(".tsx") && !file.endsWith(".test.tsx"),\n).filter(() => false);',
+    ), "base"),
+    /route files must derive from the runtime route tree/,
+  );
+  assert.throws(
+    () => validateSemanticPath(repositoryRoot, path, content.replace(
+      "  );\n});\n\nconst forbiddenFiles",
+      "  );\n}).filter(() => false);\n\nconst forbiddenFiles",
+    ), "base"),
+    /missing routes must derive from mapped routes and declared coverage/,
+  );
+  assert.throws(
+    () => validateSemanticPath(repositoryRoot, path, content.replace(
+      "]);\n\nconst forbiddenExpenseTerms",
+      "]);\nforbiddenExpenseRoutes.clear();\n\nconst forbiddenExpenseTerms",
+    ), "base"),
+    /forbiddenExpenseRoutes access is not allowlisted/,
+  );
+  assert.throws(
+    () => validateSemanticPath(repositoryRoot, path, content.replace(
+      "];\n\nfunction walk",
+      "];\nforbiddenExpenseTerms.splice(0);\n\nfunction walk",
+    ), "base"),
+    /forbiddenExpenseTerms access is not allowlisted/,
+  );
+  assert.throws(
+    () => validateSemanticPath(repositoryRoot, path, content.replace(
+      '{ prefix: "/login", group: "Auth & Sessions" },',
+      '{ prefix: "", group: "Catch all" },',
+    ), "base"),
+    /unique absolute prefixes and non-empty groups/,
+  );
 });
 
 test("semantic QA scripts are classified before generic external coverage", () => {

@@ -1616,21 +1616,53 @@ function validateFrontendContractRouteCoverage(path, content) {
     }
     return matches[0].initializer;
   };
-  const requireInitializer = (name, pattern, message) => {
-    const initializer = initializerFor(name);
-    if (!pattern.test(initializer.getText(source))) semanticFailure(path, message);
-    return initializer;
-  };
-  requireInitializer("gapAudit", /^join\(root,\s*"docs\/api\/frontend-contract\/FRONTEND_BACKEND_GAP_AUDIT\.md"\)$/, "gap audit path must remain authoritative");
-  requireInitializer("routeFiles", /^walk\(routesDir\)\.filter\([\s\S]*file\.endsWith\("\.tsx"\)[\s\S]*!file\.endsWith\("\.test\.tsx"\)[\s\S]*\)$/, "route files must derive from the runtime route tree");
-  requireInitializer("routes", /^routeFiles[\s\S]*\.map\([\s\S]*routePath\(file\)[\s\S]*\)[\s\S]*\.filter\([\s\S]*item\.route[\s\S]*\)$/, "mapped routes must derive from discovered runtime route files");
-  requireInitializer("missing", /^routes\.filter\([\s\S]*coverage\.filter\([\s\S]*candidates\.some\([\s\S]*route\s*===\s*prefix[\s\S]*route\.startsWith\(`\$\{prefix\}\/[\s\S]*route\s*!==\s*"\/"[\s\S]*\)$/, "missing routes must derive from mapped routes and declared coverage");
-  requireInitializer("forbiddenFiles", /^routes\.filter\([\s\S]*forbiddenExpenseRoutes\.has\(file\)[\s\S]*\)$/, "legacy route failures must derive from mapped routes and the forbidden route set");
-  requireInitializer("activeExpenseFiles", /^routeFiles[\s\S]*\.filter\([\s\S]*startsWith\("src\/routes\/_app\/expenses"\)[\s\S]*\.concat\(\[join\(root,\s*"src\/lib\/expenses-store\.tsx"\)\]\)[\s\S]*\.filter\(existsSync\)$/, "legacy vocabulary inputs must derive from active expense source files");
-  requireInitializer("forbiddenTerms", /^activeExpenseFiles\.flatMap\([\s\S]*readFileSync\(file,\s*"utf8"\)[\s\S]*forbiddenExpenseTerms[\s\S]*\.filter\([\s\S]*text\.includes\(term\)[\s\S]*\.map\([\s\S]*\)$/, "legacy vocabulary failures must derive from the forbidden term set and active expense sources");
-  requireSemanticText(path, initializerFor("forbiddenExpenseRoutes").getText(source), /new\s+Set\(\[[\s\S]*expenses\.director\.tsx[\s\S]*expenses\.mapping\.tsx[\s\S]*\]\)/, "forbidden legacy route definitions are incomplete");
-  for (const term of ["pending_reviewer", "reviewer_returned", "reviewer_rejected", "pending_director", "director_returned", "director_rejected", "Reviewer Queue", "Director Approval", "Reviewer Mapping"]) {
-    requireSemanticText(path, initializerFor("forbiddenExpenseTerms").getText(source), new RegExp(`(["'])${term}\\1`), `forbidden legacy vocabulary is missing ${term}`);
+  const printer = ts.createPrinter({ removeComments: true });
+  const nodeHash = (node, hint = ts.EmitHint.Expression) => createHash("sha256")
+    .update(printer.printNode(hint, node, source))
+    .digest("hex");
+  const expectedInitializers = new Map([
+    ["gapAudit", ["5fd2a39b3b0c26e9e2d95a2deeb841385b7076ac9563027139802d7b122e0903", "gap audit path must remain authoritative"]],
+    ["forbiddenExpenseRoutes", ["86511663099b48cd524393cbd21f7ddf0a1e909ac019725f36e5b68268d3d402", "forbidden legacy route definitions are incomplete"]],
+    ["forbiddenExpenseTerms", ["8b06896f73e8479622ff38e4c90714b346c9b92cf229983c9dcfb5d597545c0d", "forbidden legacy vocabulary definitions are incomplete"]],
+    ["routeFiles", ["d906dfa856a4eb62d9a2d39225df2d1806b82ea52df3eb1d06a3433c8c2bc9ee", "route files must derive from the runtime route tree"]],
+    ["routes", ["3ef2f10fca65fa489dd477cb28061cbe48de997dc15daf3e1fa3d72b259d2302", "mapped routes must derive from discovered runtime route files"]],
+    ["missing", ["6aa21a85d8f46fabc839bdda934f015caadec07aa49ac138759ebdd2bc232900", "missing routes must derive from mapped routes and declared coverage"]],
+    ["forbiddenFiles", ["4588f9c4d4810427a3a1f24bf932ee0746fd9ae12593aad598593e8f09adf193", "legacy route failures must derive from mapped routes and the forbidden route set"]],
+    ["activeExpenseFiles", ["269b78104f533f3826cf62d409ec22479927d36495872d159f50a0279bee8a50", "legacy vocabulary inputs must derive from active expense source files"]],
+    ["forbiddenTerms", ["249bcb66e8a5708440c6664c3998f6ead7817cc37385f17be17926005290a7c6", "legacy vocabulary failures must derive from the forbidden term set and active expense sources"]],
+  ]);
+  for (const [name, [expectedHash, message]] of expectedInitializers) {
+    if (nodeHash(initializerFor(name)) !== expectedHash) semanticFailure(path, message);
+  }
+  const expectedFunctions = new Map([
+    ["walk", "5f032e0e301aaa84e80d206ddf0cbc617e94b8148acfc7892b2003814655831e"],
+    ["routePath", "1c9f135831f561ddd7b03fea7d81f9cbffdd528d980c48dcd3fe760e9cc56a9a"],
+  ]);
+  for (const [name, expectedHash] of expectedFunctions) {
+    const matches = source.statements.filter((statement) => ts.isFunctionDeclaration(statement) && statement.name?.text === name);
+    if (matches.length !== 1 || nodeHash(matches[0], ts.EmitHint.Unspecified) !== expectedHash) {
+      semanticFailure(path, `frontend contract coverage ${name} implementation changed`);
+    }
+  }
+  const coverageInitializer = initializerFor("coverage");
+  if (!ts.isArrayLiteralExpression(coverageInitializer) || !coverageInitializer.elements.length) {
+    semanticFailure(path, "frontend contract coverage groups must be a non-empty literal array");
+  }
+  const coveragePrefixes = new Set();
+  for (const element of coverageInitializer.elements) {
+    if (!ts.isObjectLiteralExpression(element) || element.properties.length !== 2) {
+      semanticFailure(path, "frontend contract coverage entries must contain only literal prefix and group fields");
+    }
+    const values = new Map(element.properties.map((property) => [
+      ts.isPropertyAssignment(property) && ts.isIdentifier(property.name) ? property.name.text : "",
+      ts.isPropertyAssignment(property) && ts.isStringLiteral(property.initializer) ? property.initializer.text : null,
+    ]));
+    const prefix = values.get("prefix");
+    const group = values.get("group");
+    if (typeof prefix !== "string" || !prefix.startsWith("/") || typeof group !== "string" || !group || coveragePrefixes.has(prefix)) {
+      semanticFailure(path, "frontend contract coverage entries require unique absolute prefixes and non-empty groups");
+    }
+    coveragePrefixes.add(prefix);
   }
   const errorsDeclaration = topLevelDeclarations.find((declaration) => ts.isIdentifier(declaration.name) && declaration.name.text === "errors");
   const errorsInitializer = initializerFor("errors");
@@ -1703,6 +1735,17 @@ function validateFrontendContractRouteCoverage(path, content) {
   let errorsDeclarations = 0;
   const processExitCalls = [];
   const forbiddenGlobals = new Set(["Array", "Function", "Object", "Reflect", "eval", "global", "globalThis", "require"]);
+  const protectedCollections = new Map([
+    ["coverage", new Set(["filter"])],
+    ["routeFiles", new Set(["filter", "map"])],
+    ["routes", new Set(["filter", "length"])],
+    ["missing", new Set(["length", "map"])],
+    ["forbiddenExpenseRoutes", new Set(["has"])],
+    ["forbiddenFiles", new Set(["length", "map"])],
+    ["activeExpenseFiles", new Set(["flatMap"])],
+    ["forbiddenExpenseTerms", new Set(["filter"])],
+    ["forbiddenTerms", new Set(["length", "join"])],
+  ]);
   const visit = (node) => {
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === "errors") {
       errorsDeclarations += 1;
@@ -1724,6 +1767,27 @@ function validateFrontendContractRouteCoverage(path, content) {
     }
     if (ts.isIdentifier(node) && forbiddenGlobals.has(node.text)) {
       semanticFailure(path, `frontend contract coverage must not access ${node.text}`);
+    }
+    if (ts.isIdentifier(node) && protectedCollections.has(node.text) &&
+        !(ts.isVariableDeclaration(node.parent) && node.parent.name === node)) {
+      const property = node.parent;
+      const forOfRoutes = node.text === "routes" && ts.isForOfStatement(property) && property.expression === node;
+      if (!forOfRoutes && (!ts.isPropertyAccessExpression(property) || property.expression !== node ||
+          !protectedCollections.get(node.text).has(property.name.text))) {
+        semanticFailure(path, `frontend contract coverage ${node.text} access is not allowlisted`);
+      }
+      if (!forOfRoutes && property.name.text !== "length" &&
+          (!ts.isCallExpression(property.parent) || property.parent.expression !== property)) {
+        semanticFailure(path, `frontend contract coverage ${node.text} methods must be called directly`);
+      }
+    }
+    if (ts.isIdentifier(node) && node.text === "gapAudit" &&
+        !(ts.isVariableDeclaration(node.parent) && node.parent.name === node)) {
+      const call = node.parent;
+      if (!ts.isCallExpression(call) || !ts.isIdentifier(call.expression) || call.expression.text !== "existsSync" ||
+          call.arguments.length !== 1 || call.arguments[0] !== node) {
+        semanticFailure(path, "frontend contract coverage gapAudit access is not allowlisted");
+      }
     }
     if (ts.isIdentifier(node) && node.text === "process") {
       const property = node.parent;
