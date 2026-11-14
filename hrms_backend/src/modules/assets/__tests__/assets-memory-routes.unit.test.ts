@@ -6,6 +6,7 @@ import { errorsPlugin } from "../../../plugins/errors.js";
 import { createMemoryDataStore, seedIds, type MemoryDataStore } from "../../../platform/data-store.js";
 import { assetRoutes } from "../routes.js";
 import { createRecoveryTicketsForTerminatedEmployee } from "../events.js";
+import { assertAssignedAssetEmployee } from "../policy.js";
 
 const actorHeader = "x-test-actor";
 
@@ -138,6 +139,17 @@ describe("asset routes with the memory persistence fallback", () => {
       payload: { expected_version: asset.version + 1 },
     });
     expect(wrongVersionReturn.statusCode).toBe(409);
+  });
+
+  it("enforces the assigned-employee acknowledgement policy directly", () => {
+    const employee = store.users.find((user) => user.id === seedIds.employee1)!;
+    expect(() => assertAssignedAssetEmployee(employee.id, employee)).not.toThrow();
+    expect(() => assertAssignedAssetEmployee(seedIds.employee2, employee)).toThrow(
+      "Only the assigned employee can acknowledge this asset.",
+    );
+    expect(() => assertAssignedAssetEmployee(null, employee)).toThrow(
+      "Only the assigned employee can acknowledge this asset.",
+    );
   });
 
   it("returns an allow-listed asset view to the assigned employee", async () => {

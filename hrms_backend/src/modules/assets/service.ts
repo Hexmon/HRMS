@@ -5,7 +5,7 @@ import type { MemoryDataStore } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
 import { badRequest, conflict, forbidden, notFound } from "../../platform/errors.js";
 import { appendOutboxEvent } from "../expenses/events.js";
-import { assertAssetManager } from "./policy.js";
+import { assertAssetManager, assertAssignedAssetEmployee } from "./policy.js";
 import { AssetRepository } from "./repository.js";
 import { assertAssetTransition } from "./state-machine.js";
 import { createRecoveryTicketsForTerminatedEmployee } from "./events.js";
@@ -262,10 +262,7 @@ export class AssetService {
 
   acknowledge(actor: AuthUser, id: UUID, input: { acknowledgement_type: "received"; expected_version: number }) {
     const asset = this.repository.find(id);
-    const isAssignedEmployee = asset.current_assigned_user_id === actor.id;
-    if (!isAssignedEmployee) {
-      throw forbidden("Only the assigned employee can acknowledge this asset.");
-    }
+    assertAssignedAssetEmployee(asset.current_assigned_user_id, actor);
     const assignment = this.repository.activeAssignment(id);
     if (!assignment || assignment.assigned_to_user_id !== actor.id) {
       throw conflict("Asset acknowledgement requires one active employee assignment.", { id });

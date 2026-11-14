@@ -148,7 +148,7 @@ describe("API authentication actor scope", () => {
 
   it("clears company scope on logout and on fallback login without a company", async () => {
     state.login.mockResolvedValue({
-      user: session().user,
+      user: { ...session().user, id: 42 },
       access_token: "token-without-company",
       expires_at: "2026-11-15T00:00:00Z",
     });
