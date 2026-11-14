@@ -22,6 +22,8 @@ export const dashboardRoutes: FastifyPluginAsync = async (fastify) => {
       request.actor.id,
       "dashboard.summary",
     ) ?? attendanceStore;
-    return new DashboardService(store).summary(request.actor);
+    const actor = store.users.find((user) => user.id === request.actor!.id);
+    if (!actor) throw unauthorized("User no longer exists");
+    return new DashboardService(store).summary(actor);
   });
 };

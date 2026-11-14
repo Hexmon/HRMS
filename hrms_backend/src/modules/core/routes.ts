@@ -181,8 +181,10 @@ export const coreRoutes: FastifyPluginAsync = async (fastify) => {
       request.actor.id,
       "core.users.detail",
     ) ?? fastify.store;
+    const actor = store.users.find((user) => user.id === request.actor!.id);
+    if (!actor) throw unauthorized("User no longer exists");
     const service = new CoreService(store);
-    return service.getUser(request.actor, params.id);
+    return service.getUser(actor, params.id);
   });
 
   fastify.patch("/users/:id", async (request) => {

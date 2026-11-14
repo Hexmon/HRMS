@@ -584,14 +584,14 @@ export class AssetService {
     return { status: "revoked" };
   }
 
-  consumeEmployeeTerminated(actor: AuthUser, employeeUserId: UUID): { recovery_tickets_created: number } {
+  consumeEmployeeTerminated(actor: AuthUser, employeeUserId: UUID, lifecycleEventId: UUID): { recovery_tickets_created: number } {
     const companyId = this.companyId(actor, "assets.employee-terminated");
     appendOutboxEvent(this.store, {
       aggregateType: "employee",
       aggregateId: employeeUserId,
       eventType: "employee.terminated",
-      payload: { company_id: companyId, employee_user_id: employeeUserId },
-      idempotencyKey: `employee.terminated:${companyId}:${employeeUserId}`
+      payload: { company_id: companyId, employee_user_id: employeeUserId, lifecycle_event_id: lifecycleEventId },
+      idempotencyKey: `employee.terminated:${companyId}:${employeeUserId}:${lifecycleEventId}`
     });
     return { recovery_tickets_created: createRecoveryTicketsForTerminatedEmployee(this.store, companyId, employeeUserId) };
   }

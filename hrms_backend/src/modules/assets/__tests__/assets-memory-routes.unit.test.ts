@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import Fastify, { type FastifyInstance } from "fastify";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { Roles, type AuthUser } from "#shared";
+import { EmploymentStatuses, Roles, type AuthUser } from "#shared";
 import { errorsPlugin } from "../../../plugins/errors.js";
-import { createMemoryDataStore, seedIds, type MemoryDataStore } from "../../../platform/data-store.js";
+import { createMemoryDataStore, nowIso, seedIds, type MemoryDataStore } from "../../../platform/data-store.js";
 import { assetRoutes } from "../routes.js";
 import { createRecoveryTicketsForTerminatedEmployee } from "../events.js";
 
@@ -11,6 +11,30 @@ const actorHeader = "x-test-actor";
 
 function commandHeaders(actorId: string) {
   return { [actorHeader]: actorId, "Idempotency-Key": randomUUID() };
+}
+
+function recordMemoryTermination(store: MemoryDataStore, employeeUserId: string): string {
+  const eventId = randomUUID();
+  const employee = store.users.find((user) => user.id === employeeUserId)!;
+  employee.employment_status = EmploymentStatuses.Terminated;
+  const now = nowIso();
+  store.outbox.push({
+    id: store.outbox.length + 1,
+    event_id: eventId,
+    aggregate_type: "core.user",
+    aggregate_id: employeeUserId,
+    event_type: "core.user.terminated",
+    payload: { user_id: employeeUserId, status: EmploymentStatuses.Terminated },
+    idempotency_key: `core.user.deactivated:${employeeUserId}:${eventId}`,
+    status: "pending",
+    retry_count: 0,
+    available_at: now,
+    created_at: now,
+    published_at: null,
+    failed_at: null,
+    last_error: null,
+  });
+  return eventId;
 }
 
 describe("asset routes with the memory persistence fallback", () => {
@@ -127,7 +151,7 @@ describe("asset routes with the memory persistence fallback", () => {
       method: "POST",
       url: "/assets/events/employee-terminated",
       headers: commandHeaders(employee.id),
-      payload: { employee_user_id: seedIds.employee2 },
+      payload: { employee_user_id: seedIds.employee2, lifecycle_event_id: randomUUID() },
     });
     expect(deniedTermination.statusCode).toBe(403);
 
@@ -165,11 +189,12 @@ describe("asset routes with the memory persistence fallback", () => {
     });
     expect(assigned.statusCode).toBe(200);
 
+    const lifecycleEventId = recordMemoryTermination(store, seedIds.employee1);
     const terminated = await app.inject({
       method: "POST",
       url: "/assets/events/employee-terminated",
-      headers: commandHeaders(seedIds.assetManager),
-      payload: { employee_user_id: seedIds.employee1 },
+      headers: commandHeaders(seedIds.admin),
+      payload: { employee_user_id: seedIds.employee1, lifecycle_event_id: lifecycleEventId },
     });
     expect(terminated.statusCode).toBe(200);
     expect(terminated.json().recovery_tickets_created).toBe(1);

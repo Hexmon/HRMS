@@ -59186,7 +59186,7 @@
         "tags": [
           "Outbox / Platform Events"
         ],
-        "description": "Protected local event consumer that moves assigned assets into recovery workflow when an employee is terminated.",
+        "description": "Protected HR/Admin event consumer that moves assigned assets into recovery workflow only after validating the durable employee-termination event.",
         "requestBody": {
           "required": true,
           "content": {
@@ -59194,13 +59194,20 @@
               "schema": {
                 "type": "object",
                 "required": [
-                  "employee_user_id"
+                  "employee_user_id",
+                  "lifecycle_event_id"
                 ],
                 "properties": {
                   "employee_user_id": {
                     "type": "string",
                     "format": "uuid",
                     "description": "Terminated employee UUID",
+                    "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                  },
+                  "lifecycle_event_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Durable core.user.terminated outbox event UUID",
                     "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                   }
                 }

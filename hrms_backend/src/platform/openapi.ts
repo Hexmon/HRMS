@@ -12483,12 +12483,15 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/assets/events/employee-terminated": operation(
     "Outbox / Platform Events",
     "Consume employee terminated event",
-    "Protected local event consumer that moves assigned assets into recovery workflow when an employee is terminated.",
+    "Protected HR/Admin event consumer that moves assigned assets into recovery workflow only after validating the durable employee-termination event.",
     {
       body: {
         type: "object",
-        required: ["employee_user_id"],
-        properties: { employee_user_id: uuid("Terminated employee UUID") },
+        required: ["employee_user_id", "lifecycle_event_id"],
+        properties: {
+          employee_user_id: uuid("Terminated employee UUID"),
+          lifecycle_event_id: uuid("Durable core.user.terminated outbox event UUID"),
+        },
       },
       response200: { type: "object", additionalProperties: true },
     },

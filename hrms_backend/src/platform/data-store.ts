@@ -494,6 +494,8 @@ export interface AssetCommandInput {
   idempotencyKey: string;
   requestHash: string;
   assigneeUserId?: UUID;
+  lifecycleEventId?: UUID;
+  terminatedEmployeeUserId?: UUID;
 }
 
 export type PersistenceDomain =

@@ -58,7 +58,7 @@
 - Data/migration risks: unassigned legacy inventory may have no provable owner; conflicting historical associations must stop migration and be repaired explicitly. No default company or first-company assignment is allowed.
 - API/deployment compatibility: company ownership remains server-derived and is not accepted from clients; public QR behavior is intentionally unchanged; tenant-local uniqueness may allow equal asset/vendor codes in different companies without changing response shapes.
 - Observability: migration errors identify counts/record classes without exposing personal or secret data; denied operations use existing non-enumerating errors and audit/outbox evidence where the domain currently requires it.
-- Rollback or recovery: before hosted rollout, export/validate ownership mapping and take a database backup; rollback application first. Once tenant-local duplicate values exist, removing company-scoped uniqueness or ownership columns is not automatically reversible and requires a reviewed forward repair.
+- Rollback or recovery: before hosted rollout, export/validate ownership mapping and take a database backup. After migration 0069, do not roll the application back to a pre-ownership binary: its global asset behavior is incompatible with the tenant-owned schema and resumed writes. Pause asset writes and repair/roll the application forward, or restore the complete pre-cutover application and database backup during an approved outage. Once tenant-local duplicate values exist, removing company-scoped uniqueness or ownership columns is not automatically reversible.
 
 ## Handoff
 

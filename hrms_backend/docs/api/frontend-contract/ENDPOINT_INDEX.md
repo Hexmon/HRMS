@@ -8987,6 +8987,7 @@ Required: yes
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `employee_user_id` | string<uuid> | required | Terminated employee UUID |
+| `lifecycle_event_id` | string<uuid> | required | Durable core.user.terminated outbox event UUID |
 
 **Responses**
 | Status | Meaning |

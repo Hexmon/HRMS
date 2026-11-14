@@ -179,7 +179,9 @@ export const reportRoutes: FastifyPluginAsync = async (fastify) => {
       actor.id,
       "reports.assets.summary",
     ) ?? fastify.store;
-    return new ReportService(store).assetsSummary(actor, reportSummaryQuerySchema.parse(request.query));
+    const currentActor = store.users.find((user) => user.id === actor.id);
+    if (!currentActor) throw unauthorized("User no longer exists");
+    return new ReportService(store).assetsSummary(currentActor, reportSummaryQuerySchema.parse(request.query));
   });
 
   fastify.get("/helpdesk/summary", async (request) => {

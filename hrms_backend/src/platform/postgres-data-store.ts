@@ -609,12 +609,16 @@ class PostgresPersistence {
       // Every asset collection in this request must come from one committed
       // snapshot. A concurrent command may commit between individual SELECTs.
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      if (companyId && actorUserId) {
-        await this.loadCurrentAssetActor(client, { actorUserId, companyId, actionKey }, false);
-      }
+      const currentActor = companyId && actorUserId
+        ? await this.loadCurrentAssetActor(client, { actorUserId, companyId, actionKey }, false)
+        : undefined;
       const snapshot = await this.loadAssetSnapshot(client, sourceStore, companyId);
       await client.query("COMMIT");
-      return snapshot;
+      if (!currentActor) return snapshot;
+      return {
+        ...snapshot,
+        users: snapshot.users.map((user) => user.id === currentActor.id ? { ...user, ...currentActor } : user),
+      };
     } catch (error) {
       destroyClient = await rollbackAssetTransaction(client);
       throw error;
@@ -693,6 +697,34 @@ class PostgresPersistence {
       // connection can carry this authority into a later request.
       await client.query("SELECT set_config('hrms.asset_writer_v2', 'on', true)");
       const actor = await this.loadCurrentAssetActor(client, input, true);
+      if (input.lifecycleEventId || input.terminatedEmployeeUserId) {
+        if (!input.lifecycleEventId || !input.terminatedEmployeeUserId) {
+          throw conflict("A complete employee lifecycle event reference is required.");
+        }
+        const lifecycle = await client.query(
+          `SELECT 1
+             FROM core.users u
+             JOIN platform.outbox_events o
+               ON o.event_id = $1
+              AND o.aggregate_type = 'core.user'
+              AND o.aggregate_id = u.id
+              AND o.event_type = 'core.user.terminated'
+            WHERE u.id = $2
+              AND u.employment_status = 'terminated'
+              AND EXISTS (
+                SELECT 1
+                  FROM assets.asset_assignments aa
+                 WHERE aa.company_id = $3
+                   AND aa.assigned_to_user_id = u.id
+                   AND aa.status = 'active'
+              )
+            FOR SHARE OF u, o`,
+          [input.lifecycleEventId, input.terminatedEmployeeUserId, input.companyId],
+        );
+        if (lifecycle.rowCount !== 1) {
+          throw conflict("Employee termination event is not eligible for asset recovery.");
+        }
+      }
       const before = await this.loadAssetSnapshot(client, this.store, input.companyId);
 
       const previous = await client.query<{
