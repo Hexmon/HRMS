@@ -171,6 +171,17 @@ describe("asset inventory", () => {
     expect(state.toast.success).toHaveBeenCalledWith("Export queued", expect.any(Object));
   });
 
+  it("removes assets without warranty metadata when a warranty filter is selected", () => {
+    state.assets = [
+      asset("expired-asset", { warrantyExpiry: "expired" }),
+      asset("unknown-warranty", { warrantyExpiry: undefined }),
+    ];
+    render(<Inventory />);
+    fireEvent.click(screen.getAllByRole("button", { name: "Choose expired" })[3]!);
+    expect(screen.getByText("expired-asset")).toBeInTheDocument();
+    expect(screen.queryByText("unknown-warranty")).not.toBeInTheDocument();
+  });
+
   it("opens a completed backend export and reports provider failure", async () => {
     state.createExport.mockResolvedValueOnce({
       export_id: "export-a",

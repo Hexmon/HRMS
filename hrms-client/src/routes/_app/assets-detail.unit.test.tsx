@@ -23,6 +23,9 @@ const state = vi.hoisted(() => ({
   addMaintenance: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn() },
   toastApiError: vi.fn(),
+  executeQueries: false,
+  getAsset: vi.fn(),
+  getAssignees: vi.fn(),
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -31,8 +34,10 @@ vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: ReactNode }) => <a href="#asset">{children}</a>,
 }));
 vi.mock("@tanstack/react-query", () => ({
-  useQuery: ({ queryKey }: { queryKey: unknown }) =>
-    JSON.stringify(queryKey).includes("assignees") ? state.assignees : state.detail,
+  useQuery: ({ queryKey, queryFn }: { queryKey: unknown; queryFn: () => Promise<unknown> }) => {
+    if (state.executeQueries) void queryFn();
+    return JSON.stringify(queryKey).includes("assignees") ? state.assignees : state.detail;
+  },
 }));
 vi.mock("@/lib/auth", () => ({ useAuth: () => state.auth }));
 vi.mock("@/lib/employees-store", () => ({ useEmployees: () => ({ employees: state.employees }) }));
@@ -58,7 +63,7 @@ vi.mock("@/domains/assets", () => ({
     cost: asset.cost ?? null,
     condition: asset.condition ?? null,
   }),
-  assetsApi: { get: vi.fn(), assignees: vi.fn() },
+  assetsApi: { get: state.getAsset, assignees: state.getAssignees },
   mapApiAsset: (value: unknown) => value,
 }));
 vi.mock("@/shared/api", () => ({
@@ -174,6 +179,9 @@ describe("asset detail boundaries", () => {
     state.toast.success.mockReset();
     state.toast.error.mockReset();
     state.toastApiError.mockReset();
+    state.executeQueries = false;
+    state.getAsset.mockReset().mockResolvedValue(asset());
+    state.getAssignees.mockReset().mockResolvedValue({ items: [] });
   });
   afterEach(cleanup);
 
@@ -212,6 +220,40 @@ describe("asset detail boundaries", () => {
     expect(
       screen.getByText("Asset audit history is not available in this view."),
     ).toBeInTheDocument();
+  });
+
+  it("executes API detail and assignee query functions with the current search", async () => {
+    state.executeQueries = true;
+    state.detail = { data: asset(), isError: false, isLoading: false, error: null };
+    render(<AssetDetail />);
+    await waitFor(() => expect(state.getAsset).toHaveBeenCalledWith("asset-a"));
+    expect(state.getAssignees).toHaveBeenCalledWith("");
+  });
+
+  it("reports assignment and return outcomes only after the store boundary resolves", async () => {
+    state.detail = { data: asset(), isError: false, isLoading: false, error: null };
+    render(<AssetDetail />);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm assignment" }));
+    await waitFor(() => expect(state.assignAsset).toHaveBeenCalled());
+    expect(state.toast.success).toHaveBeenCalledWith("Assigned to Employee A");
+    cleanup();
+
+    state.detail = {
+      data: asset({ status: "assigned" }),
+      isError: false,
+      isLoading: false,
+      error: null,
+    };
+    state.returnAsset.mockRejectedValueOnce(new Error("return conflict"));
+    render(<AssetDetail />);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await waitFor(() =>
+      expect(state.toastApiError).toHaveBeenCalledWith(
+        expect.any(Error),
+        "Asset could not be returned.",
+      ),
+    );
+    expect(state.toast.success).not.toHaveBeenCalledWith("Asset returned to inventory");
   });
 
   it("renders assigned and local history, maintenance, documents and audit evidence", () => {
@@ -316,6 +358,45 @@ describe("asset detail dialogs", () => {
       />,
     );
     expect(screen.getByRole("button", { name: "Confirm assignment" })).toBeDisabled();
+  });
+
+  it("submits local assignment details and blocks close while pending", async () => {
+    let resolveAssign!: () => void;
+    const onAssign = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveAssign = resolve;
+        }),
+    );
+    render(
+      <AssignDialog
+        employees={[{ id: "employee-a", name: "Employee A" }]}
+        search=""
+        onSearch={vi.fn()}
+        hasMore={false}
+        showDetails
+        onAssign={onAssign}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Assignment date"), { target: { value: "2026-12-01" } });
+    fireEvent.change(screen.getByLabelText("Expected return"), { target: { value: "2027-01-01" } });
+    fireEvent.change(screen.getByLabelText("Remarks"), { target: { value: "Issued by IT" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm assignment" }));
+    expect(screen.getByRole("button", { name: "Confirm assignment" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm assignment" }));
+    expect(onAssign).toHaveBeenCalledTimes(1);
+    resolveAssign();
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Confirm assignment" })).toBeEnabled(),
+    );
+    expect(onAssign).toHaveBeenCalledWith(
+      "Employee A",
+      "employee-a",
+      "2026-12-01",
+      "2027-01-01",
+      "good",
+      "Issued by IT",
+    );
   });
 
   it("submits return and maintenance values", async () => {

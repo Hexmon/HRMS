@@ -174,7 +174,7 @@ export function RequestsScreen() {
   );
 }
 
-function AdminQueue({
+export function AdminQueue({
   rows,
   onDecide,
 }: {
@@ -272,7 +272,7 @@ function AdminQueue({
   );
 }
 
-function RaiseForm({
+export function RaiseForm({
   onSubmit,
 }: {
   onSubmit: (
@@ -311,9 +311,9 @@ function RaiseForm({
     <Card className="rounded-2xl border-border/60 p-5">
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className="space-y-1.5">
-          <Label>Request type</Label>
+          <Label htmlFor="asset-request-type">Request type</Label>
           <Select value={type} onValueChange={(v) => setType(v as RequestType)}>
-            <SelectTrigger>
+            <SelectTrigger id="asset-request-type">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -325,9 +325,9 @@ function RaiseForm({
           </Select>
         </div>
         <div className="space-y-1.5">
-          <Label>Asset type</Label>
+          <Label htmlFor="asset-request-asset-type">Asset type</Label>
           <Select value={assetType} onValueChange={setAssetType}>
-            <SelectTrigger>
+            <SelectTrigger id="asset-request-asset-type">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -351,8 +351,9 @@ function RaiseForm({
         </div>
         {(type === "replacement" || type === "repair" || type === "return") && (
           <div className="space-y-1.5 md:col-span-2">
-            <Label>Asset ID (optional)</Label>
+            <Label htmlFor="asset-request-asset-id">Asset ID (optional)</Label>
             <Input
+              id="asset-request-asset-id"
               value={assetId}
               onChange={(e) => setAssetId(e.target.value)}
               placeholder="AST-XXXX"
@@ -360,8 +361,9 @@ function RaiseForm({
           </div>
         )}
         <div className="space-y-1.5 md:col-span-2">
-          <Label>Reason</Label>
+          <Label htmlFor="asset-request-reason">Reason</Label>
           <Textarea
+            id="asset-request-reason"
             rows={3}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
@@ -369,9 +371,9 @@ function RaiseForm({
           />
         </div>
         <div className="space-y-1.5">
-          <Label>Priority</Label>
+          <Label htmlFor="asset-request-priority">Priority</Label>
           <Select value={priority} onValueChange={(v) => setPriority(v as RequestPriority)}>
-            <SelectTrigger>
+            <SelectTrigger id="asset-request-priority">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

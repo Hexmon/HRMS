@@ -258,6 +258,30 @@ describe("asset returns route", () => {
     );
     expect(state.toast.success).not.toHaveBeenCalled();
   });
+
+  it("returns an active employee asset from the all-assigned queue", async () => {
+    state.apiEnabled = false;
+    state.assets = [assignedAsset()];
+    state.employees = [{ id: "employee-a", name: "Employee A", status: "active" }];
+    render(<ReturnsScreen />);
+    expect(screen.getByText("All assigned (return ready)")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await waitFor(() =>
+      expect(state.returnAsset).toHaveBeenCalledWith("asset-a", expect.any(String), "good", ""),
+    );
+    expect(state.toast.success).toHaveBeenCalledWith("asset-a returned");
+  });
+
+  it("keeps local HR recovery rows read-only", () => {
+    state.auth.activeRole = "hr_admin";
+    state.apiEnabled = false;
+    state.assets = [assignedAsset()];
+    state.employees = [{ id: "employee-a", name: "Employee A", status: "notice_period" }];
+    render(<ReturnsScreen />);
+    expect(screen.getByText("Dell Latitude")).toBeInTheDocument();
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Confirm" })).not.toBeInTheDocument();
+  });
 });
 
 describe("inline return dialog", () => {
@@ -296,5 +320,12 @@ describe("inline return dialog", () => {
     expect(onConfirm).toHaveBeenCalledTimes(1);
     resolveReturn();
     await waitFor(() => expect(confirm).toBeEnabled());
+  });
+
+  it("allows explicit cancel and external close while idle", () => {
+    render(<ReturnInline detailsSupported={false} onConfirm={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    state.dialogOpenChange?.(true);
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeEnabled();
   });
 });

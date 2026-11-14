@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
@@ -134,5 +134,11 @@ describe("local warranty projection", () => {
     expect(screen.getByLabelText("Contact email")).toBeInTheDocument();
     expect(screen.getByLabelText("Phone")).toBeInTheDocument();
     expect(screen.getByLabelText("Status")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Vendor name"), { target: { value: "Vendor C" } });
+    fireEvent.change(screen.getByLabelText("Contact email"), {
+      target: { value: "it@example.com" },
+    });
+    expect(screen.getByLabelText("Vendor name")).toHaveValue("Vendor C");
+    expect(screen.getByLabelText("Contact email")).toHaveValue("it@example.com");
   });
 });
