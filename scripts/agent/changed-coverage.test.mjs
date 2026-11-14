@@ -1024,14 +1024,18 @@ test("frontend contract route discovery excludes test modules without hiding run
       "const errors = [];",
       "const errors = { push() {}, length: 0 };",
     ), "base"),
-    /fixture missing-audit exited 0 instead of 1/,
+    /errors must be one empty local array/,
   );
   assert.throws(
     () => validateSemanticPath(repositoryRoot, path, content.replace(
       "process.exit(1);",
       'process["exit"] = () => {}; process.exit(1);',
     ), "base"),
-    /fixture missing-audit exited 0 instead of 1/,
+    /direct final failure block|must not mutate objects or protected failure state/,
+  );
+  assert.throws(
+    () => validateSemanticPath(repositoryRoot, path, `${content}\nObject.defineProperty(process, "exit", { value() {} });\n`, "base"),
+    /must not access Object/,
   );
 });
 

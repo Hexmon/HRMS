@@ -1603,50 +1603,121 @@ function validateFrontendContractRouteCoverage(path, content) {
     "frontend contract coverage must fail the process when any invariant fails",
   );
 
-  const semanticRoot = mkdtempSync(join(tmpdir(), "hrms-frontend-route-semantic-"));
-  const checkerPath = join(semanticRoot, "frontend-contract-route-coverage.mjs");
-  const writeFixture = (name, { audit = true, route = "index.tsx", expenseText = "" } = {}) => {
-    const fixtureRoot = join(semanticRoot, name);
-    mkdirSync(join(fixtureRoot, "src/routes"), { recursive: true });
-    mkdirSync(join(fixtureRoot, "src/lib"), { recursive: true });
-    if (audit) {
-      const auditPath = join(fixtureRoot, "docs/api/frontend-contract/FRONTEND_BACKEND_GAP_AUDIT.md");
-      mkdirSync(dirname(auditPath), { recursive: true });
-      writeFileSync(auditPath, "# Fixture gap audit\n");
-    }
-    const routePath = join(fixtureRoot, "src/routes", route);
-    mkdirSync(dirname(routePath), { recursive: true });
-    writeFileSync(routePath, "export default function Route() { return null; }\n");
-    writeFileSync(join(fixtureRoot, "src/lib/expenses-store.tsx"), `${expenseText}\n`);
-    return fixtureRoot;
-  };
-  const runFixture = (name, options, expectedStatus, expectedDiagnostic = "") => {
-    const fixtureRoot = writeFixture(name, options);
-    const result = spawnSync(process.execPath, [checkerPath], {
-      cwd: fixtureRoot,
-      env: { PATH: process.env.PATH ?? "" },
-      encoding: "utf8",
-      timeout: 10000,
-    });
-    if (result.error) semanticFailure(path, `fixture ${name} failed to execute: ${result.error.message}`);
-    if (result.status !== expectedStatus) {
-      semanticFailure(path, `fixture ${name} exited ${String(result.status)} instead of ${expectedStatus}`);
-    }
-    if (expectedDiagnostic && !result.stderr.includes(expectedDiagnostic)) {
-      semanticFailure(path, `fixture ${name} did not report ${expectedDiagnostic}`);
-    }
-  };
+  const source = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  if (source.parseDiagnostics.length) semanticFailure(path, "frontend contract coverage must parse as JavaScript");
 
-  try {
-    writeFileSync(checkerPath, content, { mode: 0o644 });
-    runFixture("valid", {}, 0);
-    runFixture("missing-audit", { audit: false }, 1, "Missing docs/api/frontend-contract/FRONTEND_BACKEND_GAP_AUDIT.md");
-    runFixture("unmapped-route", { route: "unmapped.tsx" }, 1, "Routes without contract coverage:");
-    runFixture("legacy-route", { route: "_app/expenses.director.tsx" }, 1, "Removed legacy expense routes are present:");
-    runFixture("legacy-vocabulary", { expenseText: "export const state = 'pending_reviewer';" }, 1, "Legacy expense vocabulary found:");
-  } finally {
-    rmSync(semanticRoot, { recursive: true, force: true });
+  const expectedImports = new Map([
+    ["node:fs", ["existsSync", "readdirSync", "readFileSync", "statSync"]],
+    ["node:path", ["join", "relative"]],
+  ]);
+  const imports = source.statements.filter(ts.isImportDeclaration);
+  if (imports.length !== expectedImports.size) semanticFailure(path, "frontend contract coverage imports must remain side-effect free and allowlisted");
+  for (const declaration of imports) {
+    const moduleName = ts.isStringLiteral(declaration.moduleSpecifier) ? declaration.moduleSpecifier.text : "";
+    const expected = expectedImports.get(moduleName);
+    const bindings = declaration.importClause?.namedBindings;
+    if (!expected || !bindings || !ts.isNamedImports(bindings) || declaration.importClause?.name) {
+      semanticFailure(path, "frontend contract coverage imports must remain side-effect free and allowlisted");
+    }
+    const actual = bindings.elements.map((element) => {
+      if (element.propertyName || element.name.text !== element.getText(source)) {
+        semanticFailure(path, "frontend contract coverage imports must not be aliased");
+      }
+      return element.name.text;
+    }).sort();
+    if (actual.join("\0") !== [...expected].sort().join("\0")) {
+      semanticFailure(path, `frontend contract coverage ${moduleName} imports changed`);
+    }
   }
+
+  const directCall = (statement, owner, method) => {
+    const body = ts.isBlock(statement) && statement.statements.length === 1 ? statement.statements[0] : statement;
+    return ts.isExpressionStatement(body) && ts.isCallExpression(body.expression) &&
+      ts.isPropertyAccessExpression(body.expression.expression) &&
+      ts.isIdentifier(body.expression.expression.expression) &&
+      body.expression.expression.expression.text === owner &&
+      body.expression.expression.name.text === method
+      ? body.expression
+      : null;
+  };
+  const normalized = (node) => node.getText(source).replace(/\s+/g, "");
+  const requiredFailureBranches = new Map([
+    ["!existsSync(gapAudit)", "Missing docs/api/frontend-contract/FRONTEND_BACKEND_GAP_AUDIT.md"],
+    ["missing.length", "Routes without contract coverage:"],
+    ["forbiddenFiles.length", "Removed legacy expense routes are present:"],
+    ["forbiddenTerms.length", "Legacy expense vocabulary found:"],
+  ]);
+  for (const [condition, diagnostic] of requiredFailureBranches) {
+    const branch = source.statements.find((statement) => ts.isIfStatement(statement) && normalized(statement.expression) === condition);
+    const push = branch && directCall(branch.thenStatement, "errors", "push");
+    if (!push || !push.arguments.some((argument) => argument.getText(source).includes(diagnostic))) {
+      semanticFailure(path, `frontend contract coverage branch ${condition} must directly collect its diagnostic`);
+    }
+  }
+  const finalBranch = source.statements.find((statement) => ts.isIfStatement(statement) && normalized(statement.expression) === "errors.length");
+  if (!finalBranch || !ts.isBlock(finalBranch.thenStatement) || finalBranch.thenStatement.statements.length !== 2) {
+    semanticFailure(path, "frontend contract coverage must have one direct final failure block");
+  }
+  const report = directCall(finalBranch.thenStatement.statements[0], "console", "error");
+  const exit = directCall(finalBranch.thenStatement.statements[1], "process", "exit");
+  if (!report || normalized(report.arguments[0] ?? source) !== 'errors.join("\\n")') {
+    semanticFailure(path, "frontend contract coverage must directly report every collected error");
+  }
+  if (!exit || exit.arguments.length !== 1 || !ts.isNumericLiteral(exit.arguments[0]) || exit.arguments[0].text !== "1") {
+    semanticFailure(path, "frontend contract coverage must directly exit nonzero after reporting errors");
+  }
+
+  let errorsDeclarations = 0;
+  const forbiddenGlobals = new Set(["Array", "Function", "Object", "Reflect", "eval", "global", "globalThis", "require"]);
+  const visit = (node) => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === "errors") {
+      errorsDeclarations += 1;
+      if (!node.initializer || !ts.isArrayLiteralExpression(node.initializer) || node.initializer.elements.length) {
+        semanticFailure(path, "frontend contract coverage errors must be one empty local array");
+      }
+    }
+    if (ts.isBinaryExpression(node) && node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment && node.operatorToken.kind <= ts.SyntaxKind.LastAssignment) {
+      if (!ts.isIdentifier(node.left) || node.left.text !== "name" || node.operatorToken.kind !== ts.SyntaxKind.EqualsToken) {
+        semanticFailure(path, "frontend contract coverage must not mutate objects or protected failure state");
+      }
+    }
+    if (ts.isDeleteExpression(node) || ts.isPostfixUnaryExpression(node) ||
+        (ts.isPrefixUnaryExpression(node) && [ts.SyntaxKind.PlusPlusToken, ts.SyntaxKind.MinusMinusToken].includes(node.operator))) {
+      semanticFailure(path, "frontend contract coverage must not use mutation escape syntax");
+    }
+    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+      semanticFailure(path, "frontend contract coverage must not load dynamic code");
+    }
+    if (ts.isIdentifier(node) && forbiddenGlobals.has(node.text)) {
+      semanticFailure(path, `frontend contract coverage must not access ${node.text}`);
+    }
+    if (ts.isIdentifier(node) && node.text === "process") {
+      const property = node.parent;
+      if (!ts.isPropertyAccessExpression(property) || property.expression !== node || !["cwd", "exit"].includes(property.name.text) ||
+          !ts.isCallExpression(property.parent) || property.parent.expression !== property) {
+        semanticFailure(path, "frontend contract coverage process access must be a direct cwd or exit call");
+      }
+    }
+    if (ts.isIdentifier(node) && node.text === "console") {
+      const property = node.parent;
+      if (!ts.isPropertyAccessExpression(property) || property.expression !== node || !["error", "log"].includes(property.name.text) ||
+          !ts.isCallExpression(property.parent) || property.parent.expression !== property) {
+        semanticFailure(path, "frontend contract coverage console access must be the direct error report");
+      }
+    }
+    if (ts.isIdentifier(node) && node.text === "errors" && !(ts.isVariableDeclaration(node.parent) && node.parent.name === node)) {
+      const property = node.parent;
+      if (!ts.isPropertyAccessExpression(property) || property.expression !== node || !["push", "length", "join"].includes(property.name.text)) {
+        semanticFailure(path, "frontend contract coverage error state access is not allowlisted");
+      }
+      if (["push", "join"].includes(property.name.text) && (!ts.isCallExpression(property.parent) || property.parent.expression !== property)) {
+        semanticFailure(path, "frontend contract coverage error methods must be called directly");
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  if (errorsDeclarations !== 1) semanticFailure(path, "frontend contract coverage must declare exactly one error collector");
 }
 
 function validateQaSeedSafety(path, content) {
