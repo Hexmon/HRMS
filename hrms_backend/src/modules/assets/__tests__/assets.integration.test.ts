@@ -244,10 +244,22 @@ describe("assets and licenses", () => {
     });
     expect(acknowledge.statusCode).toBe(200);
     expect(acknowledge.json().acknowledgement).toMatchObject({
-      asset_id: asset.id,
-      employee_user_id: seedIds.employee1,
-      status: "acknowledged"
+      id: expect.any(String),
+      acknowledgement_type: "received",
+      status: "acknowledged",
+      created_at: expect.any(String),
     });
+    for (const internalField of ["asset_id", "employee_user_id", "assignment_id"]) {
+      expect(acknowledge.json().acknowledgement).not.toHaveProperty(internalField);
+    }
+    expect(acknowledge.json().asset).toMatchObject({
+      id: asset.id,
+      is_assigned_to_current_user: true,
+      assignment_acknowledged: true,
+    });
+    for (const protectedField of ["qr_hash", "metadata", "vendor", "invoice_no", "cost", "maintenance"]) {
+      expect(acknowledge.json().asset).not.toHaveProperty(protectedField);
+    }
 
     const vendors = await app.inject({
       method: "GET",
