@@ -1114,6 +1114,29 @@ test("frontend contract route discovery excludes test modules without hiding run
     ), "base"),
     /unique absolute prefixes and non-empty groups/,
   );
+  const finalFailureBlock = 'if (errors.length) {\n  console.error(errors.join("\\n"));\n  process.exit(1);\n}';
+  const withoutFinalFailure = content.replace(`\n${finalFailureBlock}\n`, "\n");
+  assert.throws(
+    () => validateSemanticPath(repositoryRoot, path, withoutFinalFailure.replace(
+      "const errors = [];",
+      `const errors = [];\n${finalFailureBlock}`,
+    ), "base"),
+    /failure collectors and final exit are out of order/,
+  );
+  assert.throws(
+    () => validateSemanticPath(repositoryRoot, path, withoutFinalFailure.replace(
+      "if (forbiddenTerms.length)",
+      `${finalFailureBlock}\n\nif (forbiddenTerms.length)`,
+    ), "base"),
+    /failure collectors and final exit are out of order/,
+  );
+  assert.throws(
+    () => validateSemanticPath(repositoryRoot, path, content.replace(
+      "const routesDir = join(root, \"src/routes\");",
+      'const routesDir = join(root, "src/routes");\n(() => {}).constructor("process.exit(0)")();',
+    ), "base"),
+    /canonical AST changed outside the trusted contract/,
+  );
 });
 
 test("semantic QA scripts are classified before generic external coverage", () => {

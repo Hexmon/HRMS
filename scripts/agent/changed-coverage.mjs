@@ -1712,15 +1712,21 @@ function validateFrontendContractRouteCoverage(path, content) {
     ["forbiddenFiles.length", "Removed legacy expense routes are present:"],
     ["forbiddenTerms.length", "Legacy expense vocabulary found:"],
   ]);
+  const collectorIndices = [];
+  const expectedPushCalls = new Set();
   for (const [condition, diagnostic] of requiredFailureBranches) {
-    const branch = source.statements.find((statement) => ts.isIfStatement(statement) && normalized(statement.expression) === condition);
+    const matches = source.statements.filter((statement) => ts.isIfStatement(statement) && normalized(statement.expression) === condition);
+    const branch = matches[0];
     const push = branch && directCall(branch.thenStatement, "errors", "push");
-    if (!push || !push.arguments.some((argument) => argument.getText(source).includes(diagnostic))) {
+    if (matches.length !== 1 || !push || !push.arguments.some((argument) => argument.getText(source).includes(diagnostic))) {
       semanticFailure(path, `frontend contract coverage branch ${condition} must directly collect its diagnostic`);
     }
+    collectorIndices.push(source.statements.indexOf(branch));
+    expectedPushCalls.add(push);
   }
-  const finalBranch = source.statements.find((statement) => ts.isIfStatement(statement) && normalized(statement.expression) === "errors.length");
-  if (!finalBranch || !ts.isBlock(finalBranch.thenStatement) || finalBranch.thenStatement.statements.length !== 2) {
+  const finalMatches = source.statements.filter((statement) => ts.isIfStatement(statement) && normalized(statement.expression) === "errors.length");
+  const finalBranch = finalMatches[0];
+  if (finalMatches.length !== 1 || !finalBranch || !ts.isBlock(finalBranch.thenStatement) || finalBranch.thenStatement.statements.length !== 2) {
     semanticFailure(path, "frontend contract coverage must have one direct final failure block");
   }
   const report = directCall(finalBranch.thenStatement.statements[0], "console", "error");
@@ -1730,6 +1736,15 @@ function validateFrontendContractRouteCoverage(path, content) {
   }
   if (!exit || exit.arguments.length !== 1 || !ts.isNumericLiteral(exit.arguments[0]) || exit.arguments[0].text !== "1") {
     semanticFailure(path, "frontend contract coverage must directly exit nonzero after reporting errors");
+  }
+  const errorsStatement = errorsDeclaration.parent.parent;
+  const errorsIndex = source.statements.indexOf(errorsStatement);
+  const finalIndex = source.statements.indexOf(finalBranch);
+  const groupsDeclaration = topLevelDeclarations.find((declaration) => ts.isIdentifier(declaration.name) && declaration.name.text === "groups");
+  const groupsIndex = groupsDeclaration ? source.statements.indexOf(groupsDeclaration.parent.parent) : -1;
+  if (errorsIndex < 0 || collectorIndices.some((index, position) => index <= (position ? collectorIndices[position - 1] : errorsIndex)) ||
+      finalIndex <= collectorIndices.at(-1) || groupsIndex <= finalIndex) {
+    semanticFailure(path, "frontend contract coverage failure collectors and final exit are out of order");
   }
 
   let errorsDeclarations = 0;
@@ -1812,6 +1827,9 @@ function validateFrontendContractRouteCoverage(path, content) {
       if (["push", "join"].includes(property.name.text) && (!ts.isCallExpression(property.parent) || property.parent.expression !== property)) {
         semanticFailure(path, "frontend contract coverage error methods must be called directly");
       }
+      if (property.name.text === "push" && !expectedPushCalls.has(property.parent)) {
+        semanticFailure(path, "frontend contract coverage has an unexpected error collector");
+      }
     }
     ts.forEachChild(node, visit);
   };
@@ -1819,6 +1837,10 @@ function validateFrontendContractRouteCoverage(path, content) {
   if (errorsDeclarations !== 1) semanticFailure(path, "frontend contract coverage must declare exactly one error collector");
   if (processExitCalls.length !== 1 || processExitCalls[0] !== exit) {
     semanticFailure(path, "frontend contract coverage must have exactly one final process exit");
+  }
+  const canonicalProgramHash = createHash("sha256").update(printer.printFile(source)).digest("hex");
+  if (canonicalProgramHash !== "6a640e5664cdfe4c2a21e2aaa8e396f112ca73f97c8b9739cd70d8bbbfd0df75") {
+    semanticFailure(path, "frontend contract coverage canonical AST changed outside the trusted contract");
   }
 }
 
