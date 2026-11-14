@@ -258,9 +258,9 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
   });
 
   const assetDenied = authorizationDenied(apiAssetsQuery.error);
-  const requestDenied =
-    authorizationDenied(apiMyRequestsQuery.error) ||
-    (isAssetAdmin && authorizationDenied(apiQueueRequestsQuery.error));
+  const requestFailed =
+    apiMyRequestsQuery.error instanceof Error ||
+    (isAssetAdmin && apiQueueRequestsQuery.error instanceof Error);
   const hasApiResult = apiAssetsQuery.data !== undefined && !assetDenied;
   const visibleAssets = React.useMemo(() => {
     if (!apiEnabled) return assets;
@@ -268,7 +268,7 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
     return apiAssetsQuery.data ?? [];
   }, [apiAssetsQuery.data, apiEnabled, assets, hasApiResult]);
   const hasRequestApiResult =
-    !requestDenied &&
+    !requestFailed &&
     apiMyRequestsQuery.data !== undefined &&
     (!isAssetAdmin || apiQueueRequestsQuery.data !== undefined);
   const visibleRequests = React.useMemo(() => {

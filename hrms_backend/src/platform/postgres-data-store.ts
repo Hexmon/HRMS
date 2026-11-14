@@ -765,15 +765,6 @@ class PostgresPersistence {
     if (!current || current.deleted_at || current.employment_status !== EmploymentStatuses.Active) {
       throw unauthorized("User account is inactive or blocked");
     }
-    const preference = await client.query<{ company_id: UUID | null; active_role: RoleKey }>(
-      `SELECT company_id, active_role
-       FROM platform.user_session_preferences
-       WHERE user_id = $1${rowLock}`,
-      [input.actorUserId],
-    );
-    if (preference.rows[0]?.company_id !== input.companyId) {
-      throw companyContextRequired({ user_id: input.actorUserId, operation: input.actionKey });
-    }
     const roleRows = await client.query<{ role_key: RoleKey }>(
       `SELECT ur.role_key
        FROM core.user_roles ur
@@ -786,9 +777,6 @@ class PostgresPersistence {
       [input.actorUserId],
     );
     const roles = Array.from(new Set(roleRows.rows.map((row) => row.role_key)));
-    if (!roles.includes(preference.rows[0].active_role)) {
-      throw forbidden("Selected role is not assigned to this user.");
-    }
     const company = await client.query<{ status: string }>(
       `SELECT status
        FROM platform.company_profiles
@@ -797,6 +785,21 @@ class PostgresPersistence {
     );
     if (company.rows[0]?.status !== "active") {
       throw companyContextRequired({ user_id: input.actorUserId, company_id: input.companyId, operation: input.actionKey });
+    }
+    // Keep the authority lock order compatible with full/platform persistence:
+    // user -> roles -> company -> preference. flushPlatform locks the company
+    // before the preference, so reversing those two locks creates a deadlock.
+    const preference = await client.query<{ company_id: UUID | null; active_role: RoleKey }>(
+      `SELECT company_id, active_role
+       FROM platform.user_session_preferences
+       WHERE user_id = $1${rowLock}`,
+      [input.actorUserId],
+    );
+    if (preference.rows[0]?.company_id !== input.companyId) {
+      throw companyContextRequired({ user_id: input.actorUserId, operation: input.actionKey });
+    }
+    if (!roles.includes(preference.rows[0].active_role)) {
+      throw forbidden("Selected role is not assigned to this user.");
     }
     return { ...cached, roles, employment_status: current.employment_status };
   }

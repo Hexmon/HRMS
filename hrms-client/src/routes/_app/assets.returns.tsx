@@ -40,7 +40,7 @@ import { ASSET_ADMIN_ROLES } from "@/lib/assets-store";
 
 export const Route = createFileRoute("/_app/assets/returns")({ component: ReturnsScreen });
 
-function ReturnsScreen() {
+export function ReturnsScreen() {
   const { activeRole } = useAuth();
   const { assets, returnAsset } = useAssets();
   const { employees } = useEmployees();
@@ -185,14 +185,75 @@ function ReturnsScreen() {
                       key={a.id}
                       className="flex items-center justify-between gap-3 rounded-xl border p-3"
                     >
-                      <Link to="/assets/$id" params={{ id: a.id }} className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-medium">
-                          {a.brand} {a.model}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          {a.id} · since {a.assignedOn}
-                        </p>
-                      </Link>
+                      {canSettleRecovery ? (
+                        <Link to="/assets/$id" params={{ id: a.id }} className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">
+                            {a.brand} {a.model}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {a.id} · since {a.assignedOn}
+                          </p>
+                        </Link>
+                      ) : (
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">
+                            {a.brand} {a.model}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {a.id} · since {a.assignedOn}
+                          </p>
+                        </div>
+                      )}
+                      {canSettleRecovery && (
+                        <ReturnInline
+                          detailsSupported={!apiEnabled}
+                          onConfirm={(d, c, r) => {
+                            return returnAsset(a.id, d, c, r)
+                              .then(() => toast.success(`${a.id} returned`))
+                              .catch((error) => {
+                                toastApiError(error, "Asset could not be returned.");
+                                throw error;
+                              });
+                          }}
+                        />
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        )}
+      </DataCard>
+
+      {canSettleRecovery && (
+        <DataCard
+          title="All assigned (return ready)"
+          description="Reclaim any assigned asset."
+          padded={false}
+        >
+          {grouped.length === 0 ? (
+            <EmptyState icon={Laptop} title="No assigned assets" />
+          ) : (
+            <ul className="divide-y">
+              {grouped
+                .flatMap((g) => g.assets)
+                .slice(0, 12)
+                .map((a) => (
+                  <li key={a.id} className="flex items-center justify-between gap-3 px-5 py-3.5">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">
+                        {a.brand} {a.model}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {a.id} · {a.assignedTo}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <StatusBadge
+                        status={a.history[0]?.acknowledged ? "confirmed" : "pending"}
+                        label={a.history[0]?.acknowledged ? "Ack'd" : "Pending Ack"}
+                      />
                       <ReturnInline
                         detailsSupported={!apiEnabled}
                         onConfirm={(d, c, r) => {
@@ -204,59 +265,13 @@ function ReturnsScreen() {
                             });
                         }}
                       />
-                    </li>
-                  ))}
-                </ul>
-              </li>
-            ))}
-          </ul>
-        )}
-      </DataCard>
-
-      <DataCard
-        title="All assigned (return ready)"
-        description="Reclaim any assigned asset."
-        padded={false}
-      >
-        {grouped.length === 0 ? (
-          <EmptyState icon={Laptop} title="No assigned assets" />
-        ) : (
-          <ul className="divide-y">
-            {grouped
-              .flatMap((g) => g.assets)
-              .slice(0, 12)
-              .map((a) => (
-                <li key={a.id} className="flex items-center justify-between gap-3 px-5 py-3.5">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">
-                      {a.brand} {a.model}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {a.id} · {a.assignedTo}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <StatusBadge
-                      status={a.history[0]?.acknowledged ? "confirmed" : "pending"}
-                      label={a.history[0]?.acknowledged ? "Ack'd" : "Pending Ack"}
-                    />
-                    <ReturnInline
-                      detailsSupported={!apiEnabled}
-                      onConfirm={(d, c, r) => {
-                        return returnAsset(a.id, d, c, r)
-                          .then(() => toast.success(`${a.id} returned`))
-                          .catch((error) => {
-                            toastApiError(error, "Asset could not be returned.");
-                            throw error;
-                          });
-                      }}
-                    />
-                  </div>
-                </li>
-              ))}
-          </ul>
-        )}
-      </DataCard>
+                    </div>
+                  </li>
+                ))}
+            </ul>
+          )}
+        </DataCard>
+      )}
     </div>
   );
 }

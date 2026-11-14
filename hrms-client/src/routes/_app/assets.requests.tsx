@@ -32,7 +32,7 @@ import { toastApiError } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/assets/requests")({ component: RequestsScreen });
 
-function RequestsScreen() {
+export function RequestsScreen() {
   const { activeRole, user } = useAuth();
   const { requests, addRequest, decideRequest, cancelRequest, requestError, requestsLoading } =
     useAssets();
@@ -42,17 +42,22 @@ function RequestsScreen() {
 
   const myReqs = useMemo(() => requests.filter((r) => r.raisedBy === user?.name), [requests, user]);
 
+  if (requestsLoading || requestError) {
+    return (
+      <div className="space-y-4">
+        <DataCard title="Asset requests">
+          <p
+            className={requestError ? "text-sm text-destructive" : "text-sm text-muted-foreground"}
+          >
+            {requestError?.message ?? "Loading request queues..."}
+          </p>
+        </DataCard>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-4">
-      {requestsLoading ? (
-        <DataCard title="Asset requests">
-          <p className="text-sm text-muted-foreground">Loading request queues...</p>
-        </DataCard>
-      ) : requestError ? (
-        <DataCard title="Asset requests">
-          <p className="text-sm text-destructive">{requestError.message}</p>
-        </DataCard>
-      ) : null}
       <Tabs defaultValue={isAdmin ? "queue" : "mine"}>
         <TabsList>
           {isAdmin && (

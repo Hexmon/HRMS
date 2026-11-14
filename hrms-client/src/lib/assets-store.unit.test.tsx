@@ -170,4 +170,27 @@ describe("API-backed employee asset visibility", () => {
     expect(screen.getByTestId("requests")).toHaveTextContent("");
     expect(screen.getByTestId("requests")).not.toHaveTextContent("own-request");
   });
+
+  it("hides a cached Admin queue after a non-authorization refetch failure", async () => {
+    auth.activeRole = "asset_admin";
+    listAssets.mockResolvedValue({ items: [] });
+    myRequests.mockResolvedValue({ items: [] });
+    requestQueue
+      .mockResolvedValueOnce({
+        items: [{ id: "cached-queue-request", status: "pending", requester_user_id: "employee-b" }],
+      })
+      .mockRejectedValueOnce(new Error("Admin queue refresh failed"));
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    mount(queryClient);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("requests")).toHaveTextContent("cached-queue-request"),
+    );
+    await queryClient.invalidateQueries({ queryKey: ["api", "assets"] });
+    await waitFor(() =>
+      expect(screen.getByTestId("error")).toHaveTextContent("Admin queue refresh failed"),
+    );
+    expect(screen.getByTestId("requests")).toHaveTextContent("");
+    expect(screen.getByTestId("requests")).not.toHaveTextContent("cached-queue-request");
+  });
 });

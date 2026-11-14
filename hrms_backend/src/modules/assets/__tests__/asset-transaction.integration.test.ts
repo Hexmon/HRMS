@@ -143,6 +143,65 @@ describe("asset transaction boundary", () => {
     expect(read.json().items.some((item: { name: string }) => item.name === "Should never appear")).toBe(false);
   });
 
+  it("maps a database asset identity race to a stable conflict without a ghost", async () => {
+    const manager = await loginAs(first, "AST");
+    const pool = first.store.pgPool!;
+    const originalConnect = pool.connect.bind(pool);
+    let wrapped = false;
+    let injected = false;
+    const spy = vi.spyOn(pool, "connect").mockImplementation((async () => {
+      const client = await originalConnect();
+      if (wrapped) return client;
+      wrapped = true;
+      const originalQuery = client.query.bind(client);
+      client.query = (async (sql: unknown, ...args: unknown[]) => {
+        if (typeof sql === "string" && sql.includes("INSERT INTO assets.assets") && !injected) {
+          injected = true;
+          const racer = await originalConnect();
+          try {
+            await racer.query("BEGIN");
+            await racer.query("SELECT set_config('hrms.asset_writer_v2', 'on', true)");
+            await racer.query(
+              "UPDATE assets.assets SET asset_code = 'SQL-RACE-S25' WHERE id = (SELECT id FROM assets.assets ORDER BY id LIMIT 1)",
+            );
+            await racer.query("COMMIT");
+          } catch (error) {
+            await racer.query("ROLLBACK").catch(() => undefined);
+            throw error;
+          } finally {
+            racer.release();
+          }
+        }
+        return (originalQuery as (...items: unknown[]) => Promise<unknown>)(sql, ...args);
+      }) as typeof client.query;
+      return client;
+    }) as typeof pool.connect);
+
+    try {
+      const failed = await first.inject({
+        method: "POST",
+        url: "/api/v1/assets/",
+        headers: { ...authHeader(manager.token), "Idempotency-Key": randomUUID() },
+        payload: { asset_code: "SQL-RACE-S25", asset_type: "Laptop", name: "Losing concurrent insert" },
+      });
+      expect(failed.statusCode).toBe(409);
+      expect(failed.json()).toMatchObject({
+        code: "WORKFLOW_CONFLICT",
+        details: { reason: "duplicate_asset_identity" },
+      });
+    } finally {
+      spy.mockRestore();
+    }
+
+    expect(injected).toBe(true);
+    const durable = await pool.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM assets.assets WHERE asset_code = 'SQL-RACE-S25'",
+    );
+    expect(durable.rows[0]?.count).toBe("1");
+    const read = await first.inject({ method: "GET", url: "/api/v1/assets", headers: authHeader(manager.token) });
+    expect(read.json().items.some((item: { name: string }) => item.name === "Losing concurrent insert")).toBe(false);
+  });
+
   it("holds current actor authority locks until the asset command commits", async () => {
     const manager = await loginAs(first, "AST");
     const pool = first.store.pgPool!;
@@ -202,6 +261,61 @@ describe("asset transaction boundary", () => {
       payload: { asset_code: "AUTH-LOCK-DENIED", asset_type: "Laptop", name: "Denied" },
     });
     expect(denied.statusCode).toBe(403);
+  });
+
+  it("orders authority locks behind a concurrent platform flush without deadlock", async () => {
+    const manager = await loginAs(first, "AST");
+    const pool = first.store.pgPool!;
+    const persistence = first.store.persistence;
+    if (!persistence?.flushDomain) throw new Error("Expected PostgreSQL domain persistence");
+    const originalConnect = pool.connect.bind(pool);
+    let connectionNumber = 0;
+    let platformAtPreference!: () => void;
+    let continuePlatform!: () => void;
+    let assetAtCompany!: () => void;
+    const platformAtPreferencePromise = new Promise<void>((resolve) => { platformAtPreference = resolve; });
+    const continuePlatformPromise = new Promise<void>((resolve) => { continuePlatform = resolve; });
+    const assetAtCompanyPromise = new Promise<void>((resolve) => { assetAtCompany = resolve; });
+    const spy = vi.spyOn(pool, "connect").mockImplementation((async () => {
+      const client = await originalConnect();
+      connectionNumber += 1;
+      const connection = connectionNumber;
+      const originalQuery = client.query.bind(client);
+      client.query = (async (sql: unknown, ...args: unknown[]) => {
+        if (connection === 1 && typeof sql === "string" && sql.includes("INSERT INTO platform.user_session_preferences")) {
+          platformAtPreference();
+          await continuePlatformPromise;
+        }
+        if (connection === 2 && typeof sql === "string" && sql.includes("FROM platform.company_profiles")) {
+          assetAtCompany();
+        }
+        return (originalQuery as (...items: unknown[]) => Promise<unknown>)(sql, ...args);
+      }) as typeof client.query;
+      return client;
+    }) as typeof pool.connect);
+
+    const platformFlush = persistence.flushDomain("platform");
+    await platformAtPreferencePromise;
+    const command = first.inject({
+      method: "POST",
+      url: "/api/v1/assets/",
+      headers: { ...authHeader(manager.token), "Idempotency-Key": randomUUID() },
+      payload: { asset_code: "LOCK-ORDER-S25", asset_type: "Laptop", name: "Canonical lock order" },
+    });
+    await assetAtCompanyPromise;
+    continuePlatform();
+    try {
+      await expect(platformFlush).resolves.toBeUndefined();
+      const result = await command;
+      expect(result.statusCode, result.body).toBe(200);
+    } finally {
+      spy.mockRestore();
+    }
+
+    const durable = await pool.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM assets.assets WHERE asset_code = 'LOCK-ORDER-S25'",
+    );
+    expect(durable.rows[0]?.count).toBe("1");
   });
 
   it("allows only one same-version assignment across two API instances", async () => {
