@@ -36,8 +36,7 @@ export const Route = createFileRoute("/_app/assets/warranty")({ component: Warra
 
 export function WarrantyScreen() {
   const { activeRole } = useAuth();
-  const canManageAssets =
-    !!activeRole && (ASSET_ADMIN_ROLES as readonly string[]).includes(activeRole);
+  const canManageAssets = ASSET_ADMIN_ROLES.some((role) => role === activeRole);
   const { assets } = useAssets();
   const apiEnabled = useApiRouteEnabled(["/assets"]);
   const vendorQuery = useAssetVendors({ page_size: 100 }, apiEnabled && canManageAssets);

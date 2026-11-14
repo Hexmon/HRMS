@@ -258,13 +258,12 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
   });
 
   const assetDenied = authorizationDenied(apiAssetsQuery.error);
-  const requestFailed =
-    apiMyRequestsQuery.error instanceof Error ||
-    (isAssetAdmin && apiQueueRequestsQuery.error instanceof Error);
+  const queueFailed = isAssetAdmin && apiQueueRequestsQuery.error instanceof Error;
+  const requestFailed = apiMyRequestsQuery.error instanceof Error || queueFailed;
   const hasApiResult = apiAssetsQuery.data !== undefined && !assetDenied;
   const visibleAssets = React.useMemo(() => {
     if (!apiEnabled) return assets;
-    if (!hasApiResult) return [];
+    if (hasApiResult === false) return [];
     return apiAssetsQuery.data ?? [];
   }, [apiAssetsQuery.data, apiEnabled, assets, hasApiResult]);
   const hasRequestApiResult =
@@ -298,10 +297,9 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
         ? apiMyRequestsQuery.error
         : (apiQueueRequestsQuery.error as Error)
       : null;
-  const requestsLoading =
-    apiEnabled &&
-    !hasRequestApiResult &&
-    (apiMyRequestsQuery.isLoading || (isAssetAdmin && apiQueueRequestsQuery.isLoading));
+  const anyRequestLoading =
+    apiMyRequestsQuery.isLoading || (isAssetAdmin && apiQueueRequestsQuery.isLoading);
+  const requestsLoading = apiEnabled && !hasRequestApiResult && anyRequestLoading;
   const loading = apiEnabled && ((!hasApiResult && apiAssetsQuery.isLoading) || requestsLoading);
 
   const addAsset: Ctx["addAsset"] = async (a, actor = "Marco Rossi") => {

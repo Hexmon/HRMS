@@ -144,7 +144,7 @@ function assetDeltaStore(before: DataStore, after: DataStore): DataStore {
     const newRows = after[collection] as Array<{ id: string }>;
     const oldById = new Map(oldRows.map((row) => [row.id, row]));
     if (oldRows.some((row) => !newRows.some((candidate) => candidate.id === row.id))) {
-      throw new Error(`Asset command removed a ${collection} row without a durable deletion.`);
+      throw new Error(`Asset command removed a row from ${collection} without a durable deletion.`);
     }
     (changed as unknown as Record<AssetCollection, unknown>)[collection] = newRows.filter(
       (row) => !isDeepStrictEqual(oldById.get(row.id), row),
@@ -582,13 +582,14 @@ class PostgresPersistence {
     }
   }
 
-  async assetReadStore(baseStore: DataStore = this.store): Promise<DataStore> {
+  async assetReadStore(baseStore?: DataStore): Promise<DataStore> {
+    const sourceStore = baseStore ?? this.store;
     const client = await this.pool.connect();
     try {
       // Every asset collection in this request must come from one committed
       // snapshot. A concurrent command may commit between individual SELECTs.
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      const snapshot = await this.loadAssetSnapshot(client, baseStore);
+      const snapshot = await this.loadAssetSnapshot(client, sourceStore);
       await client.query("COMMIT");
       return snapshot;
     } catch (error) {
@@ -1186,6 +1187,9 @@ class PostgresPersistence {
       await this.flushPlatform(client);
       await this.flushExpenses(client);
       await this.flushDocuments(client);
+      if (!this.store.persistence?.assetCommand) {
+        throw new Error("Asset command persistence is required before a full database flush.");
+      }
       await this.flushTimesheets(client);
       await this.flushProjects(client);
       await this.flushHelpdesk(client);
@@ -3953,9 +3957,10 @@ class PostgresPersistence {
   private async flushOutbox(
     client: PoolClient,
     aggregateIds?: ReadonlySet<string>,
-    source: DataStore = this.store,
+    source?: DataStore,
   ): Promise<void> {
-    for (const event of source.outbox) {
+    const sourceStore = source ?? this.store;
+    for (const event of sourceStore.outbox) {
       if (aggregateIds && !aggregateIds.has(event.aggregate_id)) continue;
       const inserted = await client.query<{ id: string }>(
         `INSERT INTO platform.outbox_events (
@@ -3999,7 +4004,7 @@ class PostgresPersistence {
         throw new Error("Outbox event was not persisted.");
       }
       event.id = Number(persistedId);
-      source.nextOutboxId = Math.max(source.nextOutboxId, event.id + 1);
+      sourceStore.nextOutboxId = Math.max(sourceStore.nextOutboxId, event.id + 1);
     }
   }
 

@@ -707,10 +707,253 @@ describe("asset transaction boundary", () => {
     const durable = await first.store.pgPool!.query<{ count: string }>("SELECT count(*)::text AS count FROM assets.asset_acknowledgements WHERE asset_id = $1", [asset.id]);
     expect(durable.rows[0]?.count).toBe("1");
   });
+
+  it("fails closed when command-only asset persistence is missing or removes a durable row", async () => {
+    const persistence = first.store.persistence;
+    if (!persistence?.assetCommand || !persistence.flushDomain) {
+      throw new Error("Expected PostgreSQL asset persistence");
+    }
+    const originalAssetCommand = persistence.assetCommand;
+    persistence.assetCommand = undefined;
+    try {
+      await expect(persistence.flush()).rejects.toThrow(/Asset command persistence is required/u);
+    } finally {
+      persistence.assetCommand = originalAssetCommand;
+    }
+
+    await expect(persistence.flushDomain("assets"))
+      .rejects.toThrow(/Asset writes require an assetCommand transaction/u);
+
+    const manager = first.store.users.find((user) => user.id === seedIds.assetManager)!;
+    const companyId = first.store.userSessionPreferences.find((item) => item.user_id === manager.id)!.company_id!;
+    await expect(persistence.assetCommand(
+      {
+        companyId,
+        actorUserId: manager.id,
+        actionKey: "assets.test.remove-row",
+        idempotencyKey: randomUUID(),
+        requestHash: "a".repeat(64),
+      },
+      () => undefined,
+      (store) => {
+        store.assets.pop();
+        return { removed: true };
+      },
+    )).rejects.toThrow(/removed a row from assets/u);
+    const durable = await first.store.pgPool!.query<{ count: string }>("SELECT count(*)::text AS count FROM assets.assets");
+    expect(Number(durable.rows[0]?.count)).toBeGreaterThan(0);
+  });
+
+  it("rolls back failed snapshot reads and refuses a second initial asset seed", async () => {
+    const persistence = first.store.persistence as typeof first.store.persistence & {
+      flushInitialAssetSeed(): Promise<void>;
+    };
+    if (!persistence?.assetReadStore || !persistence.flushInitialAssetSeed) {
+      throw new Error("Expected PostgreSQL asset persistence");
+    }
+    await expect(persistence.flushInitialAssetSeed())
+      .rejects.toThrow(/requires empty asset tables/u);
+
+    const pool = first.store.pgPool!;
+    const originalConnect = pool.connect.bind(pool);
+    let wrapped = false;
+    const spy = vi.spyOn(pool, "connect").mockImplementation((async () => {
+      const client = await originalConnect();
+      if (wrapped) return client;
+      wrapped = true;
+      const originalQuery = client.query.bind(client);
+      client.query = (async (sql: unknown, ...args: unknown[]) => {
+        if (typeof sql === "string" && sql.includes("FROM assets.assets")) {
+          throw new Error("simulated snapshot read failure");
+        }
+        return (originalQuery as (...items: unknown[]) => Promise<unknown>)(sql, ...args);
+      }) as typeof client.query;
+      return client;
+    }) as typeof pool.connect);
+    try {
+      await expect(persistence.assetReadStore()).rejects.toThrow(/simulated snapshot read failure/u);
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await pool.query<{ value: number }>("SELECT 1 AS value")).rows[0]?.value).toBe(1);
+  });
+
+  it("rechecks inactive actor, company, preference, and in-memory identity for every command", async () => {
+    const manager = await loginAs(first, "AST");
+    const pool = first.store.pgPool!;
+    const create = (code: string) => first.inject({
+      method: "POST",
+      url: "/api/v1/assets/",
+      headers: { ...authHeader(manager.token), "Idempotency-Key": randomUUID() },
+      payload: { asset_code: code, asset_type: "Laptop", name: code },
+    });
+
+    await pool.query("UPDATE core.users SET employment_status = 'inactive' WHERE id = $1", [seedIds.assetManager]);
+    expect((await create("AUTH-INACTIVE-S25")).statusCode).toBe(401);
+    await pool.query("UPDATE core.users SET employment_status = 'active' WHERE id = $1", [seedIds.assetManager]);
+
+    const companyId = first.store.userSessionPreferences.find((item) => item.user_id === seedIds.assetManager)!.company_id!;
+    await pool.query("UPDATE platform.company_profiles SET status = 'inactive' WHERE id = $1", [companyId]);
+    expect((await create("AUTH-COMPANY-S25")).statusCode).toBe(400);
+    await pool.query("UPDATE platform.company_profiles SET status = 'active' WHERE id = $1", [companyId]);
+
+    const otherCompanyId = randomUUID();
+    await pool.query(
+      "INSERT INTO platform.company_profiles (id, company_name, company_slug, status) VALUES ($1, 'Preference test company', $2, 'active')",
+      [otherCompanyId, `preference-${otherCompanyId}`],
+    );
+    await pool.query("UPDATE platform.user_session_preferences SET company_id = $1 WHERE user_id = $2", [otherCompanyId, seedIds.assetManager]);
+    expect((await create("AUTH-PREFERENCE-S25")).statusCode).toBe(400);
+    await pool.query("UPDATE platform.user_session_preferences SET company_id = $1 WHERE user_id = $2", [companyId, seedIds.assetManager]);
+
+    const persistence = first.store.persistence!;
+    const cachedIndex = first.store.users.findIndex((user) => user.id === seedIds.assetManager);
+    const [cached] = first.store.users.splice(cachedIndex, 1);
+    try {
+      await expect(persistence.assetCommand!(
+        {
+          companyId,
+          actorUserId: seedIds.assetManager,
+          actionKey: "assets.test.missing-cache",
+          idempotencyKey: randomUUID(),
+          requestHash: "b".repeat(64),
+        },
+        () => undefined,
+        () => ({ ok: true }),
+      )).rejects.toThrow(/User no longer exists/u);
+    } finally {
+      first.store.users.splice(cachedIndex, 0, cached!);
+    }
+  });
+
+  it("rejects an outbox idempotency collision without committing recovery state", async () => {
+    const manager = await loginAs(first, "AST");
+    const inventory = await first.inject({ method: "GET", url: "/api/v1/assets", headers: authHeader(manager.token) });
+    const asset = inventory.json().items[0] as { id: string; version: number };
+    expect((await first.inject({
+      method: "POST",
+      url: `/api/v1/assets/${asset.id}/assign`,
+      headers: { ...authHeader(manager.token), "Idempotency-Key": randomUUID() },
+      payload: { assigned_to_user_id: seedIds.employee1, expected_version: asset.version },
+    })).statusCode).toBe(200);
+
+    await first.store.pgPool!.query(
+      `INSERT INTO platform.outbox_events
+       (event_id, aggregate_type, aggregate_id, event_type, payload, idempotency_key, status, retry_count, available_at, created_at)
+       VALUES ($1, 'employee', $2, 'employee.wrong', '{}'::jsonb, $3, 'pending', 0, now(), now())`,
+      [randomUUID(), seedIds.employee1, `employee.terminated:${seedIds.employee1}`],
+    );
+    const response = await first.inject({
+      method: "POST",
+      url: "/api/v1/assets/events/employee-terminated",
+      headers: { ...authHeader(manager.token), "Idempotency-Key": randomUUID() },
+      payload: { employee_user_id: seedIds.employee1 },
+    });
+    expect(response.statusCode).toBe(409);
+    const tickets = await first.store.pgPool!.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM assets.asset_recovery_tickets WHERE employee_user_id = $1",
+      [seedIds.employee1],
+    );
+    expect(tickets.rows[0]?.count).toBe("0");
+  });
+
+  it("validates command keys, escapes assignee search, and rejects malformed acknowledgement replay", async () => {
+    const manager = await loginAs(first, "AST");
+    const employee = await loginAs(first, "E1");
+    const payload = { asset_code: "KEY-VALIDATION-S25", asset_type: "Laptop", name: "Command key validation" };
+    expect((await first.inject({
+      method: "POST",
+      url: "/api/v1/assets/",
+      headers: authHeader(manager.token),
+      payload,
+    })).statusCode).toBe(400);
+    expect((await first.inject({
+      method: "POST",
+      url: "/api/v1/assets/",
+      headers: { ...authHeader(manager.token), "Idempotency-Key": "short" },
+      payload,
+    })).statusCode).toBe(400);
+
+    const escapedSearch = await first.inject({
+      method: "GET",
+      url: "/api/v1/assets/assignees?q=%25%5F",
+      headers: authHeader(manager.token),
+    });
+    expect(escapedSearch.statusCode).toBe(200);
+    expect(escapedSearch.json().items).toEqual([]);
+
+    const inventory = await first.inject({ method: "GET", url: "/api/v1/assets", headers: authHeader(manager.token) });
+    const asset = inventory.json().items[0] as { id: string; version: number };
+    const assigned = await first.inject({
+      method: "POST",
+      url: `/api/v1/assets/${asset.id}/assign`,
+      headers: { ...authHeader(manager.token), "Idempotency-Key": randomUUID() },
+      payload: { assigned_to_user_id: seedIds.employee1, expected_version: asset.version },
+    });
+    expect(assigned.statusCode).toBe(200);
+    const replayKey = randomUUID();
+    const acknowledgement = {
+      method: "POST" as const,
+      url: `/api/v1/assets/${asset.id}/acknowledgements`,
+      headers: { ...authHeader(employee.token), "Idempotency-Key": replayKey },
+      payload: { acknowledgement_type: "received", expected_version: assigned.json().version },
+    };
+    expect((await first.inject(acknowledgement)).statusCode).toBe(200);
+    const tamper = await first.store.pgPool!.connect();
+    try {
+      await tamper.query("BEGIN");
+      await tamper.query("SELECT set_config('hrms.asset_writer_v2', 'on', true)");
+      await tamper.query(
+        "UPDATE assets.asset_command_results SET response_body = '{}'::jsonb WHERE actor_user_id = $1 AND idempotency_key = $2",
+        [seedIds.employee1, replayKey],
+      );
+      await tamper.query("COMMIT");
+    } catch (error) {
+      await tamper.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      tamper.release();
+    }
+    expect((await first.inject(acknowledgement)).statusCode).toBe(403);
+  });
+
+  it("does not misclassify an unknown unique violation as an asset identity conflict", async () => {
+    const manager = await loginAs(first, "AST");
+    const pool = first.store.pgPool!;
+    const originalConnect = pool.connect.bind(pool);
+    let wrapped = false;
+    const spy = vi.spyOn(pool, "connect").mockImplementation((async () => {
+      const client = await originalConnect();
+      if (wrapped) return client;
+      wrapped = true;
+      const originalQuery = client.query.bind(client);
+      client.query = (async (sql: unknown, ...args: unknown[]) => {
+        if (typeof sql === "string" && sql.includes("INSERT INTO assets.assets")) {
+          throw Object.assign(new Error("unknown unique violation"), { code: "23505" });
+        }
+        return (originalQuery as (...items: unknown[]) => Promise<unknown>)(sql, ...args);
+      }) as typeof client.query;
+      return client;
+    }) as typeof pool.connect);
+    try {
+      const response = await first.inject({
+        method: "POST",
+        url: "/api/v1/assets/",
+        headers: { ...authHeader(manager.token), "Idempotency-Key": randomUUID() },
+        payload: { asset_code: "UNKNOWN-UQ-S25", asset_type: "Laptop", name: "Unknown constraint" },
+      });
+      expect(response.statusCode).toBe(500);
+      expect(response.json().details?.reason).toBeUndefined();
+    } finally {
+      spy.mockRestore();
+    }
+  });
 });
 
 describe("disposable reset guard", () => {
   it("rejects nonlocal and non-test targets before connecting", () => {
+    expect(() => assertDisposableResetTarget("not a database url"))
+      .toThrow(/Refusing database reset/u);
     expect(() => assertDisposableResetTarget("postgresql://user:pass@db.example/hrms_test"))
       .toThrow(/Refusing database reset/u);
     expect(() => assertDisposableResetTarget("postgresql://user:pass@127.0.0.1/hrms_prod"))

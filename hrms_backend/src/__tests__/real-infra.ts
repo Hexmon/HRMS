@@ -46,6 +46,7 @@ function acquireTestDatabaseUrl(databaseUrl: string): () => void {
 
 export async function buildRealApp(options: { reset?: boolean } = {}): Promise<FastifyInstance> {
   const databaseUrl = process.env.TEST_DATABASE_URL;
+  const reset = options.reset ?? true;
   if (!databaseUrl) {
     throw new Error("TEST_DATABASE_URL is required for real integration tests.");
   }
@@ -54,7 +55,6 @@ export async function buildRealApp(options: { reset?: boolean } = {}): Promise<F
   // DATABASE_URL to TEST_DATABASE_URL, so equality alone is not a reason to
   // reject the second instance when it will not reset the database.
   assertDisposableResetTarget(databaseUrl);
-  const reset = options.reset ?? true;
   if (resetInProgress) {
     throw new Error("Cannot start another test app while the test database is resetting.");
   }

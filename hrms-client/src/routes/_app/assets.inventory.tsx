@@ -22,8 +22,7 @@ export const Route = createFileRoute("/_app/assets/inventory")({ component: Inve
 
 export function Inventory() {
   const { activeRole } = useAuth();
-  const canManageAssets =
-    !!activeRole && (ASSET_ADMIN_ROLES as readonly string[]).includes(activeRole);
+  const canManageAssets = ASSET_ADMIN_ROLES.some((role) => role === activeRole);
   const { assets, loading, error, isApiBacked } = useAssets();
   const exportMutation = useCreateReportExportMutation();
   const [type, setType] = useState("all");

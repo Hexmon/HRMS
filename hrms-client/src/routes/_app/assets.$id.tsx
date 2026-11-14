@@ -207,8 +207,6 @@ export function AssetDetail() {
                 <Info k="Invoice #" v={asset.invoiceNumber} />
                 <Info k="Purchased" v={overview.purchaseDate} />
                 <Info k="Warranty" v={overview.warranty} />
-                <Info k="Cost" v={overview.cost === null ? "—" : fmtMoney(overview.cost)} />
-                <Info k="Location" v={asset.location} />
                 <Info
                   k="Condition"
                   v={
@@ -219,6 +217,8 @@ export function AssetDetail() {
                     )
                   }
                 />
+                <Info k="Cost" v={overview.cost === null ? "—" : fmtMoney(overview.cost)} />
+                <Info k="Location" v={asset.location} />
               </dl>
             </DataCard>
             <DataCard title="Current assignment">

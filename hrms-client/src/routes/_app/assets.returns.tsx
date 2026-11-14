@@ -47,8 +47,7 @@ export function ReturnsScreen() {
   const apiEnabled = useApiRouteEnabled(["/assets"]);
   const recoveryQueue = useAssetRecoveryQueue({ page_size: 100, status: "open" }, apiEnabled);
   const settleRecovery = useAssetRecoverySettlementMutation();
-  const canSettleRecovery =
-    !!activeRole && (ASSET_ADMIN_ROLES as readonly string[]).includes(activeRole);
+  const canSettleRecovery = ASSET_ADMIN_ROLES.some((role) => role === activeRole);
 
   // Group assigned assets by employee, surfacing those tied to exit / notice
   const grouped = useMemo(() => {
@@ -311,7 +310,7 @@ export function ReturnInline({
               : "Mark this asset as returned."}
           </DialogDescription>
         </DialogHeader>
-        {detailsSupported && (
+        {detailsSupported ? (
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label htmlFor="asset-inline-return-date">Return date</Label>
@@ -347,7 +346,7 @@ export function ReturnInline({
               />
             </div>
           </div>
-        )}
+        ) : null}
         <DialogFooter>
           <Button
             variant="outline"

@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
   activeRole: "asset_admin" as string | null,
+  apiEnabled: false,
   assets: [
     {
       id: "asset-a",
@@ -58,7 +59,7 @@ vi.mock("@/lib/assets-store", () => ({
   fmtMoney: (value: number) => `$${value}`,
 }));
 vi.mock("@/lib/auth", () => ({ useAuth: () => ({ activeRole: state.activeRole }) }));
-vi.mock("@/shared/api", () => ({ useApiRouteEnabled: () => false }));
+vi.mock("@/shared/api", () => ({ useApiRouteEnabled: () => state.apiEnabled }));
 vi.mock("@/domains/assets", () => ({
   useAssetVendors: () => ({ data: undefined, isLoading: false, error: null }),
   useAssetWarrantyAlerts: () => ({ data: undefined, isLoading: false, error: null }),
@@ -121,6 +122,7 @@ describe("local warranty projection", () => {
   afterEach(() => {
     cleanup();
     state.activeRole = "asset_admin";
+    state.apiEnabled = false;
   });
 
   it("derives warranty, maintenance and vendor summaries from complete local assets", () => {
@@ -149,11 +151,18 @@ describe("local warranty projection", () => {
   });
 
   it("fails closed when a non-Asset-Admin opens the warranty URL directly", () => {
+    state.apiEnabled = true;
     state.activeRole = "employee";
     render(<WarrantyScreen />);
     expect(
       screen.getByText("Asset Admin access is required to manage warranties and vendors."),
     ).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Add vendor" })).not.toBeInTheDocument();
+  });
+
+  it("enables protected vendor and warranty queries only for an API-backed Asset Admin", () => {
+    state.apiEnabled = true;
+    render(<WarrantyScreen />);
+    expect(screen.getByRole("button", { name: "Add vendor" })).toBeInTheDocument();
   });
 });

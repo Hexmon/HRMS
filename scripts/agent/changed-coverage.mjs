@@ -1499,6 +1499,35 @@ function validateHolidayMigration(path, content) {
   requireSemanticText(path, content, /COMMIT\s*;/i, "holiday migration must commit transactionally");
 }
 
+function validateAssetTransactionFenceMigration(path, content) {
+  requireSemanticText(path, content, /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+assets\.require_transactional_writer\s*\(\)/i, "asset writer fence function is missing");
+  requireSemanticText(path, content, /current_setting\s*\(\s*'hrms\.asset_writer_v2'\s*,\s*true\s*\)\s+IS\s+DISTINCT\s+FROM\s+'on'/i, "asset writer fence must require the transaction-local marker");
+  requireSemanticText(path, content, /IF\s+TG_OP\s*=\s*'DELETE'[\s\S]*RETURN\s+OLD[\s\S]*RETURN\s+NEW/i, "asset writer fence must preserve DELETE and write trigger row semantics");
+  requireSemanticText(path, content, /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+assets\.asset_command_results/i, "durable asset command results table is missing");
+  requireSemanticText(path, content, /UNIQUE\s*\(\s*company_id\s*,\s*actor_user_id\s*,\s*action_key\s*,\s*idempotency_key\s*\)/i, "asset command replay key must be unique within actor and company scope");
+  requireSemanticText(path, content, /CREATE\s+UNIQUE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+asset_assignments_one_active_per_asset_uq[\s\S]*\(asset_id\)[\s\S]*WHERE\s+status\s*=\s*'active'/i, "asset assignment fence must allow only one active assignment");
+  requireSemanticText(path, content, /BEFORE\s+INSERT\s+OR\s+UPDATE\s+OR\s+DELETE/i, "asset writer trigger must fence every mutation operation");
+  for (const table of [
+    "assets", "asset_assignments", "asset_state_events", "asset_requests",
+    "asset_acknowledgements", "asset_maintenance_records", "software_vendors",
+    "software_products", "asset_recovery_tickets", "license_entitlements",
+    "license_activations", "compromised_keys", "asset_command_results",
+  ]) {
+    requireSemanticText(path, content, new RegExp(`['\"]${table}['\"]`), `asset writer trigger list is missing ${table}`);
+  }
+}
+
+function validateAssetRecoveryAssignmentMigration(path, content) {
+  requireSemanticText(path, content, /ALTER\s+TABLE\s+assets\.asset_recovery_tickets[\s\S]*ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+assignment_id\s+uuid/i, "recovery ticket assignment column is missing");
+  requireSemanticText(path, content, /IF\s+NOT\s+EXISTS[\s\S]*asset_recovery_tickets_assignment_id_fkey[\s\S]*FOREIGN\s+KEY\s*\(assignment_id\)\s+REFERENCES\s+assets\.asset_assignments\s*\(id\)/i, "recovery assignment foreign key must be installed idempotently");
+  requireSemanticText(path, content, /CREATE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+asset_recovery_tickets_assignment_idx[\s\S]*\(assignment_id\)/i, "recovery assignment lookup index is missing");
+  requireSemanticText(path, content, /SET\s+LOCAL\s+hrms\.asset_writer_v2\s*=\s*'on'/i, "recovery backfill must use only the transaction-local writer marker");
+  requireSemanticText(path, content, /assignment\.asset_id\s*=\s*ticket\.asset_id[\s\S]*assignment\.assigned_to_user_id\s*=\s*ticket\.employee_user_id/i, "recovery backfill must match asset and employee custody");
+  requireSemanticText(path, content, /assignment\.assigned_at\s*<=\s*ticket\.created_at[\s\S]*assignment\.returned_at\s+IS\s+NULL\s+OR\s+assignment\.returned_at\s*>=\s*ticket\.created_at/i, "recovery backfill must match the ticket custody interval");
+  requireSemanticText(path, content, /HAVING\s+count\s*\(\s*\*\s*\)\s*=\s*1/i, "recovery backfill must bind only a unique assignment");
+  requireSemanticText(path, content, /UPDATE\s+assets\.asset_recovery_tickets[\s\S]*SET\s+assignment_id\s*=\s*unique_matches\.assignment_id/i, "recovery backfill update is missing");
+}
+
 function validateQaSeedSafety(path, content) {
   requireSemanticText(path, content, /HRMS_QA_SEED_ALLOW/, "QA seed safety must require explicit opt-in");
   requireSemanticText(path, content, /only isolated local or QA/, "QA seed safety must reject non-isolated targets");
@@ -1534,6 +1563,8 @@ export function validateSemanticPath(root, path, content, base) {
     case "scripts/agent/verify-change.sh": validateShellVerifier(root, path, content, base); break;
     case "hrms_backend/infra/docker/docker-compose.qa.yml": validateQaCompose(path, content); break;
     case "hrms_backend/src/db/migrations/0065_holiday_company_unique_constraint.sql": validateHolidayMigration(path, content); break;
+    case "hrms_backend/src/db/migrations/0066_asset_transaction_fence.sql": validateAssetTransactionFenceMigration(path, content); break;
+    case "hrms_backend/src/db/migrations/0067_asset_recovery_assignment_identity.sql": validateAssetRecoveryAssignmentMigration(path, content); break;
     case "hrms_backend/scripts/qa-seed-safety.ts": validateQaSeedSafety(path, content); break;
     case "hrms_backend/scripts/seed-qa.ts": validateQaSeedEntrypoint(path, content); break;
     case "hrms_backend/scripts/seed-qa-data.ts":
@@ -1556,6 +1587,8 @@ export const semanticCoveragePaths = new Set([
   "scripts/agent/verify-change.sh",
   "hrms_backend/infra/docker/docker-compose.qa.yml",
   "hrms_backend/src/db/migrations/0065_holiday_company_unique_constraint.sql",
+  "hrms_backend/src/db/migrations/0066_asset_transaction_fence.sql",
+  "hrms_backend/src/db/migrations/0067_asset_recovery_assignment_identity.sql",
   "hrms_backend/scripts/qa-seed-safety.ts",
   "hrms_backend/scripts/seed-qa.ts",
   "hrms_backend/scripts/seed-qa-data.ts",
