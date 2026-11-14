@@ -60,7 +60,7 @@ describe("asset command intent keys", () => {
     await assetsApi.list({ page: 2 });
     await assetsApi.myAssets();
     await assetsApi.assignees("A&B");
-    await assetsApi.get("asset/one");
+    await assetsApi.get("asset-one");
     await assetsApi.assign("asset-a", { expected_version: 1 });
     await assetsApi.returnAsset("asset-a", { expected_version: 2 });
     await assetsApi.scan("qr/value");
@@ -91,7 +91,7 @@ describe("asset command intent keys", () => {
       "/api/v1/assets/",
       "/api/v1/assets/my",
       "/api/v1/assets/assignees",
-      "/api/v1/assets/asset/one",
+      "/api/v1/assets/asset-one",
       "/api/v1/assets/asset-a/assign",
       "/api/v1/assets/asset-a/return",
       "/api/v1/assets/scan/qr%2Fvalue",

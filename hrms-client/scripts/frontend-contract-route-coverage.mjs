@@ -67,7 +67,9 @@ function routePath(file) {
   return `/${routeParts.join("/")}`;
 }
 
-const routeFiles = walk(routesDir).filter((file) => file.endsWith(".tsx"));
+const routeFiles = walk(routesDir).filter(
+  (file) => file.endsWith(".tsx") && !file.endsWith(".test.tsx"),
+);
 const routes = routeFiles
   .map((file) => ({ file: relative(root, file).replace(/\\/g, "/"), route: routePath(file) }))
   .filter((item) => item.route);
