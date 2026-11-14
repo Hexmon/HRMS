@@ -12729,7 +12729,7 @@ Required: yes
 | `date` | string<date> | required | Holiday date |
 | `region` | string | optional | default "All" |
 | `optional` | boolean | optional | default false |
-| `expected_version` | integer | optional | minimum 1 |
+| `expected_version` | integer | optional | Required when changing an existing holiday. Omit for a new ID or an unchanged retry of the same ID and body. A missing ID with this field returns 404 rather than creating a holiday.; minimum 1 |
 
 **Responses**
 | Status | Meaning |

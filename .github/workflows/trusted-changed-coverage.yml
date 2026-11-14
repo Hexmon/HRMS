@@ -14,10 +14,38 @@ jobs:
   trusted-changed-coverage:
     name: Trusted changed executable coverage
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    # Real PostgreSQL integration execution contributes to the trusted backend
+    # report, so match the bounded disposable services and backend-sized timeout
+    # used by the ordinary diagnostic coverage job.
+    timeout-minutes: 90
     env:
       CANDIDATE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       COVERAGE_BASE: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+    services:
+      postgres:
+        # postgis/postgis:16-3.5-alpine
+        image: postgis/postgis@sha256:47e961a569fd52ff31f0fe205ed91eeab17d9f5fff6722e6d7ea6b588748b293
+        env:
+          POSTGRES_DB: hrms_coverage_test
+          POSTGRES_USER: hrms_coverage
+          POSTGRES_PASSWORD: coverage
+        ports:
+          - 55433:5432
+        options: >-
+          --health-cmd "pg_isready -U hrms_coverage -d hrms_coverage_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      valkey:
+        # valkey/valkey:9.0.3-alpine
+        image: valkey/valkey@sha256:e1095c6c76ee982cb2d1e07edbb7fb2a53606630a1d810d5a47c9f646b708bf5
+        ports:
+          - 56380:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - name: Validate immutable workflow identity
         shell: bash
@@ -101,6 +129,7 @@ jobs:
           test -z "$(git -C trusted status --porcelain=v1 --untracked-files=all)"
           HRMS_COVERAGE_REPO_ROOT="$candidate" node "$validator" \
             --run-full-suite \
+            --confirm-disposable-services \
             --base "$COVERAGE_BASE" \
             --head "$CANDIDATE_SHA" \
             --trusted-validator "$validator"

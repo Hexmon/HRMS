@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { accessSync, chmodSync, constants as fsConstants, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -12,11 +12,14 @@ const toolRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const repoRoot = process.env.HRMS_COVERAGE_REPO_ROOT ? resolve(process.env.HRMS_COVERAGE_REPO_ROOT) : toolRoot;
 const requireFromBackend = createRequire(join(toolRoot, "hrms_backend/package.json"));
 const ts = requireFromBackend("typescript");
+const { Pool: PostgresPool } = requireFromBackend("pg");
+const Valkey = requireFromBackend("iovalkey").default;
 const packages = {
   backend: { root: "hrms_backend", output: "backend" },
   frontend: { root: "hrms-client", output: "frontend" },
   external: { root: ".", output: "external" },
 };
+const expectedCoverageVersion = "7.11.0";
 
 export function coverageOutputRoot(root) {
   return resolve(process.env.HRMS_COVERAGE_OUTPUT_DIR ?? join(dirname(resolve(root)), `${basename(resolve(root))}-coverage-output`));
@@ -54,12 +57,12 @@ export function outsideExecutableOrConfig(path) {
 }
 
 function isTestOrGenerated(path) {
-  return /(?:\.test\.[cm]?[jt]sx?$|\/tests\/test_[^/]+\.py$|\/src\/test\/|\.d\.ts$|\/routeTree\.gen\.ts$)/.test(path);
+  return /(?:\.(?:test|spec)\.[cm]?[jt]sx?$|\/e2e\/.*\.[cm]?[jt]sx?$|\/tests\/test_[^/]+\.py$|\/src\/test\/|\.d\.ts$|\/routeTree\.gen\.ts$)/.test(path);
 }
 
 function isProductTestPath(path) {
   return /^(?:hrms_backend|hrms-client)\/src\//.test(path) &&
-    /(?:\.test\.[cm]?[jt]sx?$|\/src\/test\/)/.test(path);
+    /(?:\.test\.[cm]?[jt]sx?$|\/src\/(?:test|__tests__)\/)/.test(path);
 }
 
 function git(root, ...args) {
@@ -108,8 +111,8 @@ export function productionImportRisks(root) {
       }
     };
     const visit = (node) => {
-      if (ts.isImportDeclaration(node) && !node.importClause?.isTypeOnly && ts.isStringLiteralLike(node.moduleSpecifier)) inspect(node.moduleSpecifier.text);
-      if (ts.isExportDeclaration(node) && !node.isTypeOnly && node.moduleSpecifier && ts.isStringLiteralLike(node.moduleSpecifier)) inspect(node.moduleSpecifier.text);
+      if (ts.isImportDeclaration(node) && !isPureTypeImportDeclaration(node) && ts.isStringLiteralLike(node.moduleSpecifier)) inspect(node.moduleSpecifier.text);
+      if (ts.isExportDeclaration(node) && !isPureTypeExportDeclaration(node) && node.moduleSpecifier && ts.isStringLiteralLike(node.moduleSpecifier)) inspect(node.moduleSpecifier.text);
       if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference) && node.moduleReference.expression && ts.isStringLiteralLike(node.moduleReference.expression)) inspect(node.moduleReference.expression.text);
       if (ts.isCallExpression(node)) {
         const callee = node.expression.getText(source);
@@ -125,6 +128,24 @@ export function productionImportRisks(root) {
     visit(source);
   }
   return [...risks];
+}
+
+function isPureTypeImportDeclaration(node) {
+  if (!ts.isImportDeclaration(node)) return false;
+  const clause = node.importClause;
+  if (!clause) return false;
+  if (clause.isTypeOnly) return true;
+  if (clause.name || !clause.namedBindings || !ts.isNamedImports(clause.namedBindings)) return false;
+  return clause.namedBindings.elements.length > 0 &&
+    clause.namedBindings.elements.every((element) => element.isTypeOnly);
+}
+
+function isPureTypeExportDeclaration(node) {
+  if (!ts.isExportDeclaration(node)) return false;
+  if (node.isTypeOnly) return true;
+  return Boolean(node.exportClause && ts.isNamedExports(node.exportClause) &&
+    node.exportClause.elements.length > 0 &&
+    node.exportClause.elements.every((element) => element.isTypeOnly));
 }
 
 export function sourceDigest(root, packageName) {
@@ -292,6 +313,23 @@ export function validateTrustedExecutable(path) {
 }
 
 export function resolveCoveragePython(environment = process.env) {
+  const validateCoveragePython = (executable) => {
+    validateTrustedExecutable(executable);
+    const version = execFileSync(executable,
+      ["-c", "import coverage; print(coverage.__version__)"],
+      { env: environment, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    if (version !== expectedCoverageVersion) {
+      throw new Error(`coverage ${expectedCoverageVersion} is required, found ${version || "no version"}`);
+    }
+    return executable;
+  };
+  if (environment.HRMS_COVERAGE_PYTHON !== undefined) {
+    try {
+      return validateCoveragePython(environment.HRMS_COVERAGE_PYTHON);
+    } catch (error) {
+      throw new Error(`Pinned Python coverage runner is invalid (${error.message})`);
+    }
+  }
   const failures = [];
   for (const name of ["python3", "python"]) {
     try {
@@ -301,8 +339,7 @@ export function resolveCoveragePython(environment = process.env) {
           try { validateTrustedExecutable(candidate); return true; } catch { return false; }
         });
       if (!executable) throw new Error("not found on sanitized PATH");
-      execFileSync(executable, ["-c", "import coverage"], { env: environment, stdio: "ignore" });
-      return executable;
+      return validateCoveragePython(executable);
     } catch (error) {
       failures.push(`${name}: ${error.message}`);
     }
@@ -426,10 +463,8 @@ export function addEvaluatedModuleStatements(root, path, entry) {
   for (const node of source.statements) {
     const staticModule = ts.isImportDeclaration(node) ||
       (ts.isExportDeclaration(node) && Boolean(node.moduleSpecifier));
-    const typeOnly = ts.isImportDeclaration(node)
-      ? node.importClause?.isTypeOnly === true
-      : ts.isExportDeclaration(node) && node.isTypeOnly;
-    if ((!staticModule || typeOnly) && !ts.isExpressionStatement(node)) continue;
+    const typeOnly = isPureTypeImportDeclaration(node) || isPureTypeExportDeclaration(node);
+    if (!staticModule || typeOnly) continue;
     const start = source.getLineAndCharacterOfPosition(node.getStart(source));
     const end = source.getLineAndCharacterOfPosition(node.end);
     const line = start.line + 1;
@@ -521,7 +556,10 @@ function readReport(root, packageName, head) {
     throw new Error(`${packageName}: malformed coverage report`);
   }
   const entries = validatedCoverageEntries(root, data, packageName);
-  return entries;
+  return new Map([...entries].map(([path, entry]) => [
+    path,
+    addEvaluatedModuleStatements(root, path, entry),
+  ]));
 }
 
 function pythonCoverageToIstanbul(root, data) {
@@ -709,7 +747,7 @@ export function removeExactCommitCheckout(root, checkout) {
 export function sanitizedCoverageEnvironment(outputRoot) {
   const allowed = ["PATH", "USER", "LOGNAME", "SHELL", "TMPDIR", "TEMP", "TMP", "CI", "GITHUB_ACTIONS",
     "RUNNER_OS", "RUNNER_ARCH", "PNPM_HOME", "COREPACK_HOME", "NO_COLOR", "FORCE_COLOR",
-    "NODE_V8_COVERAGE"];
+    "NODE_V8_COVERAGE", "HRMS_COVERAGE_PYTHON"];
   const environment = Object.fromEntries(allowed.flatMap((name) => process.env[name] === undefined ? [] : [[name, process.env[name]]]));
   return {
     ...environment,
@@ -723,10 +761,166 @@ export function sanitizedCoverageEnvironment(outputRoot) {
     PYTHONDONTWRITEBYTECODE: "1",
     LANG: "C.UTF-8",
     TZ: "UTC",
-    TEST_DATABASE_URL: "postgresql://unused:unused@127.0.0.1:5432/hrms_coverage_unit_only",
+    BUILD_SHA: "coverage-exact-head",
+    TEST_DATABASE_URL: "postgresql://hrms_coverage:coverage@127.0.0.1:55433/hrms_coverage_test",
+    VALKEY_URL: "redis://127.0.0.1:56380/15",
+    CLOUDINARY_MOCK_UPLOADS: "true",
+    EMAIL_DELIVERY_MODE: "log",
+    LOCAL_DEMO_PASSWORD: "coverage-local-demo-A1!",
+    JWT_ACCESS_SECRET: "coverage-access-secret-at-least-32-characters",
+    JWT_REFRESH_SECRET: "coverage-refresh-secret-at-least-32-characters",
     HRMS_ENV_FILE: join(outputRoot, "no-env-file"),
     HRMS_COVERAGE_OUTPUT_DIR: outputRoot,
   };
+}
+
+export function selectCoverageIntegrationPool(environment, dependencies = {}) {
+  return dependencies.pool ?? new PostgresPool({ connectionString: environment.TEST_DATABASE_URL });
+}
+
+export function selectCoverageIntegrationValkey(environment, dependencies = {}) {
+  return dependencies.valkey ?? new Valkey(environment.VALKEY_URL, {
+    lazyConnect: true,
+    maxRetriesPerRequest: 1,
+    enableOfflineQueue: false,
+  });
+}
+
+export function coverageDatabaseObjectCount(result) {
+  if (!result || !Array.isArray(result.rows) || result.rows.length !== 1) {
+    throw new Error("Coverage integration database object count result is malformed");
+  }
+  const row = result.rows[0];
+  if (!row || typeof row !== "object") {
+    throw new Error("Coverage integration database object count row is malformed");
+  }
+  const count = row.count;
+  if (!Number.isSafeInteger(count) || count < 0) {
+    throw new Error("Coverage integration database object count is malformed");
+  }
+  return count;
+}
+
+export async function prepareCoverageIntegrationServices(environment, token, dependencies = {}) {
+  const databaseUrl = new URL(environment.TEST_DATABASE_URL);
+  const valkeyUrl = new URL(environment.VALKEY_URL);
+  if (databaseUrl.protocol !== "postgresql:" || databaseUrl.hostname !== "127.0.0.1" ||
+      databaseUrl.port !== "55433" || databaseUrl.pathname !== "/hrms_coverage_test") {
+    throw new Error("Coverage integration database must be the dedicated 127.0.0.1:55433/hrms_coverage_test service");
+  }
+  if (valkeyUrl.protocol !== "redis:" || valkeyUrl.hostname !== "127.0.0.1" ||
+      valkeyUrl.port !== "56380" || valkeyUrl.pathname !== "/15") {
+    throw new Error("Coverage integration Valkey must be the dedicated 127.0.0.1:56380/15 service");
+  }
+  if (!/^[0-9a-f]{40}:[A-Za-z0-9._-]+$/.test(token)) {
+    throw new Error("Coverage integration service token is malformed");
+  }
+
+  const pool = selectCoverageIntegrationPool(environment, dependencies);
+  try {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock(hashtext('hrms_coverage_service_claim'))");
+      const occupied = await client.query(`
+        SELECT count(*)::int AS count
+        FROM pg_catalog.pg_class relation
+        JOIN pg_catalog.pg_namespace namespace ON namespace.oid = relation.relnamespace
+        WHERE relation.relkind IN ('r','p','v','m','S','f')
+          AND namespace.nspname NOT IN ('pg_catalog','information_schema')
+          AND namespace.nspname NOT LIKE 'pg_toast%'
+          AND NOT EXISTS (
+            SELECT 1 FROM pg_catalog.pg_depend dependency
+            JOIN pg_catalog.pg_extension extension ON extension.oid = dependency.refobjid
+            WHERE dependency.classid = 'pg_class'::regclass
+              AND dependency.objid = relation.oid
+              AND dependency.deptype = 'e'
+          )
+      `);
+      if (coverageDatabaseObjectCount(occupied) !== 0) {
+        throw new Error("Coverage integration database is not empty; recreate its disposable container before running");
+      }
+      await client.query("CREATE TABLE public.hrms_coverage_run_guard (token text PRIMARY KEY, created_at timestamptz NOT NULL DEFAULT now())");
+      await client.query("INSERT INTO public.hrms_coverage_run_guard (token) VALUES ($1)", [token]);
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  } finally {
+    await pool.end();
+  }
+
+  const valkey = selectCoverageIntegrationValkey(environment, dependencies);
+  try {
+    await valkey.connect();
+    const claimed = await valkey.eval(
+      "if redis.call('dbsize') == 0 then return redis.call('set', KEYS[1], ARGV[1], 'NX') else return 0 end",
+      1,
+      "hrms:coverage:run-guard",
+      token,
+    );
+    if (claimed !== "OK") {
+      throw new Error("Coverage integration Valkey is populated or already claimed; recreate its disposable container before running");
+    }
+  } catch (error) {
+    await valkey.quit().catch(() => valkey.disconnect());
+    throw new Error(`${error.message}; recreate the disposable PostgreSQL container before retrying`, { cause: error });
+  }
+
+  return async () => {
+    let cleanupError;
+    try {
+      const result = await valkey.eval(
+        "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('flushdb') else return 0 end",
+        1,
+        "hrms:coverage:run-guard",
+        token,
+      );
+      if (result !== "OK") throw new Error("Coverage integration Valkey ownership was lost before cleanup");
+    } catch (error) {
+      cleanupError = error;
+    } finally {
+      try {
+        await valkey.quit();
+      } catch (error) {
+        valkey.disconnect();
+        if (cleanupError) cleanupError = new AggregateError([cleanupError, error], "Coverage integration Valkey cleanup failed");
+        else cleanupError = error;
+      }
+    }
+    if (cleanupError) throw cleanupError;
+  };
+}
+
+export async function verifyCoverageIntegrationServiceClaim(environment, token, dependencies = {}) {
+  if (!/^[0-9a-f]{40}:[A-Za-z0-9._-]+$/.test(token)) {
+    throw new Error("Coverage integration service claim token is malformed");
+  }
+  const pool = selectCoverageIntegrationPool(environment, dependencies);
+  try {
+    const result = await pool.query("SELECT token FROM public.hrms_coverage_run_guard");
+    if (result.rows.length !== 1 || result.rows[0]?.token !== token) {
+      throw new Error("Coverage integration PostgreSQL claim does not match the parent run");
+    }
+  } finally {
+    await pool.end();
+  }
+  const valkey = selectCoverageIntegrationValkey(environment, dependencies);
+  try {
+    await valkey.connect();
+    if (await valkey.get("hrms:coverage:run-guard") !== token) {
+      throw new Error("Coverage integration Valkey claim does not match the parent run");
+    }
+  } finally {
+    try {
+      await valkey.quit();
+    } catch {
+      valkey.disconnect();
+    }
+  }
 }
 
 const defaultFullSuiteResolvers = Object.freeze({ executable: resolveTrustedExecutable, python: resolveCoveragePython });
@@ -747,6 +941,10 @@ export function selectFinalizerDependencies(options) {
     stampPackage: options.stampPackage ?? stampReport,
     verifyGate: options.verifyGate ?? verify,
   };
+}
+
+export function selectPrepareCoverageServices(options) {
+  return options.prepareServices ?? prepareCoverageIntegrationServices;
 }
 
 function replaceProcessEnvironment(environment) {
@@ -786,7 +984,9 @@ export function runFullCoverageWorker(root, outputRoot, expectedHead, tools, run
     "src/__tests__/discovery-probes.unit.test.ts", "src/__tests__/disposable-probe-guard.unit.test.ts", "src/__tests__/walk-files.unit.test.ts",
     "--coverage", "--coverage.allowExternal=true", ...includes.flatMap((path) => ["--coverage.include", resolve(root, path)]),
     "--coverage.reporter=text", "--coverage.reporter=json", `--coverage.reportsDirectory=${typescriptReport}`], {}, ["NODE_V8_COVERAGE"]);
-  execute("backend coverage", tools.pnpm, ["--dir", "hrms_backend", "exec", "vitest", "run", "--project", "unit", "--coverage", "--coverage.reporter=json", `--coverage.reportsDirectory=${dirname(coverageArtifactPath(root, "backend"))}`], {}, ["NODE_V8_COVERAGE"]);
+  execute("backend unit and integration coverage", tools.pnpm, ["--dir", "hrms_backend", "exec", "vitest", "run",
+    "--project", "unit", "--project", "integration", "--coverage", "--coverage.reporter=json",
+    `--coverage.reportsDirectory=${dirname(coverageArtifactPath(root, "backend"))}`], {}, ["NODE_V8_COVERAGE"]);
   execute("frontend coverage", tools.pnpm, ["--dir", "hrms-client", "exec", "vitest", "run", "--coverage", "--coverage.reporter=json", `--coverage.reportsDirectory=${dirname(coverageArtifactPath(root, "frontend"))}`], {}, ["NODE_V8_COVERAGE"]);
   return completed;
 }
@@ -807,6 +1007,9 @@ export async function runFullCoverageGate(root, base, head = "HEAD", options = {
   const previousOutput = process.env.HRMS_COVERAGE_OUTPUT_DIR;
   const preserveOutput = options.preserveOutput === true || options.outputRoot !== undefined;
   let sourceRoot = undefined;
+  let cleanupServices = undefined;
+  let primaryError = undefined;
+  const serviceClaimToken = `${expectedHead}:${createHash("sha256").update(outputRoot).digest("hex").slice(0, 16)}`;
   try {
     if (existsSync(outputRoot)) {
       assertExternalArtifact(root, outputRoot, "full coverage output", true);
@@ -818,6 +1021,8 @@ export async function runFullCoverageGate(root, base, head = "HEAD", options = {
     const paths = fullSuitePaths(outputRoot);
     mkdirSync(paths.orchestratorV8, { recursive: true });
     const environment = sanitizedCoverageEnvironment(outputRoot);
+    const prepareServices = selectPrepareCoverageServices(options);
+    cleanupServices = await prepareServices(environment, serviceClaimToken);
     const tools = selectFullSuiteTools(options.tools, environment);
     assertExactCleanCommit(root, expectedHead, "full coverage launcher before checkout");
     const prepareCheckout = options.prepareCheckout ?? createExactCommitCheckout;
@@ -831,7 +1036,8 @@ export async function runFullCoverageGate(root, base, head = "HEAD", options = {
     const workerExecutor = options.execFile ?? execFileSync;
     const launchWorker = options.launchWorker ?? (() => workerExecutor(tools.node,
       [validatorScript, "--full-suite-worker", "--coverage-output", outputRoot,
-        "--expected-head", expectedHead, "--node", tools.node, "--pnpm", tools.pnpm, "--python", tools.python, "--bash", tools.bash], {
+        "--expected-head", expectedHead, "--service-claim-token", serviceClaimToken,
+        "--node", tools.node, "--pnpm", tools.pnpm, "--python", tools.python, "--bash", tools.bash], {
         cwd: sourceRoot,
         env: { ...environment, HRMS_COVERAGE_REPO_ROOT: sourceRoot, NODE_V8_COVERAGE: paths.orchestratorV8 },
         stdio: "inherit",
@@ -861,12 +1067,34 @@ export async function runFullCoverageGate(root, base, head = "HEAD", options = {
     });
     const result = await finalize({ root: sourceRoot, base, head: expectedHead, outputRoot, paths, expectedHead, tools });
     return { ...result, coverageOutputRoot: outputRoot };
+  } catch (error) {
+    primaryError = error;
+    throw error;
   } finally {
     if (previousOutput === undefined) delete process.env.HRMS_COVERAGE_OUTPUT_DIR;
     else process.env.HRMS_COVERAGE_OUTPUT_DIR = previousOutput;
     const cleanupCheckout = options.cleanupCheckout ?? removeExactCommitCheckout;
-    if (sourceRoot && sourceRoot !== root) cleanupCheckout(root, sourceRoot);
-    if (!preserveOutput) rmSync(outputRoot, { recursive: true, force: true });
+    const cleanupErrors = [];
+    try {
+      if (sourceRoot && sourceRoot !== root) cleanupCheckout(root, sourceRoot);
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+    try {
+      if (cleanupServices) await cleanupServices();
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+    try {
+      if (!preserveOutput) (options.cleanupOutput ?? rmSync)(outputRoot, { recursive: true, force: true });
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+    if (cleanupErrors.length > 0) {
+      const cleanupFailure = new AggregateError(cleanupErrors, "Full coverage cleanup failed");
+      if (primaryError && typeof primaryError === "object") primaryError.cause = cleanupFailure;
+      else throw cleanupFailure;
+    }
   }
 }
 
@@ -971,6 +1199,11 @@ export function changedLines(root, base, head, gitCommand = git) {
       deletionOnly.push(`${path}:deleted source file`);
     } else if (status === "D" && instrumentableExternal(path)) {
       deletionOnly.push(`${path}:deleted external executable file`);
+    } else if (semanticCoveragePaths.has(path)) {
+      // Operational QA scripts have explicit semantic contracts rather than
+      // executable package coverage. Classify them before the generic
+      // external-program path so they cannot be treated as uninstrumented.
+      outside.push(path);
     } else if (instrumentableExternal(path)) {
       external.push(path);
     } else if ((sourceTreePath || outsideExecutableOrConfig(path)) && !instrumentedSource) {
@@ -1009,9 +1242,9 @@ function nonExecutableLines(path, content) {
     for (let line = first; line <= last; line++) excluded.add(line);
   };
   const visit = (node) => {
-    if ((ts.isImportDeclaration(node) && node.importClause?.isTypeOnly) ||
+    if (isPureTypeImportDeclaration(node) ||
         ts.isInterfaceDeclaration(node) || ts.isTypeAliasDeclaration(node) ||
-        (ts.isExportDeclaration(node) && node.isTypeOnly) || node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.DeclareKeyword)) {
+        isPureTypeExportDeclaration(node) || node.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.DeclareKeyword)) {
       mark(node);
       return;
     }
@@ -1089,6 +1322,246 @@ export function assessChangedFile(path, lines, content, entry) {
   return result;
 }
 
+/*
+ * Package manifests, lockfiles, runner configuration, workflow YAML and shell
+ * orchestration cannot be represented by V8/Istanbul line counts.  They are
+ * nevertheless executable policy.  Keep their proof path-specific and
+ * fail-closed: every supported path has a semantic contract, while an
+ * unknown path remains unmeasured below.  These checks intentionally validate
+ * structure and behavior-affecting invariants rather than accepting receipts,
+ * trace totals, or string fragments as coverage.
+ */
+function semanticFailure(path, message) {
+  throw new Error(`${path}: ${message}`);
+}
+
+function requireText(path, content, pattern, message) {
+  if (!pattern.test(content)) semanticFailure(path, message);
+}
+
+function forbidText(path, content, pattern, message) {
+  if (pattern.test(content)) semanticFailure(path, message);
+}
+
+function parseJsonSemantic(path, content) {
+  try {
+    return JSON.parse(content);
+  } catch (error) {
+    semanticFailure(path, `invalid JSON (${error.message})`);
+  }
+}
+
+function validateWorkflow(path, content, trusted) {
+  requireText(path, content, /^name:\s+\S+/m, "workflow name is missing");
+  requireText(path, content, /^on:\s*$/m, "workflow trigger declaration is missing");
+  requireText(path, content, /^jobs:\s*$/m, "jobs declaration is missing");
+  requireText(path, content, /^\s{2}[A-Za-z0-9_-]+:\s*$/m, "workflow has no jobs");
+  forbidText(path, content, /^\s*if:\s*false\s*$/mi, "disabled job/step is not allowed");
+  forbidText(path, content, /^\s*continue-on-error:\s*true\s*$/mi, "continue-on-error would hide a failed policy");
+  forbidText(path, content, /manual-evidence|allowlist|waiver/i, "manual coverage bypass is not allowed");
+  requireText(path, content, /actions\/checkout@[^\s#]+/, "candidate checkout is missing");
+  requireText(path, content, /--run-full-suite/, "full-suite validator invocation is missing");
+  requireText(path, content, /--confirm-disposable-services/, "disposable-service confirmation is missing");
+  requireText(path, content, /--base\s+\"?\$\{?COVERAGE_BASE/, "validated coverage base is not passed");
+  requireText(path, content, /--head\s+(?:HEAD|\"?\$\{?CANDIDATE_SHA)/, "exact coverage head is not passed");
+  if (trusted) {
+    requireText(path, content, /--trusted-validator/, "trusted validator identity is not passed");
+    requireText(path, content, /TRUSTED_WORKFLOW_SHA/, "trusted workflow SHA is not checked");
+    requireText(path, content, /git -C trusted rev-parse HEAD/, "trusted checkout is not pinned to its workflow SHA");
+    requireText(path, content, /git -C candidate rev-parse HEAD/, "candidate checkout is not pinned to its event SHA");
+    requireText(path, content, /--ignore-pnpmfile/, "candidate package lifecycle hooks are not disabled");
+    requireText(path, content, /persist-credentials:\s*false/, "checkout credentials are not disabled");
+    requireText(path, content, /image:\s+[^\s@]+@sha256:[0-9a-f]{64}/, "service image is not immutable");
+    forbidText(path, content, /actions\/checkout@v\d|actions\/setup-node@v\d/, "trusted action must be pinned by immutable SHA");
+  } else {
+    requireText(path, content, /changed-coverage:/, "diagnostic changed-coverage job is missing");
+    requireText(path, content, /deploy-backend:[\s\S]*needs:[\s\S]*changed-coverage/, "deployment does not depend on changed coverage");
+  }
+}
+
+function validateIgnoreFile(path, content) {
+  const lines = content.split("\n").map((line) => line.trim());
+  if (!lines.includes("node_modules")) semanticFailure(path, "root dependency directories are not ignored exactly");
+  for (const required of ["hrms_backend/node_modules/", "hrms-client/node_modules/"]) {
+    if (!lines.includes(required)) semanticFailure(path, `missing package ignore rule ${required}`);
+  }
+  const forbiddenNegations = new Set(["!node_modules", "!hrms_backend/node_modules", "!hrms-client/node_modules"]);
+  if (lines.some((line) => forbiddenNegations.has(line))) {
+    semanticFailure(path, "dependency ignore rules are negated");
+  }
+}
+
+function validatePackageManifest(path, content, frontend) {
+  const manifest = parseJsonSemantic(path, content);
+  if (manifest.packageManager !== "pnpm@10.25.0") semanticFailure(path, "packageManager must pin pnpm@10.25.0");
+  if (!frontend && (typeof manifest.engines?.node !== "string" || !/^>=\d+/.test(manifest.engines.node))) semanticFailure(path, "Node engine floor is missing");
+  const scripts = manifest.scripts ?? {};
+  const expected = frontend
+    ? { "test:unit": "vitest run", "test:unit:coverage": "vitest run --coverage" }
+    : { "test:unit": "vitest run --project unit", "test:unit:coverage": "vitest run --project unit --coverage" };
+  for (const [name, prefix] of Object.entries(expected)) {
+    if (typeof scripts[name] !== "string" || !scripts[name].startsWith(prefix)) semanticFailure(path, `${name} does not invoke the pinned Vitest contract`);
+  }
+  if (manifest.scripts?.preinstall || manifest.scripts?.install || manifest.scripts?.postinstall || manifest.scripts?.prepare) {
+    semanticFailure(path, "package lifecycle hooks are not permitted in coverage installs");
+  }
+  const deps = { ...manifest.dependencies, ...manifest.devDependencies };
+  if ((frontend && deps.vitest !== "4.1.6") || (!frontend && typeof deps.vitest !== "string")) {
+    semanticFailure(path, "Vitest dependency is missing or not constrained");
+  }
+  if (deps["@vitest/coverage-v8"] !== "4.1.6") {
+    semanticFailure(path, "V8 coverage version is not pinned to 4.1.6");
+  }
+  if (frontend && (deps["@testing-library/react"] === undefined || deps.jsdom === undefined)) {
+    semanticFailure(path, "frontend component test dependencies are missing");
+  }
+}
+
+function validateLockfile(path, content, frontend) {
+  requireText(path, content, /^lockfileVersion:\s*['"]?9\./m, "lockfileVersion 9 is required");
+  requireText(path, content, /^  \.\s*:\s*$/m, "package importer is missing");
+  const importerSection = content.split("packages:\n", 1)[0];
+  requireText(path, importerSection, /^\s+vitest:\s*\n\s+specifier:/m, "Vitest dependency is absent from the lockfile importer");
+  forbidText(path, content, /<<<<<<<|=======|>>>>>>>/, "merge conflict markers remain in the lockfile");
+}
+
+function validateVitestConfig(path, content, frontend) {
+  requireText(path, content, /defineConfig\s*\(/, "defineConfig is missing");
+  requireText(path, content, /provider:\s*["']v8["']/, "V8 coverage provider is missing");
+  requireText(path, content, /coverage:\s*\{[\s\S]*include:\s*\[\s*["']src\/\*\*\/\*\.\{ts,tsx\}["']\s*\]/, "source coverage include is missing");
+  requireText(path, content, /coverage:\s*\{[\s\S]*exclude:\s*\[[\s\S]*src\/\*\*\/\*\.test\./, "test-source exclusion is missing");
+  requireText(path, content, /reportsDirectory:\s*["']\.\/coverage["']/, "local coverage output is not fixed");
+  if (frontend) {
+    requireText(path, content, /environment:\s*["']jsdom["']/, "frontend config must use jsdom");
+    requireText(path, content, /include:\s*\[[\s\S]*src\/\*\*\/.*unit\.test/, "frontend unit-test selector is missing");
+    requireText(path, content, /setupFiles:\s*\[[\s\S]*src\/test\/setup\.ts/, "frontend setup file is missing");
+  } else {
+    requireText(path, content, /projects:\s*\[/, "backend test projects are missing");
+    requireText(path, content, /name:\s*["']unit["']/, "backend unit project is missing");
+    requireText(path, content, /name:\s*["']integration["']/, "backend integration project is missing");
+    requireText(path, content, /fileParallelism:\s*false/, "backend integration isolation is missing");
+  }
+}
+
+function validateShellVerifier(root, path, content, base) {
+  requireText(path, content, /^set -euo pipefail$/m, "strict shell mode is missing");
+  requireText(path, content, /source\s+.*BASH_SOURCE\[0\]/, "shared shell helpers are not loaded safely");
+  requireText(path, content, /--plan/, "plan mode is missing");
+  requireText(path, content, /--base/, "explicit base selection is missing");
+  requireText(path, content, /case \"\$1\" in/, "argument dispatch is missing");
+  forbidText(path, content, /\beval\s/, "eval is not permitted in the verifier");
+  const semanticRoot = mkdtempSync(join(tmpdir(), "hrms-shell-semantic-"));
+  try {
+    const semanticScript = join(semanticRoot, "verify-change.sh");
+    const semanticLibDir = semanticRoot;
+    mkdirSync(semanticLibDir, { recursive: true });
+    writeFileSync(semanticScript, content, { mode: 0o755 });
+    const sharedLib = readFileSync(join(root, "scripts/agent/lib.sh"), "utf8")
+      .replace(/^HRMS_REPO_ROOT=.*$/m, 'HRMS_REPO_ROOT="${HRMS_REPO_ROOT:?}"');
+    writeFileSync(join(semanticLibDir, "lib.sh"), sharedLib, { mode: 0o644 });
+    const syntax = spawnSync("bash", ["-n", semanticScript], { encoding: "utf8" });
+    if (syntax.status !== 0) semanticFailure(path, `bash -n failed: ${syntax.stderr.trim()}`);
+    const plan = spawnSync("bash", [semanticScript, "--plan", "--base", base], {
+      cwd: root,
+      env: { ...process.env, HRMS_REPO_ROOT: root },
+      encoding: "utf8",
+      timeout: 30000,
+    });
+    if (plan.status !== 0) semanticFailure(path, `plan execution failed: ${(plan.stderr || plan.stdout).trim()}`);
+    if (!plan.stdout.includes("Selected verification plan:") || !plan.stdout.includes("Committed patch integrity")) {
+      semanticFailure(path, "plan mode did not enumerate the protected checks");
+    }
+  } finally {
+    rmSync(semanticRoot, { recursive: true, force: true });
+  }
+}
+
+function requireSemanticText(path, content, pattern, message) {
+  if (!pattern.test(content)) semanticFailure(path, message);
+}
+
+function validateQaCompose(path, content) {
+  requireSemanticText(path, content, /postgres:/, "QA Compose must define PostgreSQL");
+  requireSemanticText(path, content, /valkey:/, "QA Compose must define Valkey");
+  requireSemanticText(path, content, /pnpm db:migrate && pnpm qa:seed/, "QA migration service must run migrations before the guarded seed");
+  requireSemanticText(path, content, /HRMS_QA_SEED_ALLOW:/, "QA seed opt-in must be scoped to the migration service");
+  requireSemanticText(path, content, /HRMS_QA_SEED_CONFIRM_DATABASE:/, "QA seed database confirmation is required");
+  if (/APP_ENV:\s*prod(?:uction)?/i.test(content)) semanticFailure(path, "QA Compose must not use a production APP_ENV");
+}
+
+function validateHolidayMigration(path, content) {
+  requireSemanticText(path, content, /BEGIN\s*;/i, "holiday migration must be transactional");
+  requireSemanticText(path, content, /DROP\s+INDEX\s+IF\s+EXISTS\s+.*holiday/i, "holiday migration must remove the legacy global uniqueness rule");
+  requireSemanticText(path, content, /CREATE\s+UNIQUE\s+INDEX/i, "holiday migration must create a unique index");
+  requireSemanticText(path, content, /company_id/i, "holiday uniqueness must include company_id");
+  requireSemanticText(path, content, /lower\s*\(/i, "holiday uniqueness must be case-insensitive");
+  requireSemanticText(path, content, /deleted_at\s+IS\s+NULL/i, "holiday uniqueness must exclude soft-deleted rows");
+  requireSemanticText(path, content, /COMMIT\s*;/i, "holiday migration must commit transactionally");
+}
+
+function validateQaSeedSafety(path, content) {
+  requireSemanticText(path, content, /HRMS_QA_SEED_ALLOW/, "QA seed safety must require explicit opt-in");
+  requireSemanticText(path, content, /only isolated local or QA/, "QA seed safety must reject non-isolated targets");
+  requireSemanticText(path, content, /HRMS_QA_SEED_CONFIRM_DATABASE/, "QA seed safety must require exact database confirmation");
+  requireSemanticText(path, content, /rethrowAfterQaSeedRollback/, "QA seed safety must preserve primary errors after rollback failure");
+}
+
+function validateQaSeedEntrypoint(path, content) {
+  requireSemanticText(path, content, /runGuardedQaSeed/, "QA seed entrypoint must use the guarded orchestration");
+  requireSemanticText(path, content, /preflight:/, "QA seed entrypoint must run deterministic preflight");
+  requireSemanticText(path, content, /releaseSeed:/, "QA seed entrypoint must run the release seed phase");
+  requireSemanticText(path, content, /extrasSeed:/, "QA seed entrypoint must run the QA extras phase");
+}
+
+function validateQaSeedPhase(path, content) {
+  requireSemanticText(path, content, /client\.query\("BEGIN"\)/, "QA seed phase must begin a transaction");
+  requireSemanticText(path, content, /rethrowAfterQaSeedRollback/, "QA seed phase must roll back and preserve primary errors");
+  requireSemanticText(path, content, /client\.query\("COMMIT"\)/, "QA seed phase must commit only after all writes succeed");
+  requireSemanticText(path, content, /client\.end\(\)/, "QA seed phase must close its database client");
+}
+
+export function validateSemanticPath(root, path, content, base) {
+  switch (path) {
+    case ".github/workflows/branch-ci-cd.yml": validateWorkflow(path, content, false); break;
+    case ".github/workflows/trusted-changed-coverage.yml": validateWorkflow(path, content, true); break;
+    case ".gitignore": validateIgnoreFile(path, content); break;
+    case "hrms-client/package.json": validatePackageManifest(path, content, true); break;
+    case "hrms_backend/package.json": validatePackageManifest(path, content, false); break;
+    case "hrms-client/pnpm-lock.yaml": validateLockfile(path, content, true); break;
+    case "hrms_backend/pnpm-lock.yaml": validateLockfile(path, content, false); break;
+    case "hrms-client/vitest.config.ts": validateVitestConfig(path, content, true); break;
+    case "hrms_backend/vitest.config.ts": validateVitestConfig(path, content, false); break;
+    case "scripts/agent/verify-change.sh": validateShellVerifier(root, path, content, base); break;
+    case "hrms_backend/infra/docker/docker-compose.qa.yml": validateQaCompose(path, content); break;
+    case "hrms_backend/src/db/migrations/0065_holiday_company_unique_constraint.sql": validateHolidayMigration(path, content); break;
+    case "hrms_backend/scripts/qa-seed-safety.ts": validateQaSeedSafety(path, content); break;
+    case "hrms_backend/scripts/seed-qa.ts": validateQaSeedEntrypoint(path, content); break;
+    case "hrms_backend/scripts/seed-qa-data.ts":
+    case "hrms_backend/scripts/seed-release-data.ts": validateQaSeedPhase(path, content); break;
+    default: return null;
+  }
+  return `${path}: semantic contract passed`;
+}
+
+export const semanticCoveragePaths = new Set([
+  ".github/workflows/branch-ci-cd.yml",
+  ".github/workflows/trusted-changed-coverage.yml",
+  ".gitignore",
+  "hrms-client/package.json",
+  "hrms-client/pnpm-lock.yaml",
+  "hrms-client/vitest.config.ts",
+  "hrms_backend/package.json",
+  "hrms_backend/pnpm-lock.yaml",
+  "hrms_backend/vitest.config.ts",
+  "scripts/agent/verify-change.sh",
+  "hrms_backend/infra/docker/docker-compose.qa.yml",
+  "hrms_backend/src/db/migrations/0065_holiday_company_unique_constraint.sql",
+  "hrms_backend/scripts/qa-seed-safety.ts",
+  "hrms_backend/scripts/seed-qa.ts",
+  "hrms_backend/scripts/seed-qa-data.ts",
+  "hrms_backend/scripts/seed-release-data.ts",
+]);
+
 export function verify(root, base, head, suitePaths = fullSuitePaths(coverageOutputRoot(root))) {
   assertCleanRepository(root);
   const actualHead = git(root, "rev-parse", "HEAD").trim();
@@ -1100,6 +1573,7 @@ export function verify(root, base, head, suitePaths = fullSuitePaths(coverageOut
   let uncoveredLines = 0;
   let uncoveredBranches = 0;
   let unmeasuredCount = deletionOnly.length + removedRuntime.length;
+  const semanticLines = [];
   const lines = [`Coverage diff ${mergeBase}..${resolvedHead}`];
   for (const path of testSource) lines.push(`TEST SOURCE ${path}: excluded from product line denominator; independent assertion-quality review required`);
   for (const risk of importRisks) lines.push(`IMPORT GRAPH ${risk}: changed in-source test files require review`);
@@ -1110,11 +1584,19 @@ export function verify(root, base, head, suitePaths = fullSuitePaths(coverageOut
   }
   for (const item of removedRuntime) totals.uncovered.push(`removed runtime ${item}: replacement has no executable coverage target`);
   for (const path of outside) {
+    if (semanticCoveragePaths.has(path)) {
+      semanticLines.push(validateSemanticPath(root, path, readFileSync(join(root, path), "utf8"), mergeBase));
+      continue;
+    }
     const message = `unmeasured executable/config ${path}: no package coverage mapping`;
     totals.uncovered.push(message);
     unmeasuredCount += 1;
   }
   for (const item of modeTransitions) {
+    if (semanticCoveragePaths.has(item.path)) {
+      semanticLines.push(validateSemanticPath(root, item.path, readFileSync(join(root, item.path), "utf8"), mergeBase));
+      continue;
+    }
     totals.uncovered.push(`unmeasured source mode/type ${item.path}: git status ${item.status}, mode ${item.oldMode}->${item.newMode}${item.noTextHunk ? ", no text hunk" : ""}; explicit regression disposition required`);
     unmeasuredCount += 1;
   }
@@ -1140,6 +1622,7 @@ export function verify(root, base, head, suitePaths = fullSuitePaths(coverageOut
     lines.push(`${path}: executable ${result.executable.length}, non-executable ${result.nonExecutable.length}, decision branches ${result.branches.length}`);
   }
   lines.push(`Changed executable lines: ${totals.executable - uncoveredLines}/${totals.executable}; changed decision branches: ${totals.branches - uncoveredBranches}/${totals.branches}; unmeasured paths/deletions/modes: ${unmeasuredCount}`);
+  lines.push(...semanticLines.filter(Boolean).map((item) => `SEMANTIC ${item}`));
   lines.push(...totals.uncovered.map((item) => `UNCOVERED ${item}`));
   return { pass: totals.uncovered.length === 0, mergeBase, files, totals, lines };
 }
@@ -1160,6 +1643,9 @@ export async function runFullSuiteCommand(root, args, dependencies = {}) {
   };
   const explicitOutput = value("--coverage-output");
   const preserveOutput = args.includes("--preserve-coverage") || explicitOutput !== undefined;
+  if (!args.includes("--confirm-disposable-services")) {
+    throw new Error("Full coverage suite requires --confirm-disposable-services after provisioning fresh isolated coverage containers");
+  }
   const runGate = dependencies.runGate ?? runFullCoverageGate;
   const log = dependencies.log ?? console.log;
   const result = await runGate(root, value("--base"), value("--head") ?? "HEAD", {
@@ -1172,23 +1658,40 @@ export async function runFullSuiteCommand(root, args, dependencies = {}) {
   return result.pass ? 0 : 1;
 }
 
+export async function runFullCoverageWorkerCommand(root, args, dependencies = {}) {
+  const value = (name) => {
+    const index = args.indexOf(name);
+    return index >= 0 ? args[index + 1] : undefined;
+  };
+  const outputRoot = value("--coverage-output");
+  if (!outputRoot || !isAbsolute(outputRoot) || resolve(outputRoot) !== outputRoot) {
+    throw new Error("Full coverage worker requires an absolute canonical --coverage-output path");
+  }
+  const expectedHead = value("--expected-head");
+  const serviceClaimToken = value("--service-claim-token");
+  const tools = { node: value("--node"), pnpm: value("--pnpm"), python: value("--python"), bash: value("--bash") };
+  if (!expectedHead || !serviceClaimToken || Object.values(tools).some((tool) => !tool || !isAbsolute(tool))) {
+    throw new Error("Full coverage worker requires exact head, parent service claim and absolute trusted tool paths");
+  }
+  const workerEnvironment = sanitizedCoverageEnvironment(outputRoot);
+  (dependencies.replaceEnvironment ?? replaceProcessEnvironment)(workerEnvironment);
+  const validateExecutable = dependencies.validateExecutable ?? validateTrustedExecutable;
+  for (const [name, path] of Object.entries(tools)) {
+    try { validateExecutable(path); } catch { throw new Error(`Full coverage worker received invalid ${name} executable`); }
+  }
+  try {
+    await (dependencies.verifyClaim ?? verifyCoverageIntegrationServiceClaim)(workerEnvironment, serviceClaimToken);
+  } catch (error) {
+    throw new Error(`Full coverage worker service claim verification failed: ${error.message}`, { cause: error });
+  }
+  if (dependencies.runWorker) return dependencies.runWorker(root, outputRoot, expectedHead, tools);
+  return runFullCoverageWorker(root, outputRoot, expectedHead, tools, dependencies.runCommand);
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   try {
     if (process.argv.includes("--full-suite-worker")) {
-      const outputRoot = argument("--coverage-output");
-      if (!outputRoot || !isAbsolute(outputRoot) || resolve(outputRoot) !== outputRoot) {
-        throw new Error("Full coverage worker requires an absolute canonical --coverage-output path");
-      }
-      const expectedHead = argument("--expected-head");
-      const tools = { node: argument("--node"), pnpm: argument("--pnpm"), python: argument("--python"), bash: argument("--bash") };
-      if (!expectedHead || Object.values(tools).some((value) => !value || !isAbsolute(value))) {
-        throw new Error("Full coverage worker requires exact head and absolute trusted tool paths");
-      }
-      replaceProcessEnvironment(sanitizedCoverageEnvironment(outputRoot));
-      for (const [name, path] of Object.entries(tools)) {
-        try { validateTrustedExecutable(path); } catch { throw new Error(`Full coverage worker received invalid ${name} executable`); }
-      }
-      runFullCoverageWorker(repoRoot, outputRoot, expectedHead, tools);
+      await runFullCoverageWorkerCommand(repoRoot, process.argv.slice(2));
     } else if (process.argv.includes("--run-full-suite")) {
       process.exitCode = await runFullSuiteCommand(repoRoot, process.argv.slice(2));
     } else if (process.argv.includes("--build-external-report")) {

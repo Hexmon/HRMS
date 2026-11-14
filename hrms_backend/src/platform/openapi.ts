@@ -6448,7 +6448,10 @@ const holidayUpsertBody = {
     date: date("Holiday date", "2026-12-24"),
     region: { type: "string", default: "All", example: "All" },
     optional: { type: "boolean", default: false, example: true },
-    expected_version: { type: "integer", minimum: 1, example: 1 },
+    expected_version: {
+      type: "integer", minimum: 1, example: 1,
+      description: "Required when changing an existing holiday. Omit for a new ID or an unchanged retry of the same ID and body. A missing ID with this field returns 404 rather than creating a holiday.",
+    },
   },
   additionalProperties: false,
 };
@@ -11023,7 +11026,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "PUT /api/v1/holidays/{id}": operation(
     "Leave / WFH / Holidays",
     "Upsert holiday",
-    "Creates or updates a holiday calendar entry. HR Manager or Admin role is required; expected_version enforces optimistic concurrency when updating.",
+    "Creates a company holiday at an unused ID without expected_version, or changes an existing same-company holiday with expected_version. Retrying the same ID and normalized body returns the current holiday without another version or event. A changed existing entry without the current expected_version returns 409; a missing ID with expected_version, foreign ID, or deleted ID returns 404. HR Manager or Admin role is required.",
     {
       params: idParamSchema,
       body: holidayUpsertBody,

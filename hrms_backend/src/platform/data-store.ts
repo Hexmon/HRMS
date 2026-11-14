@@ -35,6 +35,7 @@ import type {
   ExpenseSubType,
   ExpenseTicket,
   Holiday,
+  HolidayUpsertInput,
   LeaveRequest,
   ManagerBackupAssignment,
   OutboxEvent,
@@ -444,6 +445,12 @@ export interface DataStorePersistence {
     options?: DomainPersistenceFlushOptions,
   ): Promise<void>;
   reload(): Promise<void>;
+  /** Transaction-owned holiday command; current actor/company/role are read from SQL. */
+  upsertHoliday?(actorUserId: UUID, id: UUID, input: HolidayUpsertInput): Promise<Holiday>;
+  /** Request-local company-scoped read, not a hydrated startup snapshot. */
+  holidaysForActor?(actorUserId: UUID, year: number): Promise<Holiday[]>;
+  /** Request-local working-week read paired with the actor's company context. */
+  workingWeekForActor?(actorUserId: UUID): Promise<string>;
   attendanceReadStore?(scope: { companyId: UUID; employeeUserIds?: UUID[]; includePendingOutbox?: boolean }): Promise<DataStore>;
   reportExportReadStore?(scope: { companyId?: UUID; exportId?: UUID }): Promise<DataStore>;
   auditReportReadContext?(userId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }>;
