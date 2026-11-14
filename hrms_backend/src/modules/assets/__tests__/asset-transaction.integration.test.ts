@@ -259,6 +259,53 @@ describe("asset transaction boundary", () => {
     }
   });
 
+  it("rejects authenticated reads when the current SQL actor disappears from the request snapshot", async () => {
+    const admin = await loginAs(first, "ADM");
+    const persistence = first.store.persistence;
+    if (!persistence?.assetReadStore) throw new Error("Expected PostgreSQL asset read persistence");
+    const originalAssetReadStore = persistence.assetReadStore.bind(persistence);
+    persistence.assetReadStore = async (...args) => {
+      const snapshot = await originalAssetReadStore(...args);
+      return {
+        ...snapshot,
+        users: snapshot.users.filter((user) => user.id !== seedIds.admin),
+      };
+    };
+    try {
+      for (const url of [
+        "/api/v1/assets?page=1&page_size=10",
+        `/api/v1/core/users/${seedIds.employee1}`,
+        "/api/v1/reports/assets/summary?page=1&page_size=10",
+        "/api/v1/dashboard/summary",
+      ]) {
+        const response = await first.inject({ method: "GET", url, headers: authHeader(admin.token) });
+        expect(response.statusCode, `${url}: ${response.body}`).toBe(401);
+      }
+    } finally {
+      persistence.assetReadStore = originalAssetReadStore;
+    }
+  });
+
+  it("requires both halves of a durable employee lifecycle reference", async () => {
+    const persistence = first.store.persistence;
+    if (!persistence?.assetCommand) throw new Error("Expected PostgreSQL asset command persistence");
+    const companyId = first.store.userSessionPreferences.find(
+      (preference) => preference.user_id === seedIds.admin,
+    )!.company_id!;
+    await expect(persistence.assetCommand(
+      {
+        companyId,
+        actorUserId: seedIds.admin,
+        actionKey: "assets.test.incomplete-lifecycle",
+        idempotencyKey: randomUUID(),
+        requestHash: "b".repeat(64),
+        lifecycleEventId: randomUUID(),
+      },
+      () => undefined,
+      () => ({ unexpected: true }),
+    )).rejects.toThrow(/complete employee lifecycle event reference/u);
+  });
+
   it("isolates inventory, request, vendor, and mutation APIs by active company", async () => {
     const companyA = first.store.companyProfiles[0]!;
     const companyBId = randomUUID();

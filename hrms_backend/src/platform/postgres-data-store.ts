@@ -600,9 +600,9 @@ class PostgresPersistence {
     baseStore?: DataStore,
     companyId?: UUID,
     actorUserId?: UUID,
-    actionKey = "assets.read",
+    actionKey?: string,
   ): Promise<DataStore> {
-    const sourceStore = baseStore ?? this.store;
+    const operation = actionKey ?? "assets.read";
     const client = await this.pool.connect();
     let destroyClient = false;
     try {
@@ -610,9 +610,9 @@ class PostgresPersistence {
       // snapshot. A concurrent command may commit between individual SELECTs.
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
       const currentActor = companyId && actorUserId
-        ? await this.loadCurrentAssetActor(client, { actorUserId, companyId, actionKey }, false)
+        ? await this.loadCurrentAssetActor(client, { actorUserId, companyId, actionKey: operation }, false)
         : undefined;
-      const snapshot = await this.loadAssetSnapshot(client, sourceStore, companyId);
+      const snapshot = await this.loadAssetSnapshot(client, baseStore, companyId);
       await client.query("COMMIT");
       if (!currentActor) return snapshot;
       return {
@@ -869,11 +869,12 @@ class PostgresPersistence {
 
   private async loadAssetSnapshot(
     client: PoolClient,
-    baseStore: DataStore = this.store,
+    baseStore?: DataStore,
     companyId?: UUID,
   ): Promise<DataStore> {
+    const sourceStore = baseStore ?? this.store;
     return {
-      ...baseStore,
+      ...sourceStore,
       assets: await this.loadAssets(client, companyId),
       assetAssignments: await this.loadAssetAssignments(client, companyId),
       assetStateEvents: await this.loadAssetStateEvents(client, companyId),

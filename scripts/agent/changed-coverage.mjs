@@ -1565,6 +1565,15 @@ function validateAssetTenantOwnershipMigration(path, content) {
   forbidText(path, content, /REFERENCES\s+platform\.company_profiles/i, "asset migration must not create unsupported cross-schema foreign keys");
 }
 
+function validateFrontendContractRouteCoverage(path, content) {
+  requireSemanticText(
+    path,
+    content,
+    /walk\(routesDir\)\.filter\(\s*\(file\)\s*=>\s*file\.endsWith\("\.tsx"\)\s*&&\s*!file\.endsWith\("\.test\.tsx"\)\s*,?\s*\)/,
+    "frontend route discovery must include runtime TSX routes and exclude colocated test modules",
+  );
+}
+
 function validateQaSeedSafety(path, content) {
   requireSemanticText(path, content, /HRMS_QA_SEED_ALLOW/, "QA seed safety must require explicit opt-in");
   requireSemanticText(path, content, /only isolated local or QA/, "QA seed safety must reject non-isolated targets");
@@ -1596,6 +1605,7 @@ export function validateSemanticPath(root, path, content, base) {
     case "hrms-client/pnpm-lock.yaml": validateLockfile(path, content, true); break;
     case "hrms_backend/pnpm-lock.yaml": validateLockfile(path, content, false); break;
     case "hrms-client/vitest.config.ts": validateVitestConfig(path, content, true); break;
+    case "hrms-client/scripts/frontend-contract-route-coverage.mjs": validateFrontendContractRouteCoverage(path, content); break;
     case "hrms_backend/vitest.config.ts": validateVitestConfig(path, content, false); break;
     case "scripts/agent/verify-change.sh": validateShellVerifier(root, path, content, base); break;
     case "hrms_backend/infra/docker/docker-compose.qa.yml": validateQaCompose(path, content); break;
@@ -1620,6 +1630,7 @@ export const semanticCoveragePaths = new Set([
   "hrms-client/package.json",
   "hrms-client/pnpm-lock.yaml",
   "hrms-client/vitest.config.ts",
+  "hrms-client/scripts/frontend-contract-route-coverage.mjs",
   "hrms_backend/package.json",
   "hrms_backend/pnpm-lock.yaml",
   "hrms_backend/vitest.config.ts",

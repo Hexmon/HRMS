@@ -164,6 +164,80 @@ describe("asset routes with the memory persistence fallback", () => {
     expect(wrongVersionReturn.statusCode).toBe(409);
   });
 
+  it("fails closed for missing read actors and invalid lifecycle or tenant resources", async () => {
+    const adminHeaders = commandHeaders(seedIds.admin);
+    const invalidTermination = await app.inject({
+      method: "POST",
+      url: "/assets/events/employee-terminated",
+      headers: adminHeaders,
+      payload: { employee_user_id: seedIds.employee1, lifecycle_event_id: randomUUID() },
+    });
+    expect(invalidTermination.statusCode).toBe(409);
+
+    const missingVendor = await app.inject({
+      method: "PATCH",
+      url: `/assets/vendors/${randomUUID()}`,
+      headers: commandHeaders(seedIds.assetManager),
+      payload: { expected_version: 1, name: "Missing vendor" },
+    });
+    expect(missingVendor.statusCode).toBe(404);
+
+    store.persistence = {
+      flush: async () => undefined,
+      reload: async () => undefined,
+      close: async () => undefined,
+      assetReadStore: async () => ({
+        ...store,
+        users: store.users.filter((user) => user.id !== seedIds.assetManager),
+      }),
+    };
+    const removedActor = await app.inject({
+      method: "GET",
+      url: "/assets/",
+      headers: { [actorHeader]: seedIds.assetManager },
+    });
+    expect(removedActor.statusCode).toBe(401);
+  });
+
+  it("validates linked request assets, fulfilled assignment choices, and memory licenses", async () => {
+    const asset = store.assets[0]!;
+    const created = await app.inject({
+      method: "POST",
+      url: "/assets/requests",
+      headers: commandHeaders(seedIds.employee1),
+      payload: {
+        request_type: "repair",
+        asset_type: "Linked repair",
+        asset_id: asset.id,
+        reason: "Repair the assigned project device",
+      },
+    });
+    expect(created.statusCode).toBe(200);
+
+    const fulfilled = await app.inject({
+      method: "POST",
+      url: `/assets/requests/${created.json().request.id}/decision`,
+      headers: commandHeaders(seedIds.assetManager),
+      payload: {
+        decision: "fulfilled",
+        expected_version: created.json().request.version,
+        asset_id: asset.id,
+      },
+    });
+    expect(fulfilled.statusCode).toBe(200);
+    expect(fulfilled.json()).toMatchObject({
+      request: { status: "fulfilled" },
+      assigned_asset: { id: asset.id },
+    });
+
+    const validation = await app.inject({
+      method: "POST",
+      url: "/assets/licenses/validate",
+      payload: { product_id: seedIds.licenseProduct, hardware_fingerprint: "memory-device" },
+    });
+    expect(validation.statusCode).toBe(200);
+  });
+
   it("binds and settles one exact custody assignment in the memory lifecycle", async () => {
     const asset = store.assets[0]!;
     // Prove imported nonstandard request codes do not break monotonic request

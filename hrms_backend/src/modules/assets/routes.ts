@@ -8,6 +8,10 @@ import { resolveActiveCompanyMembershipContext } from "../../platform/company-me
 import { assertAssetManager } from "./policy.js";
 import { AssetService } from "./service.js";
 
+async function readStore(store: DataStore): Promise<DataStore> {
+  return store.persistence?.assetReadStore?.() ?? store;
+}
+
 async function readContext(store: DataStore, actor: AuthUser, operation: string): Promise<{ store: DataStore; actor: AuthUser }> {
   const membership = resolveActiveCompanyMembershipContext(store, {
     userId: actor.id,
@@ -27,16 +31,16 @@ async function assetMutation<T>(
   body: Record<string, unknown>,
   authorize: (store: DataStore, actor: AuthUser, companyId: string, replayBody?: T) => void,
   execute: (service: AssetService, actor: AuthUser) => T,
-  commandContext: Pick<AssetCommandInput, "assigneeUserId" | "lifecycleEventId" | "terminatedEmployeeUserId"> = {},
+  commandContext: Pick<AssetCommandInput, "assigneeUserId" | "lifecycleEventId" | "terminatedEmployeeUserId">,
 ): Promise<T> {
   if (!request.actor) throw unauthorized();
   const actor = request.actor;
-  const membership = resolveActiveCompanyMembershipContext(store, {
-    userId: actor.id,
-    operation: actionKey,
-    requireActiveEmployment: true,
-  });
   if (!store.persistence?.assetCommand) {
+    const membership = resolveActiveCompanyMembershipContext(store, {
+      userId: actor.id,
+      operation: actionKey,
+      requireActiveEmployment: true,
+    });
     authorize(store, actor, membership.companyId);
     return execute(new AssetService(store), actor);
   }
@@ -44,6 +48,11 @@ async function assetMutation<T>(
   if (typeof key !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{7,199}$/u.test(key)) {
     throw badRequest("A unique Idempotency-Key header is required for asset changes.");
   }
+  const membership = resolveActiveCompanyMembershipContext(store, {
+    userId: actor.id,
+    operation: actionKey,
+    requireActiveEmployment: true,
+  });
   return store.persistence.assetCommand(
     {
       companyId: membership.companyId,
@@ -219,7 +228,7 @@ const warrantyAlertsQuerySchema = paginationQuerySchema.extend({
 export const assetRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.post("/", async (request) => {
     const body = assetCreateSchema.parse(request.body);
-    return assetMutation(fastify.store, request, "assets.create", body, (_store, actor) => assertAssetManager(actor), (service, actor) => service.create(actor, body));
+    return assetMutation(fastify.store, request, "assets.create", body, (_store, actor) => assertAssetManager(actor), (service, actor) => service.create(actor, body), {});
   });
 
   fastify.get("/", async (request) => {
@@ -281,7 +290,7 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     const body = z.object({ expected_version: z.number().int().min(1) }).parse(request.body);
-    return assetMutation(fastify.store, request, `assets.return:${params.id}`, body, (store, actor, companyId) => authorizeAssetManagerResource(store, actor, companyId, params.id), (service, actor) => service.returnAsset(actor, params.id, body.expected_version));
+    return assetMutation(fastify.store, request, `assets.return:${params.id}`, body, (store, actor, companyId) => authorizeAssetManagerResource(store, actor, companyId, params.id), (service, actor) => service.returnAsset(actor, params.id, body.expected_version), {});
   });
 
   fastify.post("/scan/:qr_hash", async (request) => {
@@ -296,11 +305,11 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.post("/licenses/activate", async (request) => {
     const body = licenseActivationSchema.parse(request.body);
-    return assetMutation(fastify.store, request, "assets.licenses.activate", body, (_store, actor) => assertAssetManager(actor), (service) => service.activateLicense(body));
+    return assetMutation(fastify.store, request, "assets.licenses.activate", body, (_store, actor) => assertAssetManager(actor), (service) => service.activateLicense(body), {});
   });
 
   fastify.post("/licenses/validate", async (request) => {
-    return new AssetService(await fastify.store.persistence?.assetReadStore?.() ?? fastify.store).validateLicense(
+    return new AssetService(await readStore(fastify.store)).validateLicense(
       z.object({ product_id: z.uuid(), hardware_fingerprint: z.string().min(8) }).parse(request.body)
     );
   });
@@ -310,7 +319,7 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const body = z.object({ hardware_fingerprint: z.string().min(8) }).parse(request.body);
-    return assetMutation(fastify.store, request, "assets.licenses.revoke", body, (_store, actor) => assertAssetManager(actor), (service, actor) => service.revokeLicense(actor, body));
+    return assetMutation(fastify.store, request, "assets.licenses.revoke", body, (_store, actor) => assertAssetManager(actor), (service, actor) => service.revokeLicense(actor, body), {});
   });
 
   fastify.post("/events/employee-terminated", async (request) => {
@@ -341,7 +350,7 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const body = assetRequestSchema.parse(request.body);
-    return assetMutation(fastify.store, request, "assets.requests.create", body, () => undefined, (service, actor) => service.createRequest(actor, body));
+    return assetMutation(fastify.store, request, "assets.requests.create", body, () => undefined, (service, actor) => service.createRequest(actor, body), {});
   });
 
   fastify.get("/requests/my", async (request) => {
@@ -372,7 +381,7 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     const body = assetRequestDecisionSchema.parse(request.body);
-    return assetMutation(fastify.store, request, `assets.requests.decision:${params.id}`, body, (store, actor, companyId) => authorizeAssetManagerRequest(store, actor, companyId, params.id), (service, actor) => service.decideRequest(actor, params.id, body));
+    return assetMutation(fastify.store, request, `assets.requests.decision:${params.id}`, body, (store, actor, companyId) => authorizeAssetManagerRequest(store, actor, companyId, params.id), (service, actor) => service.decideRequest(actor, params.id, body), {});
   });
 
   fastify.post("/requests/:id/cancel", async (request) => {
@@ -381,7 +390,7 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     const body = assetRequestCancelSchema.parse(request.body);
-    return assetMutation(fastify.store, request, `assets.requests.cancel:${params.id}`, body, (store, actor, companyId) => authorizeOwnRequest(store, actor, companyId, params.id), (service, actor) => service.cancelRequest(actor, params.id, body));
+    return assetMutation(fastify.store, request, `assets.requests.cancel:${params.id}`, body, (store, actor, companyId) => authorizeOwnRequest(store, actor, companyId, params.id), (service, actor) => service.cancelRequest(actor, params.id, body), {});
   });
 
   fastify.post("/:id/acknowledgements", async (request) => {
@@ -390,7 +399,7 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     const body = acknowledgementSchema.parse(request.body);
-    return assetMutation(fastify.store, request, `assets.acknowledge:${params.id}`, body, (store, actor, companyId, replayBody) => authorizeAcknowledgement(store, actor, companyId, params.id, replayBody), (service, actor) => service.acknowledge(actor, params.id, body));
+    return assetMutation(fastify.store, request, `assets.acknowledge:${params.id}`, body, (store, actor, companyId, replayBody) => authorizeAcknowledgement(store, actor, companyId, params.id, replayBody), (service, actor) => service.acknowledge(actor, params.id, body), {});
   });
 
   fastify.get("/:id/maintenance", async (request) => {
@@ -412,7 +421,7 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     const body = maintenanceSchema.parse(request.body);
-    return assetMutation(fastify.store, request, `assets.maintenance.create:${params.id}`, body, (store, actor, companyId) => authorizeAssetManagerResource(store, actor, companyId, params.id), (service, actor) => service.createMaintenance(actor, params.id, body));
+    return assetMutation(fastify.store, request, `assets.maintenance.create:${params.id}`, body, (store, actor, companyId) => authorizeAssetManagerResource(store, actor, companyId, params.id), (service, actor) => service.createMaintenance(actor, params.id, body), {});
   });
 
   fastify.get("/vendors", async (request) => {
@@ -428,7 +437,7 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const body = assetVendorCreateSchema.parse(request.body);
-    return assetMutation(fastify.store, request, "assets.vendors.create", body, (_store, actor) => assertAssetManager(actor), (service, actor) => service.createVendor(actor, body));
+    return assetMutation(fastify.store, request, "assets.vendors.create", body, (_store, actor) => assertAssetManager(actor), (service, actor) => service.createVendor(actor, body), {});
   });
 
   fastify.patch("/vendors/:id", async (request) => {
@@ -437,7 +446,7 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     const body = assetVendorUpdateSchema.parse(request.body);
-    return assetMutation(fastify.store, request, `assets.vendors.update:${params.id}`, body, (store, actor, companyId) => authorizeAssetManagerVendor(store, actor, companyId, params.id), (service, actor) => service.updateVendor(actor, params.id, body));
+    return assetMutation(fastify.store, request, `assets.vendors.update:${params.id}`, body, (store, actor, companyId) => authorizeAssetManagerVendor(store, actor, companyId, params.id), (service, actor) => service.updateVendor(actor, params.id, body), {});
   });
 
   fastify.get("/recovery-queue", async (request) => {
@@ -457,6 +466,6 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     const body = recoverySettlementSchema.parse(request.body);
-    return assetMutation(fastify.store, request, `assets.recovery.settle:${params.id}`, body, (store, actor, companyId) => authorizeAssetManagerRecovery(store, actor, companyId, params.id), (service, actor) => service.settleRecovery(actor, params.id, body));
+    return assetMutation(fastify.store, request, `assets.recovery.settle:${params.id}`, body, (store, actor, companyId) => authorizeAssetManagerRecovery(store, actor, companyId, params.id), (service, actor) => service.settleRecovery(actor, params.id, body), {});
   });
 };

@@ -981,6 +981,22 @@ test("asset tenant ownership migrations use explicit fail-closed semantic contra
   assert.throws(() => validateSemanticPath(repositoryRoot, ownershipPath, `${ownership}\nALTER TABLE assets.assets ADD FOREIGN KEY (company_id) REFERENCES platform.company_profiles(id);`, "base"), /cross-schema foreign keys/);
 });
 
+test("frontend contract route discovery excludes test modules without hiding runtime routes", () => {
+  const repositoryRoot = process.cwd();
+  const path = "hrms-client/scripts/frontend-contract-route-coverage.mjs";
+  const content = readFileSync(join(repositoryRoot, path), "utf8");
+
+  assert.match(validateSemanticPath(repositoryRoot, path, content, "base"), /semantic contract passed/);
+  assert.throws(
+    () => validateSemanticPath(repositoryRoot, path, content.replace(' && !file.endsWith(".test.tsx")', ""), "base"),
+    /include runtime TSX routes and exclude colocated test modules/,
+  );
+  assert.throws(
+    () => validateSemanticPath(repositoryRoot, path, content.replace('file.endsWith(".tsx")', "true"), "base"),
+    /include runtime TSX routes and exclude colocated test modules/,
+  );
+});
+
 test("semantic QA scripts are classified before generic external coverage", () => {
   const root = mkdtempSync(join(tmpdir(), "hrms-coverage-semantic-external-"));
   roots.push(root);
