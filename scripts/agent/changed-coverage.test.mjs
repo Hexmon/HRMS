@@ -931,6 +931,22 @@ test("QA holiday operational paths use explicit semantic contracts", () => {
   assert.throws(() => validateSemanticPath("", "hrms_backend/src/db/migrations/0065_holiday_company_unique_constraint.sql", migration.replace("company_id", "name"), "base"), /company_id/);
 });
 
+test("semantic QA scripts are classified before generic external coverage", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-coverage-semantic-external-"));
+  roots.push(root);
+  git(root, "init", "-q");
+  write(root, "hrms_backend/scripts/seed-qa.ts", "await client.query(\"BEGIN\");\nawait client.query(\"COMMIT\");\nawait rethrowAfterQaSeedRollback(client, error);\nawait client.end();\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "base semantic script");
+  const base = git(root, "rev-parse", "HEAD");
+  write(root, "hrms_backend/scripts/seed-qa.ts", "await client.query(\"BEGIN\");\nawait client.query(\"COMMIT\");\nawait rethrowAfterQaSeedRollback(client, error);\nawait client.end();\n// changed operational contract\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "change semantic script");
+  const diff = changedLines(root, base, "HEAD");
+  assert.deepEqual(diff.outside, ["hrms_backend/scripts/seed-qa.ts"]);
+  assert.deepEqual(diff.external, []);
+});
+
 test("Playwright specs are classified as test source, not uncovered product code", () => {
   const root = mkdtempSync(join(tmpdir(), "hrms-coverage-playwright-spec-"));
   roots.push(root);
