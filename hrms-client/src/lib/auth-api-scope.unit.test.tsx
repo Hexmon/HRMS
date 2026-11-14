@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { useState } from "react";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -17,6 +18,7 @@ const state = vi.hoisted(() => ({
   getSession: vi.fn(),
   logout: vi.fn(),
   updateSessionPreference: vi.fn(),
+  apiEnabled: true,
 }));
 
 vi.mock("@tanstack/react-query", () => ({
@@ -45,7 +47,7 @@ vi.mock("@/shared/api", () => {
     ApiError: MockApiError,
     clearApiActorScope: state.clearActorScope,
     clearApiAccessToken: state.clearAccessToken,
-    isApiEnabled: () => true,
+    isApiEnabled: () => state.apiEnabled,
     isMockFallbackEnabled: () => false,
     onApiUnauthorized: () => () => undefined,
     setApiActorScope: state.setActorScope,
@@ -64,10 +66,19 @@ import { AuthProvider, useAuth } from "./auth";
 
 function Harness() {
   const auth = useAuth();
+  const [loginResult, setLoginResult] = useState("");
   return (
     <div>
       <span>{auth.user?.id ?? "signed-out"}</span>
-      <button type="button" onClick={() => void auth.login("employee@example.com", "secret")}>
+      <span>{loginResult}</span>
+      <button
+        type="button"
+        onClick={() =>
+          void auth
+            .login("employee@example.com", "secret")
+            .then((result) => setLoginResult(result.ok ? "ok" : (result.error ?? "failed")))
+        }
+      >
         Login
       </button>
       <button type="button" onClick={auth.logout}>
@@ -109,6 +120,7 @@ describe("API authentication actor scope", () => {
     state.getSession.mockReset();
     state.logout.mockReset().mockResolvedValue(undefined);
     state.updateSessionPreference.mockReset();
+    state.apiEnabled = true;
   });
 
   afterEach(cleanup);
@@ -160,5 +172,17 @@ describe("API authentication actor scope", () => {
     fireEvent.click(screen.getByRole("button", { name: "Logout" }));
     expect(state.clearActorScope).toHaveBeenCalledTimes(2);
     expect(state.clearAccessToken).toHaveBeenCalled();
+  });
+
+  it("fails closed without calling the backend when API authentication is disabled", async () => {
+    state.apiEnabled = false;
+    renderProvider();
+    fireEvent.click(screen.getByRole("button", { name: "Login" }));
+    expect(
+      await screen.findByText(
+        "Sign in is not available in this environment. Please contact your administrator.",
+      ),
+    ).toBeInTheDocument();
+    expect(state.login).not.toHaveBeenCalled();
   });
 });
