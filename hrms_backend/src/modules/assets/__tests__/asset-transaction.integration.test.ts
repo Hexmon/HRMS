@@ -108,7 +108,8 @@ describe("asset transaction boundary", () => {
     };
     expect((await first.inject(command)).statusCode).toBe(200);
     await first.store.pgPool!.query("UPDATE core.user_roles SET status = 'inactive' WHERE user_id = $1 AND role_key = $2", [seedIds.assetManager, Roles.AssetManager]);
-    expect((await first.inject(command)).statusCode).toBe(403);
+    const deniedReplay = await first.inject(command);
+    expect(deniedReplay.statusCode, deniedReplay.body).toBe(403);
     expect((await first.inject({ method: "GET", url: "/api/v1/assets/assignees", headers: authHeader(manager.token) })).statusCode).toBe(403);
   });
 
@@ -128,9 +129,79 @@ describe("asset transaction boundary", () => {
       headers: { ...authHeader(manager.token), "Idempotency-Key": randomUUID() },
       payload: { asset_code: original.asset_code, asset_type: "Laptop", name: "Should never appear" },
     });
-    expect(failed.statusCode).toBeGreaterThanOrEqual(400);
+    expect(failed.statusCode).toBe(409);
+    expect(failed.json()).toMatchObject({
+      code: "WORKFLOW_CONFLICT",
+      details: { reason: "duplicate_asset_identity" },
+    });
+    const duplicates = await first.store.pgPool!.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM assets.assets WHERE asset_code = $1",
+      [original.asset_code],
+    );
+    expect(duplicates.rows[0]?.count).toBe("1");
     const read = await first.inject({ method: "GET", url: "/api/v1/assets", headers: authHeader(manager.token) });
     expect(read.json().items.some((item: { name: string }) => item.name === "Should never appear")).toBe(false);
+  });
+
+  it("holds current actor authority locks until the asset command commits", async () => {
+    const manager = await loginAs(first, "AST");
+    const pool = first.store.pgPool!;
+    const originalConnect = pool.connect.bind(pool);
+    let wrapped = false;
+    let actorChecked!: () => void;
+    let continueCommand!: () => void;
+    const actorCheckedPromise = new Promise<void>((resolve) => { actorChecked = resolve; });
+    const continueCommandPromise = new Promise<void>((resolve) => { continueCommand = resolve; });
+    const spy = vi.spyOn(pool, "connect").mockImplementation((async () => {
+      const client = await originalConnect();
+      if (wrapped) return client;
+      wrapped = true;
+      const originalQuery = client.query.bind(client);
+      client.query = (async (sql: unknown, ...args: unknown[]) => {
+        if (typeof sql === "string" && sql.includes("SELECT request_hash, response_body")) {
+          actorChecked();
+          await continueCommandPromise;
+        }
+        return (originalQuery as (...items: unknown[]) => Promise<unknown>)(sql, ...args);
+      }) as typeof client.query;
+      return client;
+    }) as typeof pool.connect);
+
+    const command = first.inject({
+      method: "POST",
+      url: "/api/v1/assets/",
+      headers: { ...authHeader(manager.token), "Idempotency-Key": randomUUID() },
+      payload: { asset_code: "AUTH-LOCK-S25", asset_type: "Laptop", name: "Authority lock" },
+    });
+    await actorCheckedPromise;
+    const updater = await originalConnect();
+    try {
+      await updater.query("SET lock_timeout = '150ms'");
+      await expect(updater.query(
+        "UPDATE core.user_roles SET status = 'inactive' WHERE user_id = $1 AND role_key = $2",
+        [seedIds.assetManager, Roles.AssetManager],
+      )).rejects.toMatchObject({ code: "55P03" });
+    } finally {
+      updater.release();
+      continueCommand();
+    }
+    try {
+      expect((await command).statusCode).toBe(200);
+    } finally {
+      spy.mockRestore();
+    }
+
+    await pool.query(
+      "UPDATE core.user_roles SET status = 'inactive' WHERE user_id = $1 AND role_key = $2",
+      [seedIds.assetManager, Roles.AssetManager],
+    );
+    const denied = await first.inject({
+      method: "POST",
+      url: "/api/v1/assets/",
+      headers: { ...authHeader(manager.token), "Idempotency-Key": randomUUID() },
+      payload: { asset_code: "AUTH-LOCK-DENIED", asset_type: "Laptop", name: "Denied" },
+    });
+    expect(denied.statusCode).toBe(403);
   });
 
   it("allows only one same-version assignment across two API instances", async () => {

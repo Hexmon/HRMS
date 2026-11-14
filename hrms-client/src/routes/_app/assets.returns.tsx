@@ -35,15 +35,20 @@ import {
   recoveryTicketDateLabel,
   type AssetRecoveryTicketView,
 } from "@/domains/assets";
+import { useAuth } from "@/lib/auth";
+import { ASSET_ADMIN_ROLES } from "@/lib/assets-store";
 
 export const Route = createFileRoute("/_app/assets/returns")({ component: ReturnsScreen });
 
 function ReturnsScreen() {
+  const { activeRole } = useAuth();
   const { assets, returnAsset } = useAssets();
   const { employees } = useEmployees();
   const apiEnabled = useApiRouteEnabled(["/assets"]);
   const recoveryQueue = useAssetRecoveryQueue({ page_size: 100, status: "open" }, apiEnabled);
   const settleRecovery = useAssetRecoverySettlementMutation();
+  const canSettleRecovery =
+    !!activeRole && (ASSET_ADMIN_ROLES as readonly string[]).includes(activeRole);
 
   // Group assigned assets by employee, surfacing those tied to exit / notice
   const grouped = useMemo(() => {
@@ -116,22 +121,39 @@ function ReturnsScreen() {
             <ul className="divide-y">
               {recoveryTickets.map((ticket) => (
                 <li key={ticket.id} className="flex items-center justify-between gap-3 px-5 py-3.5">
-                  <Link to="/assets/$id" params={{ id: ticket.assetId }} className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium">{ticket.assetName}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {ticket.assetCode} · {ticket.employeeName} · {recoveryTicketDateLabel(ticket)}
-                    </p>
-                  </Link>
+                  {canSettleRecovery ? (
+                    <Link
+                      to="/assets/$id"
+                      params={{ id: ticket.assetId }}
+                      className="min-w-0 flex-1"
+                    >
+                      <p className="truncate text-sm font-medium">{ticket.assetName}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {ticket.assetCode} · {ticket.employeeName} ·{" "}
+                        {recoveryTicketDateLabel(ticket)}
+                      </p>
+                    </Link>
+                  ) : (
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium">{ticket.assetName}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {ticket.assetCode} · {ticket.employeeName} ·{" "}
+                        {recoveryTicketDateLabel(ticket)}
+                      </p>
+                    </div>
+                  )}
                   <div className="flex items-center gap-2">
                     <StatusBadge status={ticket.status} label={ticket.status} />
-                    <RecoverySettlementControl ticket={ticket}>
-                      <ReturnInline
-                        detailsSupported
-                        onConfirm={(date, condition, remarks) =>
-                          settleTicket(ticket, date, condition, remarks)
-                        }
-                      />
-                    </RecoverySettlementControl>
+                    {canSettleRecovery && (
+                      <RecoverySettlementControl ticket={ticket}>
+                        <ReturnInline
+                          detailsSupported
+                          onConfirm={(date, condition, remarks) =>
+                            settleTicket(ticket, date, condition, remarks)
+                          }
+                        />
+                      </RecoverySettlementControl>
+                    )}
                   </div>
                 </li>
               ))}

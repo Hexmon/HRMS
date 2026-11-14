@@ -29,6 +29,8 @@ interface Ctx {
   requests: AssetRequest[];
   loading: boolean;
   error: Error | null;
+  requestError: Error | null;
+  requestsLoading: boolean;
   isApiBacked: boolean;
   addAsset: (a: Asset, actor?: string) => Promise<void>;
   updateAsset: (id: string, patch: Partial<Asset>, actor?: string, action?: string) => void;
@@ -267,8 +269,8 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
   }, [apiAssetsQuery.data, apiEnabled, assets, hasApiResult]);
   const hasRequestApiResult =
     !requestDenied &&
-    (apiMyRequestsQuery.data !== undefined ||
-      (isAssetAdmin && apiQueueRequestsQuery.data !== undefined));
+    apiMyRequestsQuery.data !== undefined &&
+    (!isAssetAdmin || apiQueueRequestsQuery.data !== undefined);
   const visibleRequests = React.useMemo(() => {
     if (!apiEnabled) return requests;
     if (!hasRequestApiResult) return [];
@@ -290,16 +292,17 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
       : null;
   const requestError =
     apiEnabled &&
-    !hasRequestApiResult &&
-    (apiMyRequestsQuery.error instanceof Error || apiQueueRequestsQuery.error instanceof Error)
+    (apiMyRequestsQuery.error instanceof Error ||
+      (isAssetAdmin && apiQueueRequestsQuery.error instanceof Error))
       ? apiMyRequestsQuery.error instanceof Error
         ? apiMyRequestsQuery.error
         : (apiQueueRequestsQuery.error as Error)
       : null;
-  const loading =
+  const requestsLoading =
     apiEnabled &&
-    ((!hasApiResult && apiAssetsQuery.isLoading) ||
-      (!hasRequestApiResult && (apiMyRequestsQuery.isLoading || apiQueueRequestsQuery.isLoading)));
+    !hasRequestApiResult &&
+    (apiMyRequestsQuery.isLoading || (isAssetAdmin && apiQueueRequestsQuery.isLoading));
+  const loading = apiEnabled && ((!hasApiResult && apiAssetsQuery.isLoading) || requestsLoading);
 
   const addAsset: Ctx["addAsset"] = async (a, actor = "Marco Rossi") => {
     const next = { ...a, audit: [audit(actor, "Asset registered"), ...(a.audit ?? [])] };
@@ -523,6 +526,8 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
         requests: visibleRequests,
         loading,
         error: apiError ?? requestError,
+        requestError,
+        requestsLoading,
         isApiBacked: apiEnabled,
         addAsset,
         updateAsset,

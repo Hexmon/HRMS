@@ -16,10 +16,18 @@ export class AssetRepository {
 
   create(input: { asset_code: string; asset_type: string; name: string; serial_no?: string }): AssetRecord {
     const now = nowIso();
+    const qrHash = createQrHash(input.asset_code);
+    if (this.store.assets.some((asset) =>
+      !asset.deleted_at && (asset.asset_code === input.asset_code || asset.qr_hash === qrHash)
+    )) {
+      throw conflict("An asset with the same code or QR identity already exists.", {
+        reason: "duplicate_asset_identity",
+      });
+    }
     const asset: AssetRecord = {
       id: randomUUID(),
       asset_code: input.asset_code,
-      qr_hash: createQrHash(input.asset_code),
+      qr_hash: qrHash,
       asset_type: input.asset_type,
       name: input.name,
       serial_no: input.serial_no ?? null,

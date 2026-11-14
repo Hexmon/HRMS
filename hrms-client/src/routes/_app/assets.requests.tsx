@@ -34,7 +34,8 @@ export const Route = createFileRoute("/_app/assets/requests")({ component: Reque
 
 function RequestsScreen() {
   const { activeRole, user } = useAuth();
-  const { requests, addRequest, decideRequest, cancelRequest } = useAssets();
+  const { requests, addRequest, decideRequest, cancelRequest, requestError, requestsLoading } =
+    useAssets();
   const isAdmin = !!activeRole && (ASSET_ADMIN_ROLES as readonly string[]).includes(activeRole);
   const isManagerOrAdmin =
     isAdmin || activeRole === "manager" || activeRole === "hr_admin" || activeRole === "main_admin";
@@ -43,6 +44,15 @@ function RequestsScreen() {
 
   return (
     <div className="space-y-4">
+      {requestsLoading ? (
+        <DataCard title="Asset requests">
+          <p className="text-sm text-muted-foreground">Loading request queues...</p>
+        </DataCard>
+      ) : requestError ? (
+        <DataCard title="Asset requests">
+          <p className="text-sm text-destructive">{requestError.message}</p>
+        </DataCard>
+      ) : null}
       <Tabs defaultValue={isAdmin ? "queue" : "mine"}>
         <TabsList>
           {isAdmin && (

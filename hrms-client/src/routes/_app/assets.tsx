@@ -7,24 +7,31 @@ export const Route = createFileRoute("/_app/assets")({ component: AssetsLayout }
 
 const TABS = [
   { to: "/assets", label: "Dashboard", icon: LayoutDashboard, exact: true },
-  { to: "/assets/inventory", label: "Inventory", icon: Boxes, gate: "admin" as const },
+  { to: "/assets/inventory", label: "Inventory", icon: Boxes, gate: "asset-admin" as const },
   { to: "/assets/my", label: "My Assets", icon: Laptop },
   { to: "/assets/requests", label: "Requests", icon: Inbox },
-  { to: "/assets/returns", label: "Returns", icon: Undo2, gate: "admin" as const },
+  { to: "/assets/returns", label: "Returns", icon: Undo2, gate: "recovery" as const },
   {
     to: "/assets/warranty",
     label: "Warranty & Maintenance",
     icon: ShieldCheck,
-    gate: "admin" as const,
+    gate: "asset-admin" as const,
   },
 ];
 
-const ADMIN_ROLES = ["main_admin", "asset_admin", "hr_admin"];
+const ASSET_ADMIN_ROLES = ["main_admin", "asset_admin"];
+const RECOVERY_ROLES = [...ASSET_ADMIN_ROLES, "hr_admin"];
 
 function AssetsLayout() {
   const { activeRole } = useAuth();
-  const isAdmin = !!activeRole && ADMIN_ROLES.includes(activeRole);
-  const visible = TABS.filter((t) => !t.gate || (t.gate === "admin" && isAdmin));
+  const isAssetAdmin = !!activeRole && ASSET_ADMIN_ROLES.includes(activeRole);
+  const canViewRecovery = !!activeRole && RECOVERY_ROLES.includes(activeRole);
+  const visible = TABS.filter(
+    (tab) =>
+      !tab.gate ||
+      (tab.gate === "asset-admin" && isAssetAdmin) ||
+      (tab.gate === "recovery" && canViewRecovery),
+  );
 
   return (
     <>

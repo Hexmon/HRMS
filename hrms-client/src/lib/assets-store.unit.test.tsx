@@ -4,17 +4,27 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/shared/api";
 import { AssetsProvider, useAssets } from "./assets-store";
 
-const auth = vi.hoisted(() => ({ current: { id: "employee-a", name: "Employee A" } }));
+const auth = vi.hoisted(() => ({
+  current: { id: "employee-a", name: "Employee A" },
+  activeRole: "employee",
+}));
 const myAssets = vi.hoisted(() => vi.fn());
+const listAssets = vi.hoisted(() => vi.fn());
 const myRequests = vi.hoisted(() => vi.fn());
-vi.mock("@/lib/auth", () => ({ useAuth: () => ({ user: auth.current, activeRole: "employee" }) }));
+const requestQueue = vi.hoisted(() => vi.fn());
+vi.mock("@/lib/auth", () => ({
+  useAuth: () => ({ user: auth.current, activeRole: auth.activeRole }),
+}));
 vi.mock("@/shared/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/shared/api")>()),
   useApiRouteEnabled: () => true,
 }));
 vi.mock("@/domains/assets", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/domains/assets")>();
-  return { ...actual, assetsApi: { ...actual.assetsApi, myAssets, myRequests } };
+  return {
+    ...actual,
+    assetsApi: { ...actual.assetsApi, list: listAssets, myAssets, myRequests, requestQueue },
+  };
 });
 
 function Snapshot() {
@@ -42,8 +52,11 @@ function mount(queryClient = new QueryClient({ defaultOptions: { queries: { retr
 describe("API-backed employee asset visibility", () => {
   beforeEach(() => {
     auth.current = { id: "employee-a", name: "Employee A" };
+    auth.activeRole = "employee";
     myAssets.mockReset();
+    listAssets.mockReset().mockResolvedValue({ items: [] });
     myRequests.mockReset().mockResolvedValue({ items: [] });
+    requestQueue.mockReset().mockResolvedValue({ items: [] });
     localStorage.clear();
     localStorage.setItem(
       "hawkaii_assets_v1",
@@ -139,5 +152,22 @@ describe("API-backed employee asset visibility", () => {
       expect(screen.getByTestId("error")).toHaveTextContent("Request access removed"),
     );
     expect(screen.getByTestId("requests")).toHaveTextContent("");
+  });
+
+  it("fails the whole Admin request view when the queue fails instead of showing a partial feed", async () => {
+    auth.activeRole = "asset_admin";
+    listAssets.mockResolvedValue({ items: [] });
+    myRequests.mockResolvedValue({
+      items: [{ id: "own-request", status: "pending", requester_user_id: "employee-a" }],
+    });
+    requestQueue.mockRejectedValue(new Error("Admin queue unavailable"));
+
+    mount();
+
+    await waitFor(() =>
+      expect(screen.getByTestId("error")).toHaveTextContent("Admin queue unavailable"),
+    );
+    expect(screen.getByTestId("requests")).toHaveTextContent("");
+    expect(screen.getByTestId("requests")).not.toHaveTextContent("own-request");
   });
 });

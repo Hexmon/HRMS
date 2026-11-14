@@ -157,6 +157,17 @@ function isSqlLockTimeout(error: unknown): boolean {
   return Boolean(error && typeof error === "object" && "code" in error && error.code === "55P03");
 }
 
+function isAssetIdentityConflict(error: unknown): boolean {
+  if (!error || typeof error !== "object" || !("code" in error) || error.code !== "23505") return false;
+  const constraint = "constraint" in error && typeof error.constraint === "string" ? error.constraint : "";
+  return [
+    "assets_asset_code_key",
+    "assets_qr_hash_key",
+    "assets_asset_code_uq",
+    "assets_qr_hash_uq",
+  ].includes(constraint);
+}
+
 export interface PostgresObjectStorageOptions {
   cloudName: string;
   apiKey: string;
@@ -655,7 +666,7 @@ class PostgresPersistence {
       // The migration fence checks a transaction-local marker. No pooled
       // connection can carry this authority into a later request.
       await client.query("SELECT set_config('hrms.asset_writer_v2', 'on', true)");
-      const actor = await this.loadCurrentAssetActor(client, input);
+      const actor = await this.loadCurrentAssetActor(client, input, true);
       const before = await this.loadAssetSnapshot(client);
 
       const previous = await client.query<{
@@ -720,31 +731,34 @@ class PostgresPersistence {
       if (isSqlLockTimeout(error)) {
         throw conflict("Asset command is busy; retry with the same Idempotency-Key.");
       }
+      if (isAssetIdentityConflict(error)) {
+        throw conflict("An asset with the same code or QR identity already exists.", {
+          reason: "duplicate_asset_identity",
+        });
+      }
       throw error;
     } finally {
       client.release();
     }
   }
 
-  private async loadCurrentAssetActor(client: PoolClient, input: Pick<AssetCommandInput, "actorUserId" | "companyId" | "actionKey">): Promise<AuthUser> {
+  private async loadCurrentAssetActor(
+    client: PoolClient,
+    input: Pick<AssetCommandInput, "actorUserId" | "companyId" | "actionKey">,
+    lockAuthority = false,
+  ): Promise<AuthUser> {
     const cached = this.store.users.find((user) => user.id === input.actorUserId);
     if (!cached) throw unauthorized("User no longer exists");
+    const userLock = lockAuthority ? " FOR SHARE OF u" : "";
+    const rowLock = lockAuthority ? " FOR SHARE" : "";
+    const roleLock = lockAuthority ? " FOR SHARE OF ur, r" : "";
     const actorRows = await client.query<{
       employment_status: AuthUser["employment_status"];
       deleted_at: Date | null;
-      roles: RoleKey[];
     }>(
-      `SELECT u.employment_status, u.deleted_at,
-              COALESCE(array_agg(DISTINCT ur.role_key) FILTER (
-                WHERE ur.role_key IS NOT NULL AND ur.status = 'active' AND ur.deleted_at IS NULL
-                  AND ur.effective_from <= current_date
-                  AND (ur.effective_to IS NULL OR ur.effective_to >= current_date)
-                  AND r.status = 'active' AND r.deleted_at IS NULL
-              ), '{}') AS roles
+      `SELECT u.employment_status, u.deleted_at
        FROM core.users u
-       LEFT JOIN core.user_roles ur ON ur.user_id = u.id
-       LEFT JOIN core.roles r ON r.role_key = ur.role_key
-       WHERE u.id = $1 GROUP BY u.id`,
+       WHERE u.id = $1${userLock}`,
       [input.actorUserId],
     );
     const current = actorRows.rows[0];
@@ -752,23 +766,39 @@ class PostgresPersistence {
       throw unauthorized("User account is inactive or blocked");
     }
     const preference = await client.query<{ company_id: UUID | null; active_role: RoleKey }>(
-      "SELECT company_id, active_role FROM platform.user_session_preferences WHERE user_id = $1",
+      `SELECT company_id, active_role
+       FROM platform.user_session_preferences
+       WHERE user_id = $1${rowLock}`,
       [input.actorUserId],
     );
     if (preference.rows[0]?.company_id !== input.companyId) {
       throw companyContextRequired({ user_id: input.actorUserId, operation: input.actionKey });
     }
-    if (!current.roles.includes(preference.rows[0].active_role)) {
+    const roleRows = await client.query<{ role_key: RoleKey }>(
+      `SELECT ur.role_key
+       FROM core.user_roles ur
+       JOIN core.roles r ON r.role_key = ur.role_key
+       WHERE ur.user_id = $1
+         AND ur.status = 'active' AND ur.deleted_at IS NULL
+         AND ur.effective_from <= current_date
+         AND (ur.effective_to IS NULL OR ur.effective_to >= current_date)
+         AND r.status = 'active' AND r.deleted_at IS NULL${roleLock}`,
+      [input.actorUserId],
+    );
+    const roles = Array.from(new Set(roleRows.rows.map((row) => row.role_key)));
+    if (!roles.includes(preference.rows[0].active_role)) {
       throw forbidden("Selected role is not assigned to this user.");
     }
     const company = await client.query<{ status: string }>(
-      "SELECT status FROM platform.company_profiles WHERE id = $1",
+      `SELECT status
+       FROM platform.company_profiles
+       WHERE id = $1${rowLock}`,
       [input.companyId],
     );
     if (company.rows[0]?.status !== "active") {
       throw companyContextRequired({ user_id: input.actorUserId, company_id: input.companyId, operation: input.actionKey });
     }
-    return { ...cached, roles: current.roles, employment_status: current.employment_status };
+    return { ...cached, roles, employment_status: current.employment_status };
   }
 
   private async loadAssetSnapshot(client: PoolClient, baseStore: DataStore = this.store): Promise<DataStore> {
