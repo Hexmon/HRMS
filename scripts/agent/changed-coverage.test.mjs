@@ -972,6 +972,10 @@ test("asset tenant ownership migrations use explicit fail-closed semantic contra
   assert.match(validateSemanticPath(repositoryRoot, ownershipPath, ownership, "base"), /semantic contract passed/);
 
   assert.throws(() => validateSemanticPath(repositoryRoot, mapPath, map.replace("verification_note text NOT NULL", "verification_note text"), "base"), /verification evidence/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, mapPath, map.replace(
+    "verification_note text NOT NULL,",
+    "verification_note text, -- verification_note text NOT NULL",
+  ), "base"), /verification evidence/);
   assert.throws(() => validateSemanticPath(repositoryRoot, mapPath, map.replace("FOR KEY SHARE", ""), "base"), /lock the referenced company/);
   assert.throws(() => validateSemanticPath(repositoryRoot, ownershipPath, ownership.replace("SET LOCAL hrms.asset_writer_v2", "SET hrms.asset_writer_v2"), "base"), /transaction-local writer marker/);
   assert.throws(() => validateSemanticPath(repositoryRoot, ownershipPath, ownership.replace("Asset tenant ownership mapping is incomplete", "Ownership warning"), "base"), /fail closed when verified ownership is missing/);
@@ -1136,6 +1140,13 @@ test("frontend contract route discovery excludes test modules without hiding run
       'const routesDir = join(root, "src/routes");\n(() => {}).constructor("process.exit(0)")();',
     ), "base"),
     /canonical AST changed outside the trusted contract/,
+  );
+  assert.throws(
+    () => validateSemanticPath(repositoryRoot, path, content.replace(
+      'walk(join(root, "src")).filter(',
+      "routeFiles.filter(",
+    ), "base"),
+    /legacy vocabulary inputs must derive from active runtime source files/,
   );
 });
 

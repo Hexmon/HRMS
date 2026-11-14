@@ -1489,7 +1489,43 @@ function validateQaCompose(path, content) {
   if (/APP_ENV:\s*prod(?:uction)?/i.test(content)) semanticFailure(path, "QA Compose must not use a production APP_ENV");
 }
 
+function stripSqlComments(content) {
+  let output = "";
+  let index = 0;
+  let quote = null;
+  let blockDepth = 0;
+  while (index < content.length) {
+    const pair = content.slice(index, index + 2);
+    if (blockDepth) {
+      if (pair === "/*") { blockDepth += 1; index += 2; continue; }
+      if (pair === "*/") { blockDepth -= 1; index += 2; continue; }
+      output += content[index] === "\n" ? "\n" : " ";
+      index += 1;
+      continue;
+    }
+    if (quote) {
+      output += content[index];
+      if (content[index] === quote) {
+        if (content[index + 1] === quote) { output += content[index + 1]; index += 2; continue; }
+        quote = null;
+      }
+      index += 1;
+      continue;
+    }
+    if (pair === "--") {
+      while (index < content.length && content[index] !== "\n") index += 1;
+      continue;
+    }
+    if (pair === "/*") { blockDepth = 1; index += 2; continue; }
+    if (content[index] === "'" || content[index] === '"') quote = content[index];
+    output += content[index];
+    index += 1;
+  }
+  return output;
+}
+
 function validateHolidayMigration(path, content) {
+  content = stripSqlComments(content);
   requireSemanticText(path, content, /BEGIN\s*;/i, "holiday migration must be transactional");
   requireSemanticText(path, content, /DROP\s+INDEX\s+IF\s+EXISTS\s+.*holiday/i, "holiday migration must remove the legacy global uniqueness rule");
   requireSemanticText(path, content, /CREATE\s+UNIQUE\s+INDEX/i, "holiday migration must create a unique index");
@@ -1500,6 +1536,7 @@ function validateHolidayMigration(path, content) {
 }
 
 function validateAssetTransactionFenceMigration(path, content) {
+  content = stripSqlComments(content);
   requireSemanticText(path, content, /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+assets\.require_transactional_writer\s*\(\)/i, "asset writer fence function is missing");
   requireSemanticText(path, content, /current_setting\s*\(\s*'hrms\.asset_writer_v2'\s*,\s*true\s*\)\s+IS\s+DISTINCT\s+FROM\s+'on'/i, "asset writer fence must require the transaction-local marker");
   requireSemanticText(path, content, /IF\s+TG_OP\s*=\s*'DELETE'[\s\S]*RETURN\s+OLD[\s\S]*RETURN\s+NEW/i, "asset writer fence must preserve DELETE and write trigger row semantics");
@@ -1518,6 +1555,7 @@ function validateAssetTransactionFenceMigration(path, content) {
 }
 
 function validateAssetRecoveryAssignmentMigration(path, content) {
+  content = stripSqlComments(content);
   requireSemanticText(path, content, /ALTER\s+TABLE\s+assets\.asset_recovery_tickets[\s\S]*ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+assignment_id\s+uuid/i, "recovery ticket assignment column is missing");
   requireSemanticText(path, content, /IF\s+NOT\s+EXISTS[\s\S]*asset_recovery_tickets_assignment_id_fkey[\s\S]*FOREIGN\s+KEY\s*\(assignment_id\)\s+REFERENCES\s+assets\.asset_assignments\s*\(id\)/i, "recovery assignment foreign key must be installed idempotently");
   requireSemanticText(path, content, /CREATE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+asset_recovery_tickets_assignment_idx[\s\S]*\(assignment_id\)/i, "recovery assignment lookup index is missing");
@@ -1529,6 +1567,7 @@ function validateAssetRecoveryAssignmentMigration(path, content) {
 }
 
 function validateAssetTenantOwnershipMapMigration(path, content) {
+  content = stripSqlComments(content);
   requireSemanticText(path, content, /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+assets\.asset_tenant_ownership_map/i, "verified asset ownership map is missing");
   requireSemanticText(path, content, /PRIMARY\s+KEY\s*\(\s*resource_type\s*,\s*resource_id\s*\)/i, "ownership map must identify each root resource exactly once");
   requireSemanticText(path, content, /resource_type\s+IN\s*\(\s*'asset'\s*,\s*'request'\s*,\s*'vendor'\s*\)/i, "ownership map must cover only verified root resource types");
@@ -1540,6 +1579,7 @@ function validateAssetTenantOwnershipMapMigration(path, content) {
 }
 
 function validateAssetTenantOwnershipMigration(path, content) {
+  content = stripSqlComments(content);
   for (const table of [
     "assets", "asset_assignments", "asset_state_events", "asset_requests",
     "asset_acknowledgements", "asset_maintenance_records", "software_vendors",
@@ -1628,7 +1668,7 @@ function validateFrontendContractRouteCoverage(path, content) {
     ["routes", ["3ef2f10fca65fa489dd477cb28061cbe48de997dc15daf3e1fa3d72b259d2302", "mapped routes must derive from discovered runtime route files"]],
     ["missing", ["6aa21a85d8f46fabc839bdda934f015caadec07aa49ac138759ebdd2bc232900", "missing routes must derive from mapped routes and declared coverage"]],
     ["forbiddenFiles", ["4588f9c4d4810427a3a1f24bf932ee0746fd9ae12593aad598593e8f09adf193", "legacy route failures must derive from mapped routes and the forbidden route set"]],
-    ["activeExpenseFiles", ["269b78104f533f3826cf62d409ec22479927d36495872d159f50a0279bee8a50", "legacy vocabulary inputs must derive from active expense source files"]],
+    ["activeExpenseFiles", ["273c6371ba118c4af8493bf02f6cffff37277f0e8f8fc9d6f1666736a9db228b", "legacy vocabulary inputs must derive from active runtime source files"]],
     ["forbiddenTerms", ["249bcb66e8a5708440c6664c3998f6ead7817cc37385f17be17926005290a7c6", "legacy vocabulary failures must derive from the forbidden term set and active expense sources"]],
   ]);
   for (const [name, [expectedHash, message]] of expectedInitializers) {
@@ -1839,7 +1879,9 @@ function validateFrontendContractRouteCoverage(path, content) {
     semanticFailure(path, "frontend contract coverage must have exactly one final process exit");
   }
   const canonicalProgramHash = createHash("sha256").update(printer.printFile(source)).digest("hex");
-  if (canonicalProgramHash !== "6a640e5664cdfe4c2a21e2aaa8e396f112ca73f97c8b9739cd70d8bbbfd0df75") {
+  // Regenerate only after reviewing the printed, comment-free checker AST and
+  // updating the negative mutations in changed-coverage.test.mjs.
+  if (canonicalProgramHash !== "2ad41f461efdfad60e8ba7cac6357c68b3111811505ce846ee29232889ba347d") {
     semanticFailure(path, "frontend contract coverage canonical AST changed outside the trusted contract");
   }
 }

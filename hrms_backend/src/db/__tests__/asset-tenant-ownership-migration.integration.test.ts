@@ -2,16 +2,13 @@ import { randomUUID } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-
-const TEST_DATABASE_NAME_PATTERN = /(test|ci)/i;
+import { assertDisposableResetTarget } from "../../platform/postgres-data-store.js";
 
 function requiredTestDatabaseUrl(): URL {
   const value = process.env.TEST_DATABASE_URL;
   if (!value) throw new Error("TEST_DATABASE_URL is required for asset migration tests");
+  assertDisposableResetTarget(value);
   const url = new URL(value);
-  if (!TEST_DATABASE_NAME_PATTERN.test(url.pathname)) {
-    throw new Error("Asset migration tests require an isolated test database URL");
-  }
   return url;
 }
 
@@ -141,6 +138,15 @@ describe("asset tenant ownership migration", () => {
   }, 60_000);
 
   it("fails closed until verified roots agree, then enforces immutable tenant ownership", async () => {
+    await expect(
+      client.query(
+        `INSERT INTO assets.asset_tenant_ownership_map (
+           resource_type, resource_id, company_id, verification_note
+         ) VALUES ('asset', $1, $2, NULL)`,
+        [randomUUID(), companyA],
+      ),
+    ).rejects.toMatchObject({ code: "23502" });
+
     await expect(
       applyMigration(client, "0069_asset_tenant_ownership.sql"),
     ).rejects.toMatchObject({ code: "23502" });

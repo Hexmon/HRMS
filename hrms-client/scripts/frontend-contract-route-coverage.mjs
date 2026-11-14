@@ -83,10 +83,13 @@ const missing = routes.filter(({ route }) => {
 });
 
 const forbiddenFiles = routes.filter(({ file }) => forbiddenExpenseRoutes.has(file));
-const activeExpenseFiles = routeFiles
-  .filter((file) => relative(root, file).replace(/\\/g, "/").startsWith("src/routes/_app/expenses"))
-  .concat([join(root, "src/lib/expenses-store.tsx")])
-  .filter(existsSync);
+const activeExpenseFiles = walk(join(root, "src")).filter(
+  (file) =>
+    /\.(?:ts|tsx)$/.test(file) &&
+    !/\.test\.(?:ts|tsx)$/.test(file) &&
+    !file.endsWith(".d.ts") &&
+    !file.endsWith("routeTree.gen.ts"),
+);
 
 const forbiddenTerms = activeExpenseFiles.flatMap((file) => {
   const text = readFileSync(file, "utf8");
