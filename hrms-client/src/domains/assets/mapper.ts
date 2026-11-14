@@ -16,39 +16,57 @@ function mapAssetStatus(value: unknown, fallback: Asset["status"] = "available")
 
 export function mapApiAsset(value: unknown, fallback?: Partial<Asset>): Asset {
   const row = asRecord(value);
+  const hasValue = (field: unknown) => field !== null && field !== undefined && field !== "";
+  const apiMissing: Asset["apiMissing"] = {
+    ...(!hasValue(row.purchase_date) && { purchaseDate: true as const }),
+    ...(!hasValue(row.warranty_expiry) && { warrantyExpiry: true as const }),
+    ...(!hasValue(row.cost) && { cost: true as const }),
+    ...(!hasValue(row.condition) && { condition: true as const }),
+  };
   const assetType = text(row.asset_type ?? row.type, fallback?.type ?? "Asset");
   const name = text(row.name, fallback?.model ?? assetType);
   const maintenance = Array.isArray(row.maintenance)
     ? row.maintenance.map(mapApiMaintenance)
     : (fallback?.maintenance ?? []);
+  const acknowledgement = asRecord(row.latest_acknowledgement);
+  const activeAssignmentId = text(row.active_assignment_id);
+  const history: Asset["history"] = activeAssignmentId
+    ? [
+        {
+          id: activeAssignmentId,
+          employee: text(row.assigned_to_name),
+          employeeId: text(row.assigned_to_user_id),
+          assignedOn: text(row.assigned_on),
+          conditionAtHandover: text(row.condition, "good") as Asset["condition"],
+          acknowledged:
+            text(acknowledgement.assignment_id) === activeAssignmentId &&
+            text(acknowledgement.status) === "acknowledged",
+        },
+      ]
+    : [];
 
   return {
     id: text(row.id ?? row.asset_code, fallback?.id ?? "AST-API"),
     version: numberValue(row.version, fallback?.version ?? 1),
+    apiMissing,
     type: assetType,
-    category: text(row.category, fallback?.category ?? "Hardware"),
-    brand: text(row.brand, fallback?.brand ?? name.split(" ")[0] ?? assetType),
+    category: text(row.category, "—"),
+    brand: text(row.brand, "—"),
     model: text(row.model ?? row.name, fallback?.model ?? name),
     serial: text(row.serial_no ?? row.serial, fallback?.serial ?? "—"),
-    purchaseDate: dateText(
-      row.purchase_date,
-      fallback?.purchaseDate ?? new Date().toISOString(),
-    ).slice(0, 10),
-    vendor: text(row.vendor, fallback?.vendor ?? "—"),
-    invoiceNumber: text(row.invoice_no ?? row.invoiceNumber, fallback?.invoiceNumber ?? "—"),
-    warrantyExpiry: dateText(
-      row.warranty_expiry,
-      fallback?.warrantyExpiry ?? new Date().toISOString(),
-    ).slice(0, 10),
-    cost: numberValue(row.cost, fallback?.cost ?? 0),
-    location: text(row.location, fallback?.location ?? "—"),
-    condition: (text(row.condition, fallback?.condition ?? "good") as Asset["condition"]) || "good",
+    purchaseDate: text(row.purchase_date).slice(0, 10),
+    vendor: text(row.vendor, "—"),
+    invoiceNumber: text(row.invoice_no ?? row.invoiceNumber, "—"),
+    warrantyExpiry: text(row.warranty_expiry).slice(0, 10),
+    cost: numberValue(row.cost, 0),
+    location: text(row.location, "—"),
+    condition: (text(row.condition, "good") as Asset["condition"]) || "good",
     status: mapAssetStatus(row.status, fallback?.status),
     assignedTo: text(row.assigned_to_name, fallback?.assignedTo),
     assignedToId: text(row.assigned_to_user_id, fallback?.assignedToId),
     assignedOn: text(row.assigned_on, fallback?.assignedOn),
     expectedReturn: text(row.expected_return, fallback?.expectedReturn),
-    history: fallback?.history ?? [],
+    history,
     maintenance,
     documents: fallback?.documents ?? [],
     audit: fallback?.audit ?? [],
@@ -62,6 +80,17 @@ export function mapApiAssets(values: unknown[], fallbacks: Asset[]): Asset[] {
     const fallback = fallbacks.find((asset) => asset.id === key || asset.serial === row.serial_no);
     return mapApiAsset(row as ApiRecord, fallback);
   });
+}
+
+export function assetOverviewMetadata(asset: Asset, warrantyDaysLeft: number) {
+  return {
+    purchaseDate: asset.purchaseDate || "—",
+    warranty: asset.warrantyExpiry
+      ? `${asset.warrantyExpiry} (${warrantyDaysLeft < 0 ? "expired" : `${warrantyDaysLeft}d left`})`
+      : "—",
+    cost: asset.apiMissing?.cost ? null : asset.cost,
+    condition: asset.apiMissing?.condition ? null : asset.condition,
+  };
 }
 
 function mapPriority(value: unknown): AssetRequest["priority"] {
@@ -202,12 +231,15 @@ export function mapApiWarrantyAlerts(values: unknown[]): AssetWarrantyAlertView[
 
 export type AssetRecoveryTicketView = {
   id: string;
+  assignmentId: string | null;
   employeeName: string;
   employeeStatus: string;
   assetId: string;
   assetName: string;
   assetCode: string;
-  assignedOn: string;
+  custodyAssignedOn: string | null;
+  ticketOpenedOn: string;
+  reviewRequired: boolean;
   status: string;
   settlementStatus: string;
   settlementAmount: string;
@@ -220,12 +252,15 @@ export function mapApiRecoveryTicket(value: unknown): AssetRecoveryTicketView {
   const asset = asRecord(row.asset);
   return {
     id: text(row.id, "recovery-ticket"),
+    assignmentId: text(row.assignment_id) || null,
     employeeName: text(employee.full_name ?? employee.name ?? employee.email, "Employee"),
     employeeStatus: text(employee.employment_status ?? employee.status, "offboarding"),
     assetId: text(row.asset_id ?? asset.id),
     assetName: text(asset.name ?? asset.model ?? asset.asset_type, "Asset"),
     assetCode: text(asset.asset_code ?? asset.id, "Asset"),
-    assignedOn: dateText(asset.assigned_on ?? row.created_at, new Date().toISOString()),
+    custodyAssignedOn: text(row.assignment_assigned_at) || null,
+    ticketOpenedOn: text(row.created_at),
+    reviewRequired: row.review_required !== false,
     status: text(row.status, "open"),
     settlementStatus: text(row.settlement_status),
     settlementAmount: text(row.settlement_amount),
@@ -235,4 +270,10 @@ export function mapApiRecoveryTicket(value: unknown): AssetRecoveryTicketView {
 
 export function mapApiRecoveryTickets(values: unknown[]): AssetRecoveryTicketView[] {
   return values.map(mapApiRecoveryTicket);
+}
+
+export function recoveryTicketDateLabel(ticket: AssetRecoveryTicketView): string {
+  return ticket.custodyAssignedOn
+    ? `assigned on ${ticket.custodyAssignedOn.slice(0, 10)}`
+    : `ticket opened ${ticket.ticketOpenedOn.slice(0, 10)}`;
 }

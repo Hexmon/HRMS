@@ -13,9 +13,10 @@ export const dashboardRoutes: FastifyPluginAsync = async (fastify) => {
       operation: "dashboard.summary",
       requireActiveEmployment: true,
     });
-    const store = fastify.store.persistence?.attendanceReadStore
+    const attendanceStore = fastify.store.persistence?.attendanceReadStore
       ? await fastify.store.persistence.attendanceReadStore({ companyId: company.companyId, includePendingOutbox: true })
       : fastify.store;
+    const store = await fastify.store.persistence?.assetReadStore?.(attendanceStore) ?? attendanceStore;
     return new DashboardService(store).summary(request.actor);
   });
 };

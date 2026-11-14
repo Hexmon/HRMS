@@ -25,21 +25,36 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Inbox, Plus, Upload, Check, X, PackageCheck } from "lucide-react";
+import { Inbox, Plus, Check, X, PackageCheck } from "lucide-react";
 import type { AssetRequest, RequestPriority, RequestStatus, RequestType } from "@/lib/mock/assets";
 import { toast } from "sonner";
 import { toastApiError } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/assets/requests")({ component: RequestsScreen });
 
-function RequestsScreen() {
+export function RequestsScreen() {
   const { activeRole, user } = useAuth();
-  const { requests, addRequest, decideRequest, cancelRequest } = useAssets();
+  const { requests, addRequest, decideRequest, cancelRequest, requestError, requestsLoading } =
+    useAssets();
   const isAdmin = !!activeRole && (ASSET_ADMIN_ROLES as readonly string[]).includes(activeRole);
   const isManagerOrAdmin =
     isAdmin || activeRole === "manager" || activeRole === "hr_admin" || activeRole === "main_admin";
 
   const myReqs = useMemo(() => requests.filter((r) => r.raisedBy === user?.name), [requests, user]);
+
+  if (requestsLoading || requestError) {
+    return (
+      <div className="space-y-4">
+        <DataCard title="Asset requests">
+          <p
+            className={requestError ? "text-sm text-destructive" : "text-sm text-muted-foreground"}
+          >
+            {requestError?.message ?? "Loading request queues..."}
+          </p>
+        </DataCard>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -140,9 +155,12 @@ function RequestsScreen() {
                 status: "pending",
                 ...data,
               };
-              void addRequest(r)
+              return addRequest(r)
                 .then(() => toast.success(`${r.id} submitted`))
-                .catch((error) => toastApiError(error, "Asset request could not be submitted."));
+                .catch((error) => {
+                  toastApiError(error, "Asset request could not be submitted.");
+                  throw error;
+                });
             }}
           />
           {!isManagerOrAdmin && (
@@ -156,7 +174,7 @@ function RequestsScreen() {
   );
 }
 
-function AdminQueue({
+export function AdminQueue({
   rows,
   onDecide,
 }: {
@@ -217,6 +235,7 @@ function AdminQueue({
               size="icon"
               variant="ghost"
               className="h-8 w-8 text-success"
+              aria-label={`Approve request ${r.id}`}
               onClick={() => onDecide(r.id, "approved", "")}
             >
               <Check className="h-4 w-4" />
@@ -225,6 +244,7 @@ function AdminQueue({
               size="icon"
               variant="ghost"
               className="h-8 w-8 text-destructive"
+              aria-label={`Reject request ${r.id}`}
               onClick={() => onDecide(r.id, "rejected", "Rejected from queue")}
             >
               <X className="h-4 w-4" />
@@ -233,7 +253,9 @@ function AdminQueue({
               size="icon"
               variant="ghost"
               className="h-8 w-8 text-primary"
-              onClick={() => onDecide(r.id, "fulfilled", "Asset handed over")}
+              disabled
+              aria-label="Fulfillment unavailable until asset assignment is supported"
+              title="Fulfillment requires assigning an available asset to the requester"
             >
               <PackageCheck className="h-4 w-4" />
             </Button>
@@ -252,7 +274,7 @@ function AdminQueue({
   );
 }
 
-function RaiseForm({
+export function RaiseForm({
   onSubmit,
 }: {
   onSubmit: (
@@ -260,31 +282,40 @@ function RaiseForm({
       AssetRequest,
       "type" | "assetType" | "reason" | "priority" | "assetId" | "attachment"
     >,
-  ) => void;
+  ) => Promise<unknown>;
 }) {
   const [type, setType] = useState<RequestType>("new");
   const [assetType, setAssetType] = useState("Laptop");
   const [assetId, setAssetId] = useState("");
   const [reason, setReason] = useState("");
   const [priority, setPriority] = useState<RequestPriority>("normal");
+  const [pending, setPending] = useState(false);
 
-  const submit = () => {
+  const submit = async () => {
+    if (pending) return;
     if (!reason.trim()) {
       toast.error("Please add a reason.");
       return;
     }
-    onSubmit({ type, assetType, assetId: assetId || undefined, reason, priority });
-    setReason("");
-    setAssetId("");
+    setPending(true);
+    try {
+      await onSubmit({ type, assetType, assetId: assetId || undefined, reason, priority });
+      setReason("");
+      setAssetId("");
+    } catch {
+      /* The caller displays the error; preserve the draft for retry. */
+    } finally {
+      setPending(false);
+    }
   };
 
   return (
     <Card className="rounded-2xl border-border/60 p-5">
       <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
         <div className="space-y-1.5">
-          <Label>Request type</Label>
+          <Label htmlFor="asset-request-type">Request type</Label>
           <Select value={type} onValueChange={(v) => setType(v as RequestType)}>
-            <SelectTrigger>
+            <SelectTrigger id="asset-request-type">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -296,9 +327,9 @@ function RaiseForm({
           </Select>
         </div>
         <div className="space-y-1.5">
-          <Label>Asset type</Label>
+          <Label htmlFor="asset-request-asset-type">Asset type</Label>
           <Select value={assetType} onValueChange={setAssetType}>
-            <SelectTrigger>
+            <SelectTrigger id="asset-request-asset-type">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -322,8 +353,9 @@ function RaiseForm({
         </div>
         {(type === "replacement" || type === "repair" || type === "return") && (
           <div className="space-y-1.5 md:col-span-2">
-            <Label>Asset ID (optional)</Label>
+            <Label htmlFor="asset-request-asset-id">Asset ID (optional)</Label>
             <Input
+              id="asset-request-asset-id"
               value={assetId}
               onChange={(e) => setAssetId(e.target.value)}
               placeholder="AST-XXXX"
@@ -331,8 +363,9 @@ function RaiseForm({
           </div>
         )}
         <div className="space-y-1.5 md:col-span-2">
-          <Label>Reason</Label>
+          <Label htmlFor="asset-request-reason">Reason</Label>
           <Textarea
+            id="asset-request-reason"
             rows={3}
             value={reason}
             onChange={(e) => setReason(e.target.value)}
@@ -340,9 +373,9 @@ function RaiseForm({
           />
         </div>
         <div className="space-y-1.5">
-          <Label>Priority</Label>
+          <Label htmlFor="asset-request-priority">Priority</Label>
           <Select value={priority} onValueChange={(v) => setPriority(v as RequestPriority)}>
-            <SelectTrigger>
+            <SelectTrigger id="asset-request-priority">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -355,16 +388,18 @@ function RaiseForm({
           </Select>
         </div>
         <div className="space-y-1.5">
-          <Label>Attachment</Label>
-          <div className="grid place-items-center rounded-xl border border-dashed bg-muted/20 px-3 py-3 text-center">
-            <Upload className="mb-1 h-4 w-4 text-muted-foreground" />
-            <p className="text-xs text-muted-foreground">Click to attach</p>
+          <p className="text-sm font-medium">Attachment</p>
+          <div className="rounded-xl border border-dashed bg-muted/20 px-3 py-3 text-center">
+            <p className="text-xs text-muted-foreground">
+              Attachments are not available for asset requests yet.
+            </p>
           </div>
         </div>
       </div>
       <div className="mt-5 flex justify-end">
         <Button
           onClick={submit}
+          disabled={pending}
           className="rounded-full text-primary-foreground"
           style={{ background: "var(--gradient-primary)" }}
         >

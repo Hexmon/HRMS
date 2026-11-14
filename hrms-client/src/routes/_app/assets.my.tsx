@@ -10,10 +10,10 @@ import { toastApiError, userFacingErrorMessage } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/assets/my")({ component: MyAssets });
 
-function MyAssets() {
+export function MyAssets() {
   const { user } = useAuth();
   const { assets, acknowledgeAssignment, loading, error } = useAssets();
-  const mine = assets.filter((a) => a.assignedTo === user?.name);
+  const mine = assets.filter((a) => a.assignedToId === user?.id);
 
   return (
     <div className="space-y-4">
@@ -21,7 +21,13 @@ function MyAssets() {
         <DataCard title="My assets">
           <EmptyState
             icon={Laptop}
-            title={loading ? "Loading assigned assets" : "Nothing assigned yet"}
+            title={
+              error
+                ? "Assigned assets unavailable"
+                : loading
+                  ? "Loading assigned assets"
+                  : "Nothing assigned yet"
+            }
             description={
               error
                 ? userFacingErrorMessage(
@@ -46,7 +52,7 @@ function MyAssets() {
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold">
-                      {a.brand} {a.model}
+                      {a.brand === "—" ? a.model : `${a.brand} ${a.model}`}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {a.id} · {a.type} · {a.serial}
@@ -57,22 +63,35 @@ function MyAssets() {
                 <div className="grid grid-cols-2 gap-3 p-4 text-sm">
                   <Row k="Assigned on" v={a.assignedOn ?? "—"} />
                   <Row k="Expected return" v={a.expectedReturn ?? "—"} />
-                  <Row k="Condition" v={<span className="uppercase">{a.condition}</span>} />
-                  <Row k="Cost" v={fmtMoney(a.cost)} />
+                  <Row
+                    k="Condition"
+                    v={
+                      a.apiMissing?.condition ? (
+                        "—"
+                      ) : (
+                        <span className="uppercase">{a.condition}</span>
+                      )
+                    }
+                  />
+                  <Row k="Cost" v={a.apiMissing?.cost ? "—" : fmtMoney(a.cost)} />
                   <Row
                     k="Warranty"
                     v={
-                      <span
-                        className={
-                          d < 0
-                            ? "text-destructive font-medium"
-                            : d <= 60
-                              ? "font-medium text-warning-foreground dark:text-warning"
-                              : ""
-                        }
-                      >
-                        {d < 0 ? `Expired ${Math.abs(d)}d ago` : `${d}d left`}
-                      </span>
+                      !a.warrantyExpiry ? (
+                        "—"
+                      ) : (
+                        <span
+                          className={
+                            d < 0
+                              ? "text-destructive font-medium"
+                              : d <= 60
+                                ? "font-medium text-warning-foreground dark:text-warning"
+                                : ""
+                          }
+                        >
+                          {d < 0 ? `Expired ${Math.abs(d)}d ago` : `${d}d left`}
+                        </span>
+                      )
                     }
                   />
                   <Row k="Location" v={a.location} />

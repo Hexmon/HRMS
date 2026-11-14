@@ -931,6 +931,36 @@ test("QA holiday operational paths use explicit semantic contracts", () => {
   assert.throws(() => validateSemanticPath("", "hrms_backend/src/db/migrations/0065_holiday_company_unique_constraint.sql", migration.replace("company_id", "name"), "base"), /company_id/);
 });
 
+test("asset migrations use explicit fail-closed semantic contracts", () => {
+  const repositoryRoot = process.cwd();
+  const fencePath = "hrms_backend/src/db/migrations/0066_asset_transaction_fence.sql";
+  const recoveryPath = "hrms_backend/src/db/migrations/0067_asset_recovery_assignment_identity.sql";
+  const fence = readFileSync(join(repositoryRoot, fencePath), "utf8");
+  const recovery = readFileSync(join(repositoryRoot, recoveryPath), "utf8");
+
+  assert.match(validateSemanticPath(repositoryRoot, fencePath, fence, "base"), /semantic contract passed/);
+  assert.match(validateSemanticPath(repositoryRoot, recoveryPath, recovery, "base"), /semantic contract passed/);
+
+  for (const [content, replacement, expected] of [
+    [fence, "hrms.asset_writer_v1", /transaction-local marker/],
+    [fence, "asset_command_results_scope_key_old", /replay key/],
+    [fence, "BEFORE INSERT OR UPDATE", /every mutation operation/],
+    [fence, "asset_recovery_tickets_old", /trigger list is missing asset_recovery_tickets/],
+  ]) {
+    assert.throws(() => validateSemanticPath(repositoryRoot, fencePath, content.replace(
+      expected.source.includes("replay key") ? "CONSTRAINT asset_command_results_scope_key_uq UNIQUE" :
+      expected.source.includes("trigger list") ? "'asset_recovery_tickets'" :
+      expected.source.includes("every mutation") ? "BEFORE INSERT OR UPDATE OR DELETE" :
+      "hrms.asset_writer_v2",
+      replacement,
+    ), "base"), expected);
+  }
+
+  assert.throws(() => validateSemanticPath(repositoryRoot, recoveryPath, recovery.replace("HAVING count(*) = 1", "HAVING count(*) > 0"), "base"), /unique assignment/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, recoveryPath, recovery.replace("SET LOCAL hrms.asset_writer_v2", "SET hrms.asset_writer_v2"), "base"), /transaction-local writer marker/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, recoveryPath, recovery.replace("assignment.assigned_at <= ticket.created_at", "TRUE"), "base"), /custody interval/);
+});
+
 test("semantic QA scripts are classified before generic external coverage", () => {
   const root = mkdtempSync(join(tmpdir(), "hrms-coverage-semantic-external-"));
   roots.push(root);

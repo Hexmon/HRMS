@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { useAssets, warrantyDaysLeft, fmtMoney } from "@/lib/assets-store";
-import { DataTable, StatusBadge, type Column } from "@/components/ui-kit";
+import { useAssets, warrantyDaysLeft, fmtMoney, ASSET_ADMIN_ROLES } from "@/lib/assets-store";
+import { DataCard, DataTable, StatusBadge, type Column } from "@/components/ui-kit";
+import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { documentsApi } from "@/domains/documents";
 import { useCreateReportExportMutation } from "@/domains/reports";
@@ -19,7 +20,9 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/assets/inventory")({ component: Inventory });
 
-function Inventory() {
+export function Inventory() {
+  const { activeRole } = useAuth();
+  const canManageAssets = ASSET_ADMIN_ROLES.some((role) => role === activeRole);
   const { assets, loading, error, isApiBacked } = useAssets();
   const exportMutation = useCreateReportExportMutation();
   const [type, setType] = useState("all");
@@ -37,6 +40,7 @@ function Inventory() {
         if (status !== "all" && a.status !== status) return false;
         if (assignedFilter === "assigned" && !a.assignedTo) return false;
         if (assignedFilter === "unassigned" && a.assignedTo) return false;
+        if (warrantyF !== "all" && !a.warrantyExpiry) return false;
         const d = warrantyDaysLeft(a.warrantyExpiry);
         if (warrantyF === "active" && d <= 60) return false;
         if (warrantyF === "expiring" && (d < 0 || d > 60)) return false;
@@ -67,7 +71,7 @@ function Inventory() {
       render: (a) => (
         <div>
           <p className="text-sm font-medium">
-            {a.brand} {a.model}
+            {a.brand === "—" ? a.model : `${a.brand} ${a.model}`}
           </p>
           <p className="text-xs text-muted-foreground">{a.serial}</p>
         </div>
@@ -77,6 +81,7 @@ function Inventory() {
       key: "warranty",
       header: "Warranty",
       render: (a) => {
+        if (!a.warrantyExpiry) return <span className="text-sm text-muted-foreground">—</span>;
         const d = warrantyDaysLeft(a.warrantyExpiry);
         return (
           <span
@@ -103,14 +108,16 @@ function Inventory() {
       header: "Condition",
       render: (a) => (
         <span className="text-xs uppercase tracking-wider text-muted-foreground">
-          {a.condition}
+          {a.apiMissing?.condition ? "—" : a.condition}
         </span>
       ),
     },
     {
       key: "cost",
       header: "Cost",
-      render: (a) => <span className="text-sm font-medium">{fmtMoney(a.cost)}</span>,
+      render: (a) => (
+        <span className="text-sm font-medium">{a.apiMissing?.cost ? "—" : fmtMoney(a.cost)}</span>
+      ),
     },
   ];
 
@@ -185,6 +192,16 @@ function Inventory() {
     link.click();
     URL.revokeObjectURL(url);
   };
+
+  if (!canManageAssets) {
+    return (
+      <DataCard title="Asset inventory">
+        <p className="text-sm text-muted-foreground">
+          Asset Admin access is required to view inventory and exports.
+        </p>
+      </DataCard>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -286,13 +303,17 @@ function Filter({
   onChange: (v: string) => void;
   options: { v: string; l: string }[];
 }) {
+  const controlId = `asset-filter-${label.toLowerCase().replaceAll(" ", "-")}`;
   return (
     <div className="space-y-1">
-      <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+      <label
+        htmlFor={controlId}
+        className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
+      >
         {label}
       </label>
       <Select value={value} onValueChange={onChange}>
-        <SelectTrigger className="h-9 w-44">
+        <SelectTrigger id={controlId} className="h-9 w-44">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

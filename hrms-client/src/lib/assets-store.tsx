@@ -2,7 +2,7 @@ import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { assetsApi, mapApiAssetRequests, mapApiAssets } from "@/domains/assets";
 import { useAuth } from "@/lib/auth";
-import { isUuid, pageItems, useApiRouteEnabled, withApiFallback } from "@/shared/api";
+import { ApiError, isUuid, pageItems, useApiRouteEnabled } from "@/shared/api";
 import { queryKeys, queryTimings } from "@/shared/query";
 import {
   ASSETS as SEED_ASSETS,
@@ -20,11 +20,17 @@ import {
 const A_KEY = "hawkaii_assets_v1";
 const R_KEY = "hawkaii_asset_requests_v1";
 
+function authorizationDenied(error: unknown): error is ApiError {
+  return error instanceof ApiError && (error.status === 401 || error.status === 403);
+}
+
 interface Ctx {
   assets: Asset[];
   requests: AssetRequest[];
   loading: boolean;
   error: Error | null;
+  requestError: Error | null;
+  requestsLoading: boolean;
   isApiBacked: boolean;
   addAsset: (a: Asset, actor?: string) => Promise<void>;
   updateAsset: (id: string, patch: Partial<Asset>, actor?: string, action?: string) => void;
@@ -115,43 +121,34 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
   };
 
   const apiAssetsQuery = useQuery({
-    queryKey: queryKeys.list("assets", "inventory", { page_size: 100 }),
-    queryFn: () =>
-      withApiFallback(
-        async () => {
-          const response = await assetsApi.list({ page_size: 100 });
-          return mapApiAssets(pageItems(response), assets);
-        },
-        () => assets,
-      ),
-    enabled: apiEnabled && canUseAssetInventory,
+    queryKey: queryKeys.list("assets", canUseAssetInventory ? "inventory" : "my", {
+      page_size: 100,
+      actor_id: user?.id,
+    }),
+    queryFn: async () => {
+      const response = canUseAssetInventory
+        ? await assetsApi.list({ page_size: 100 })
+        : await assetsApi.myAssets({ page_size: 100 });
+      // API-backed identities never inherit mock/localStorage inventory or
+      // details after a denial, outage, or account switch.
+      return mapApiAssets(pageItems(response), []);
+    },
+    enabled: apiEnabled,
     staleTime: queryTimings.listStaleMs,
   });
 
   const apiMyRequestsQuery = useQuery({
-    queryKey: queryKeys.list("assets", "requests-my", { page_size: 100 }),
-    queryFn: () =>
-      withApiFallback(
-        async () => {
-          const response = await assetsApi.myRequests({ page_size: 100 });
-          return mapApiAssetRequests(pageItems(response));
-        },
-        () => requests.filter((request) => request.raisedBy === user?.name),
-      ),
+    queryKey: queryKeys.list("assets", "requests-my", { page_size: 100, actor_id: user?.id }),
+    queryFn: async () =>
+      mapApiAssetRequests(pageItems(await assetsApi.myRequests({ page_size: 100 }))),
     enabled: apiEnabled,
     staleTime: queryTimings.listStaleMs,
   });
 
   const apiQueueRequestsQuery = useQuery({
-    queryKey: queryKeys.list("assets", "requests-queue", { page_size: 100 }),
-    queryFn: () =>
-      withApiFallback(
-        async () => {
-          const response = await assetsApi.requestQueue({ page_size: 100 });
-          return mapApiAssetRequests(pageItems(response));
-        },
-        () => requests,
-      ),
+    queryKey: queryKeys.list("assets", "requests-queue", { page_size: 100, actor_id: user?.id }),
+    queryFn: async () =>
+      mapApiAssetRequests(pageItems(await assetsApi.requestQueue({ page_size: 100 }))),
     enabled: apiEnabled && isAssetAdmin,
     staleTime: queryTimings.listStaleMs,
   });
@@ -260,16 +257,19 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: queryKeys.domain("assets") }),
   });
 
-  const hasApiResult = canUseAssetInventory ? apiAssetsQuery.data !== undefined : true;
+  const assetDenied = authorizationDenied(apiAssetsQuery.error);
+  const queueFailed = isAssetAdmin && apiQueueRequestsQuery.error instanceof Error;
+  const requestFailed = apiMyRequestsQuery.error instanceof Error || queueFailed;
+  const hasApiResult = apiAssetsQuery.data !== undefined && !assetDenied;
   const visibleAssets = React.useMemo(() => {
     if (!apiEnabled) return assets;
-    if (!canUseAssetInventory) return [];
-    if (!hasApiResult) return [];
+    if (hasApiResult === false) return [];
     return apiAssetsQuery.data ?? [];
-  }, [apiAssetsQuery.data, apiEnabled, assets, canUseAssetInventory, hasApiResult]);
+  }, [apiAssetsQuery.data, apiEnabled, assets, hasApiResult]);
   const hasRequestApiResult =
-    apiMyRequestsQuery.data !== undefined ||
-    (isAssetAdmin && apiQueueRequestsQuery.data !== undefined);
+    !requestFailed &&
+    apiMyRequestsQuery.data !== undefined &&
+    (!isAssetAdmin || apiQueueRequestsQuery.data !== undefined);
   const visibleRequests = React.useMemo(() => {
     if (!apiEnabled) return requests;
     if (!hasRequestApiResult) return [];
@@ -286,17 +286,21 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
     requests,
   ]);
   const apiError =
-    apiEnabled && canUseAssetInventory && !hasApiResult && apiAssetsQuery.error instanceof Error
+    apiEnabled && (assetDenied || !hasApiResult) && apiAssetsQuery.error instanceof Error
       ? apiAssetsQuery.error
       : null;
-  const requestError =
-    apiEnabled && !hasRequestApiResult && apiMyRequestsQuery.error instanceof Error
-      ? apiMyRequestsQuery.error
-      : null;
-  const loading =
-    apiEnabled &&
-    ((canUseAssetInventory && !hasApiResult && apiAssetsQuery.isLoading) ||
-      (!hasRequestApiResult && (apiMyRequestsQuery.isLoading || apiQueueRequestsQuery.isLoading)));
+  const ownError = apiMyRequestsQuery.error;
+  const ownRequestFailed = apiEnabled && !hasRequestApiResult && ownError instanceof Error;
+  const ownRequestError = ownRequestFailed ? ownError : null;
+  const queueError = apiQueueRequestsQuery.error;
+  const queueRequestFailed = apiEnabled && isAssetAdmin && queueError instanceof Error;
+  const queueRequestError = queueRequestFailed ? queueError : null;
+  const requestError = ownRequestError ?? queueRequestError;
+  const anyRequestLoading = Boolean(
+    apiMyRequestsQuery.isLoading || (isAssetAdmin && apiQueueRequestsQuery.isLoading),
+  );
+  const requestsLoading = apiEnabled && !hasRequestApiResult && anyRequestLoading;
+  const loading = apiEnabled && ((!hasApiResult && apiAssetsQuery.isLoading) || requestsLoading);
 
   const addAsset: Ctx["addAsset"] = async (a, actor = "Marco Rossi") => {
     const next = { ...a, audit: [audit(actor, "Asset registered"), ...(a.audit ?? [])] };
@@ -520,7 +524,9 @@ export function AssetsProvider({ children }: { children: React.ReactNode }) {
         requests: visibleRequests,
         loading,
         error: apiError ?? requestError,
-        isApiBacked: apiEnabled && hasApiResult,
+        requestError,
+        requestsLoading,
+        isApiBacked: apiEnabled,
         addAsset,
         updateAsset,
         deleteAsset,
