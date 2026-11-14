@@ -16,10 +16,18 @@ export class AssetRepository {
 
   create(input: { asset_code: string; asset_type: string; name: string; serial_no?: string }): AssetRecord {
     const now = nowIso();
+    const qrHash = createQrHash(input.asset_code);
+    if (this.store.assets.some((asset) =>
+      !asset.deleted_at && (asset.asset_code === input.asset_code || asset.qr_hash === qrHash)
+    )) {
+      throw conflict("An asset with the same code or QR identity already exists.", {
+        reason: "duplicate_asset_identity",
+      });
+    }
     const asset: AssetRecord = {
       id: randomUUID(),
       asset_code: input.asset_code,
-      qr_hash: createQrHash(input.asset_code),
+      qr_hash: qrHash,
       asset_type: input.asset_type,
       name: input.name,
       serial_no: input.serial_no ?? null,
@@ -72,7 +80,12 @@ export class AssetRepository {
 
   createRequest(input: Omit<AssetRequestRecord, "id" | "request_code" | "version" | "created_at" | "updated_at" | "deleted_at">): AssetRequestRecord {
     const now = nowIso();
-    const nextNumber = this.store.assetRequests.length + 401;
+    // Asset commands load the current SQL snapshot under the DB command lock.
+    // Count-based allocation reuses codes after imports or deleted/gapped rows.
+    const nextNumber = Math.max(400, ...this.store.assetRequests.map((request) => {
+      const match = /^REQ-(\d+)$/u.exec(request.request_code);
+      return match ? Number(match[1]) : 400;
+    })) + 1;
     const request: AssetRequestRecord = {
       id: randomUUID(),
       request_code: `REQ-${nextNumber}`,

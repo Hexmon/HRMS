@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { isDeepStrictEqual } from "node:util";
 import { randomUUID } from "node:crypto";
 import { Pool, type PoolClient } from "pg";
 import { ValkeySessionStore } from "#auth";
@@ -54,6 +55,7 @@ import type {
 } from "#shared";
 import {
   type AssetAssignmentRecord,
+  type AssetCommandInput,
   type AssetStateEventRecord,
   type AdminMasterDataItemRecord,
   type AuthPersistenceFlushOptions,
@@ -70,6 +72,7 @@ import {
   type LicenseEntitlement,
   type NotificationRecord,
   type PersistenceDomain,
+  type PublicAssetScan,
   type UserSessionPreferenceRecord,
   type WorkSegment,
   type WorkflowDefinitionRecord,
@@ -112,6 +115,69 @@ function shouldFlushId(
   filtered: boolean,
 ): boolean {
   return filtered ? Boolean(filter?.has(id)) : true;
+}
+
+const assetCollections = [
+  "assets", "assetAssignments", "assetStateEvents", "assetRequests",
+  "assetAcknowledgements", "assetMaintenanceRecords", "assetVendors",
+  "assetRecoveryTickets", "licenseEntitlements", "licenseActivations",
+  "compromisedKeys",
+] as const;
+
+type AssetCollection = (typeof assetCollections)[number];
+
+function assetMutationStore(before: DataStore, actor: AuthUser): DataStore {
+  const staged = { ...before, outbox: [] as OutboxEvent[], nextOutboxId: 1 };
+  for (const collection of assetCollections) {
+    // The service/repository layer mutates objects in place. Keep the SQL
+    // snapshot and the process-wide hydrated store untouched until commit.
+    (staged as unknown as Record<AssetCollection, unknown>)[collection] = structuredClone(before[collection]);
+  }
+  staged.users = before.users.map((user) => user.id === actor.id ? { ...user, roles: actor.roles, employment_status: actor.employment_status } : user);
+  return staged;
+}
+
+function assetDeltaStore(before: DataStore, after: DataStore): DataStore {
+  const changed = { ...after };
+  for (const collection of assetCollections) {
+    const oldRows = before[collection] as Array<{ id: string }>;
+    const newRows = after[collection] as Array<{ id: string }>;
+    const oldById = new Map(oldRows.map((row) => [row.id, row]));
+    if (oldRows.some((row) => !newRows.some((candidate) => candidate.id === row.id))) {
+      throw new Error(`Asset command removed a row from ${collection} without a durable deletion.`);
+    }
+    (changed as unknown as Record<AssetCollection, unknown>)[collection] = newRows.filter(
+      (row) => !isDeepStrictEqual(oldById.get(row.id), row),
+    );
+  }
+  return changed;
+}
+
+function isSqlLockTimeout(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "code" in error && error.code === "55P03");
+}
+
+function isAssetIdentityConflict(error: unknown): boolean {
+  if (!error || typeof error !== "object" || !("code" in error) || error.code !== "23505") return false;
+  const constraint = "constraint" in error && typeof error.constraint === "string" ? error.constraint : "";
+  return [
+    "assets_asset_code_key",
+    "assets_qr_hash_key",
+    "assets_asset_code_uq",
+    "assets_qr_hash_uq",
+  ].includes(constraint);
+}
+
+async function rollbackAssetTransaction(client: PoolClient): Promise<boolean> {
+  try {
+    await client.query("ROLLBACK");
+    return false;
+  } catch {
+    // A connection whose rollback failed has unknown transaction/session
+    // state. Returning it to the pool could leak locks, snapshots, or the
+    // transaction-local asset writer marker into a later request.
+    return true;
+  }
 }
 
 export interface PostgresObjectStorageOptions {
@@ -188,6 +254,7 @@ const resetTables = [
   "timesheets.timesheet_submissions",
   "timesheets.workflow_definitions",
   "timesheets.work_segments",
+  "assets.asset_command_results",
   "assets.compromised_keys",
   "assets.license_activations",
   "assets.license_entitlements",
@@ -197,6 +264,7 @@ const resetTables = [
   "assets.asset_recovery_tickets",
   "assets.asset_state_events",
   "assets.asset_assignments",
+  "assets.software_products",
   "assets.software_vendors",
   "assets.assets",
   "documents.doc_access_logs",
@@ -397,6 +465,7 @@ function migrationSql(): string {
 export async function resetPostgresDatabase(
   databaseUrl: string,
 ): Promise<void> {
+  assertDisposableResetTarget(databaseUrl);
   const pool = new Pool({ connectionString: databaseUrl });
   const client = await pool.connect();
   let schemaLockAcquired = false;
@@ -422,6 +491,24 @@ export async function resetPostgresDatabase(
     }
     client.release();
     await pool.end();
+  }
+}
+
+export function assertDisposableResetTarget(databaseUrl: string): void {
+  let url: URL;
+  try {
+    url = new URL(databaseUrl);
+  } catch {
+    throw new Error("Refusing database reset outside a local disposable test database.");
+  }
+  const database = decodeURIComponent(url.pathname.slice(1));
+  if (
+    !["postgres:", "postgresql:"].includes(url.protocol) ||
+    !["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) ||
+    url.search || url.hash || database.includes("/") ||
+    !/(?:^|[_-])test(?:$|[_-])/i.test(database)
+  ) {
+    throw new Error("Refusing database reset outside a local disposable test database.");
   }
 }
 
@@ -459,6 +546,7 @@ export async function createPostgresDataStore(
     }
     store.persistence = new PostgresPersistence(pool, store);
     await store.persistence.flush();
+    await (store.persistence as PostgresPersistence).flushInitialAssetSeed();
     await store.persistence.reload();
   }
 
@@ -470,6 +558,285 @@ class PostgresPersistence {
     private readonly pool: Pool,
     private readonly store: DataStore,
   ) {}
+
+  async flushInitialAssetSeed(): Promise<void> {
+    const client = await this.pool.connect();
+    let destroyClient = false;
+    try {
+      await client.query("BEGIN");
+      await client.query("SELECT pg_advisory_xact_lock(hashtext(current_database()), hashtext('hrms_asset_command'))");
+      const existing = await client.query<{ populated: boolean }>(`
+        SELECT EXISTS (
+          SELECT 1 FROM assets.assets UNION ALL
+          SELECT 1 FROM assets.asset_assignments UNION ALL
+          SELECT 1 FROM assets.asset_state_events UNION ALL
+          SELECT 1 FROM assets.asset_requests UNION ALL
+          SELECT 1 FROM assets.asset_acknowledgements UNION ALL
+          SELECT 1 FROM assets.asset_maintenance_records UNION ALL
+          SELECT 1 FROM assets.software_vendors UNION ALL
+          SELECT 1 FROM assets.software_products UNION ALL
+          SELECT 1 FROM assets.asset_recovery_tickets UNION ALL
+          SELECT 1 FROM assets.license_entitlements UNION ALL
+          SELECT 1 FROM assets.license_activations UNION ALL
+          SELECT 1 FROM assets.compromised_keys UNION ALL
+          SELECT 1 FROM assets.asset_command_results
+        ) AS populated`);
+      if (existing.rows[0]?.populated) {
+        throw new Error("Initial asset seed requires empty asset tables.");
+      }
+      await client.query("SELECT set_config('hrms.asset_writer_v2', 'on', true)");
+      await this.flushAssets(client, this.store);
+      await client.query("COMMIT");
+    } catch (error) {
+      destroyClient = await rollbackAssetTransaction(client);
+      throw error;
+    } finally {
+      client.release(destroyClient);
+    }
+  }
+
+  async assetReadStore(baseStore?: DataStore): Promise<DataStore> {
+    const sourceStore = baseStore ?? this.store;
+    const client = await this.pool.connect();
+    let destroyClient = false;
+    try {
+      // Every asset collection in this request must come from one committed
+      // snapshot. A concurrent command may commit between individual SELECTs.
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const snapshot = await this.loadAssetSnapshot(client, sourceStore);
+      await client.query("COMMIT");
+      return snapshot;
+    } catch (error) {
+      destroyClient = await rollbackAssetTransaction(client);
+      throw error;
+    } finally {
+      client.release(destroyClient);
+    }
+  }
+
+  async assetPublicScan(qrHash: string): Promise<PublicAssetScan | null> {
+    const result = await this.pool.query<{
+      qr_hash: string;
+      asset_code: string;
+      asset_type: string;
+      name: string;
+      status: string;
+      current_assigned_user_id: UUID | null;
+    }>(
+      `SELECT qr_hash, asset_code, asset_type, name, status, current_assigned_user_id
+         FROM assets.assets
+        WHERE qr_hash = $1
+          AND deleted_at IS NULL
+        LIMIT 1`,
+      [qrHash],
+    );
+    const asset = result.rows[0];
+    if (!asset) return null;
+    return {
+      qr_hash: asset.qr_hash,
+      asset_code: asset.asset_code,
+      asset_type: asset.asset_type,
+      name: asset.name,
+      status: asset.status,
+      assigned: asset.current_assigned_user_id ? "assigned" : "unassigned",
+    };
+  }
+
+  async assetAssignees(actorUserId: UUID, companyId: UUID, search = ""): Promise<{ items: Array<{ id: UUID; full_name: string }>; has_more: boolean }> {
+    const client = await this.pool.connect();
+    let destroyClient = false;
+    const literalSearch = search.replace(/[\\%_]/gu, (character) => `\\${character}`);
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const actor = await this.loadCurrentAssetActor(client, { actorUserId, companyId, actionKey: "assets.assignees" }, false);
+      if (!actor.roles.includes(Roles.AssetManager) && !actor.roles.includes(Roles.Admin)) {
+        throw forbidden("Asset Manager role required");
+      }
+      const rows = await client.query<{ id: UUID; full_name: string }>(
+        `SELECT u.id, u.full_name FROM core.users u
+         JOIN platform.user_session_preferences p ON p.user_id = u.id
+         WHERE p.company_id = $1 AND u.deleted_at IS NULL AND u.employment_status = 'active'
+           AND ($2 = '' OR u.full_name ILIKE '%' || $2 || '%' ESCAPE '\\')
+         ORDER BY u.full_name, u.id LIMIT 51`, [companyId, literalSearch],
+      );
+      await client.query("COMMIT");
+      return { items: rows.rows.slice(0, 50), has_more: rows.rows.length > 50 };
+    } catch (error) {
+      destroyClient = await rollbackAssetTransaction(client);
+      throw error;
+    } finally { client.release(destroyClient); }
+  }
+
+  async assetCommand<T>(
+    input: AssetCommandInput,
+    authorize: (store: DataStore, actor: AuthUser, replayBody?: T) => void,
+    execute: (store: DataStore, actor: AuthUser) => T,
+  ): Promise<T> {
+    const client = await this.pool.connect();
+    let destroyClient = false;
+    try {
+      await client.query("BEGIN");
+      await client.query("SET LOCAL lock_timeout = '5s'");
+      await client.query(
+        "SELECT pg_advisory_xact_lock(hashtext(current_database()), hashtext('hrms_asset_command'))",
+      );
+      // The migration fence checks a transaction-local marker. No pooled
+      // connection can carry this authority into a later request.
+      await client.query("SELECT set_config('hrms.asset_writer_v2', 'on', true)");
+      const actor = await this.loadCurrentAssetActor(client, input, true);
+      const before = await this.loadAssetSnapshot(client);
+
+      const previous = await client.query<{
+        request_hash: string;
+        response_body: T;
+      }>(
+        `SELECT request_hash, response_body
+         FROM assets.asset_command_results
+         WHERE company_id = $1 AND actor_user_id = $2
+           AND action_key = $3 AND idempotency_key = $4`,
+        [input.companyId, input.actorUserId, input.actionKey, input.idempotencyKey],
+      );
+      // Authorize against current SQL actor state and resource visibility
+      // before either replaying or revealing a key/hash conflict.
+      authorize(before, actor, previous.rows[0]?.response_body);
+      if (previous.rows[0]) {
+        if (previous.rows[0].request_hash !== input.requestHash) {
+          throw conflict("Idempotency-Key was already used for a different asset command.");
+        }
+        await client.query("COMMIT");
+        return previous.rows[0].response_body;
+      }
+
+      // A committed assignment remains replayable if its assignee later
+      // leaves. Eligibility is a transition precondition, not replay policy.
+      if (input.assigneeUserId) {
+        const target = await client.query(
+          `SELECT 1 FROM core.users u
+           JOIN platform.user_session_preferences p ON p.user_id = u.id
+           WHERE u.id = $1 AND p.company_id = $2
+             AND u.deleted_at IS NULL AND u.employment_status = 'active'
+           FOR SHARE OF u, p`,
+          [input.assigneeUserId, input.companyId],
+        );
+        if (target.rowCount !== 1) throw forbidden("Assignee is not an active employee in the actor's company.");
+      }
+
+      const staged = assetMutationStore(before, actor);
+      const result = execute(staged, actor);
+      const changed = assetDeltaStore(before, staged);
+      await this.flushAssets(client, changed);
+      await this.flushOutbox(client, undefined, staged);
+      const replayBody = JSON.parse(JSON.stringify(result)) as T;
+      await client.query(
+        `INSERT INTO assets.asset_command_results (
+           company_id, actor_user_id, action_key, idempotency_key,
+           request_hash, response_status, response_body
+         ) VALUES ($1, $2, $3, $4, $5, 200, $6::jsonb)`,
+        [
+          input.companyId,
+          input.actorUserId,
+          input.actionKey,
+          input.idempotencyKey,
+          input.requestHash,
+          JSON.stringify(replayBody),
+        ],
+      );
+      await client.query("COMMIT");
+      return result;
+    } catch (error) {
+      destroyClient = await rollbackAssetTransaction(client);
+      if (isSqlLockTimeout(error)) {
+        throw conflict("Asset command is busy; retry with the same Idempotency-Key.");
+      }
+      if (isAssetIdentityConflict(error)) {
+        throw conflict("An asset with the same code or QR identity already exists.", {
+          reason: "duplicate_asset_identity",
+        });
+      }
+      throw error;
+    } finally {
+      client.release(destroyClient);
+    }
+  }
+
+  private async loadCurrentAssetActor(
+    client: PoolClient,
+    input: Pick<AssetCommandInput, "actorUserId" | "companyId" | "actionKey">,
+    lockAuthority: boolean,
+  ): Promise<AuthUser> {
+    const cached = this.store.users.find((user) => user.id === input.actorUserId);
+    if (!cached) throw unauthorized("User no longer exists");
+    const userLock = lockAuthority ? " FOR SHARE OF u" : "";
+    const rowLock = lockAuthority ? " FOR SHARE" : "";
+    const roleLock = lockAuthority ? " FOR SHARE OF ur, r" : "";
+    const actorRows = await client.query<{
+      employment_status: AuthUser["employment_status"];
+      deleted_at: Date | null;
+    }>(
+      `SELECT u.employment_status, u.deleted_at
+       FROM core.users u
+       WHERE u.id = $1${userLock}`,
+      [input.actorUserId],
+    );
+    const current = actorRows.rows[0];
+    if (!current || current.deleted_at || current.employment_status !== EmploymentStatuses.Active) {
+      throw unauthorized("User account is inactive or blocked");
+    }
+    const roleRows = await client.query<{ role_key: RoleKey }>(
+      `SELECT ur.role_key
+       FROM core.user_roles ur
+       JOIN core.roles r ON r.role_key = ur.role_key
+       WHERE ur.user_id = $1
+         AND ur.status = 'active' AND ur.deleted_at IS NULL
+         AND ur.effective_from <= current_date
+         AND (ur.effective_to IS NULL OR ur.effective_to >= current_date)
+         AND r.status = 'active' AND r.deleted_at IS NULL${roleLock}`,
+      [input.actorUserId],
+    );
+    const roles = Array.from(new Set(roleRows.rows.map((row) => row.role_key)));
+    const company = await client.query<{ status: string }>(
+      `SELECT status
+       FROM platform.company_profiles
+       WHERE id = $1${rowLock}`,
+      [input.companyId],
+    );
+    if (company.rows[0]?.status !== "active") {
+      throw companyContextRequired({ user_id: input.actorUserId, company_id: input.companyId, operation: input.actionKey });
+    }
+    // Keep the authority lock order compatible with full/platform persistence:
+    // user -> roles -> company -> preference. flushPlatform locks the company
+    // before the preference, so reversing those two locks creates a deadlock.
+    const preference = await client.query<{ company_id: UUID | null; active_role: RoleKey }>(
+      `SELECT company_id, active_role
+       FROM platform.user_session_preferences
+       WHERE user_id = $1${rowLock}`,
+      [input.actorUserId],
+    );
+    if (preference.rows[0]?.company_id !== input.companyId) {
+      throw companyContextRequired({ user_id: input.actorUserId, operation: input.actionKey });
+    }
+    if (!roles.includes(preference.rows[0].active_role)) {
+      throw forbidden("Selected role is not assigned to this user.");
+    }
+    return { ...cached, roles, employment_status: current.employment_status };
+  }
+
+  private async loadAssetSnapshot(client: PoolClient, baseStore: DataStore = this.store): Promise<DataStore> {
+    return {
+      ...baseStore,
+      assets: await this.loadAssets(client),
+      assetAssignments: await this.loadAssetAssignments(client),
+      assetStateEvents: await this.loadAssetStateEvents(client),
+      assetRequests: await this.loadAssetRequests(client),
+      assetAcknowledgements: await this.loadAssetAcknowledgements(client),
+      assetMaintenanceRecords: await this.loadAssetMaintenanceRecords(client),
+      assetVendors: await this.loadAssetVendors(client),
+      assetRecoveryTickets: await this.loadAssetRecoveryTickets(client),
+      licenseEntitlements: await this.loadLicenseEntitlements(client),
+      licenseActivations: await this.loadLicenseActivations(client),
+      compromisedKeys: await this.loadCompromisedKeys(client),
+    };
+  }
 
   private async holidayCompanyForActor(client: PoolClient, actorUserId: UUID, forWrite: boolean): Promise<UUID> {
     const lock = forWrite ? " FOR SHARE" : "";
@@ -830,13 +1197,16 @@ class PostgresPersistence {
 
   async flush(): Promise<void> {
     const client = await this.pool.connect();
+    let destroyClient = false;
     try {
       await client.query("BEGIN");
       await this.flushCore(client);
       await this.flushPlatform(client);
       await this.flushExpenses(client);
       await this.flushDocuments(client);
-      await this.flushAssets(client);
+      if (!this.store.persistence?.assetCommand) {
+        throw new Error("Asset command persistence is required before a full database flush.");
+      }
       await this.flushTimesheets(client);
       await this.flushProjects(client);
       await this.flushHelpdesk(client);
@@ -845,10 +1215,10 @@ class PostgresPersistence {
       await this.flushEms(client);
       await client.query("COMMIT");
     } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
+      destroyClient = await rollbackAssetTransaction(client);
       throw error;
     } finally {
-      client.release();
+      client.release(destroyClient);
     }
   }
 
@@ -942,9 +1312,7 @@ class PostgresPersistence {
           );
           break;
         case "assets":
-          await this.flushAssets(client);
-          await this.flushOutbox(client, aggregateIds);
-          break;
+          throw new Error("Asset writes require an assetCommand transaction.");
         case "timesheets":
           await this.flushTimesheets(client);
           await this.flushOutbox(client, aggregateIds);
@@ -2052,6 +2420,7 @@ class PostgresPersistence {
       id: row.id,
       employee_user_id: row.employee_user_id,
       asset_id: row.asset_id,
+      assignment_id: row.assignment_id,
       status: row.status,
       settlement_status: row.settlement_status,
       settlement_amount: asMoney(row.settlement_amount),
@@ -2836,6 +3205,10 @@ class PostgresPersistence {
 
   private async flushCore(client: PoolClient): Promise<void> {
     await this.flushCoreMasterData(client);
+    // Keep authority writers on one lock order: user -> role definitions ->
+    // user-role assignments. Asset commands use the same order, avoiding a
+    // user/role deadlock with the full persistence fallback.
+    await this.flushCoreUsers(client);
     for (const role of this.store.rbacRoles) {
       await client.query(
         `INSERT INTO core.roles (id, role_key, name, description, status, builtin, deleted_at, version)
@@ -2871,7 +3244,7 @@ class PostgresPersistence {
         ],
       );
     }
-    await this.flushCoreUsersAndCredentials(client);
+    await this.flushCoreUserRolesAndCredentials(client);
   }
 
   private async flushCoreMasterData(client: PoolClient): Promise<void> {
@@ -2938,6 +3311,14 @@ class PostgresPersistence {
     client: PoolClient,
     userIds?: ReadonlySet<string>,
   ): Promise<void> {
+    await this.flushCoreUsers(client, userIds);
+    await this.flushCoreUserRolesAndCredentials(client, userIds);
+  }
+
+  private async flushCoreUsers(
+    client: PoolClient,
+    userIds?: ReadonlySet<string>,
+  ): Promise<void> {
     for (const user of this.store.users) {
       if (userIds && !userIds.has(user.id)) continue;
       await client.query(
@@ -2980,6 +3361,15 @@ class PostgresPersistence {
           user.version,
         ],
       );
+    }
+  }
+
+  private async flushCoreUserRolesAndCredentials(
+    client: PoolClient,
+    userIds?: ReadonlySet<string>,
+  ): Promise<void> {
+    for (const user of this.store.users) {
+      if (userIds && !userIds.has(user.id)) continue;
       await client.query("DELETE FROM core.user_roles WHERE user_id = $1", [
         user.id,
       ]);
@@ -3584,8 +3974,10 @@ class PostgresPersistence {
   private async flushOutbox(
     client: PoolClient,
     aggregateIds?: ReadonlySet<string>,
+    source?: DataStore,
   ): Promise<void> {
-    for (const event of this.store.outbox) {
+    const sourceStore = source ?? this.store;
+    for (const event of sourceStore.outbox) {
       if (aggregateIds && !aggregateIds.has(event.aggregate_id)) continue;
       const inserted = await client.query<{ id: string }>(
         `INSERT INTO platform.outbox_events (
@@ -3597,7 +3989,7 @@ class PostgresPersistence {
         -- The API's hydrated outbox snapshot can be older than a separately
         -- running publisher. Only insert new events here; delivery state is
         -- owned by the publisher's direct PostgreSQL transaction.
-        ON CONFLICT (event_id) DO NOTHING
+        ON CONFLICT DO NOTHING
         RETURNING id`,
         [
           event.event_id,
@@ -3615,17 +4007,21 @@ class PostgresPersistence {
           event.last_error,
         ],
       );
-      const persistedId = inserted.rows[0]?.id ?? (
-        await client.query<{ id: string }>(
-          "SELECT id FROM platform.outbox_events WHERE event_id = $1",
-          [event.event_id],
+      const existing = inserted.rows[0] ? null : (
+        await client.query<{ id: string; aggregate_type: string; aggregate_id: string; event_type: string; payload: unknown }>(
+          "SELECT id, aggregate_type, aggregate_id, event_type, payload FROM platform.outbox_events WHERE event_id = $1 OR idempotency_key = $2",
+          [event.event_id, event.idempotency_key],
         )
-      ).rows[0]?.id;
+      ).rows[0];
+      if (existing && (existing.aggregate_type !== event.aggregate_type || existing.aggregate_id !== event.aggregate_id || existing.event_type !== event.event_type || !isDeepStrictEqual(existing.payload, event.payload))) {
+        throw conflict("Outbox idempotency key was already used for a different event.");
+      }
+      const persistedId = inserted.rows[0]?.id ?? existing?.id;
       if (!persistedId) {
         throw new Error("Outbox event was not persisted.");
       }
       event.id = Number(persistedId);
-      this.store.nextOutboxId = Math.max(this.store.nextOutboxId, event.id + 1);
+      sourceStore.nextOutboxId = Math.max(sourceStore.nextOutboxId, event.id + 1);
     }
   }
 
@@ -3921,8 +4317,8 @@ class PostgresPersistence {
     }
   }
 
-  private async flushAssets(client: PoolClient): Promise<void> {
-    for (const asset of this.store.assets) {
+  private async flushAssets(client: PoolClient, source: DataStore): Promise<void> {
+    for (const asset of source.assets) {
       await client.query(
         `INSERT INTO assets.assets (
           id, asset_code, qr_hash, asset_type, name, serial_no, status,
@@ -3952,7 +4348,7 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const assignment of this.store.assetAssignments) {
+    for (const assignment of source.assetAssignments) {
       await client.query(
         `INSERT INTO assets.asset_assignments (
           id, asset_id, assigned_to_user_id, assigned_by_user_id, assigned_at, returned_at,
@@ -3974,7 +4370,7 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const event of this.store.assetStateEvents) {
+    for (const event of source.assetStateEvents) {
       await client.query(
         `INSERT INTO assets.asset_state_events (id, asset_id, actor_user_id, event_type, payload, created_at)
          VALUES ($1, $2, $3, $4, $5::jsonb, $6)
@@ -3989,7 +4385,7 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const request of this.store.assetRequests) {
+    for (const request of source.assetRequests) {
       await client.query(
         `INSERT INTO assets.asset_requests (
           id, request_code, requester_user_id, request_type, asset_type, asset_id, reason, priority,
@@ -4025,7 +4421,7 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const acknowledgement of this.store.assetAcknowledgements) {
+    for (const acknowledgement of source.assetAcknowledgements) {
       await client.query(
         `INSERT INTO assets.asset_acknowledgements (
           id, asset_id, employee_user_id, assignment_id, acknowledgement_type, status,
@@ -4049,7 +4445,7 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const maintenance of this.store.assetMaintenanceRecords) {
+    for (const maintenance of source.assetMaintenanceRecords) {
       await client.query(
         `INSERT INTO assets.asset_maintenance_records (
           id, asset_id, maintenance_type, vendor_id, cost, started_on, completed_on,
@@ -4076,7 +4472,7 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const vendor of this.store.assetVendors) {
+    for (const vendor of source.assetVendors) {
       await client.query(
         `INSERT INTO assets.software_vendors (
           id, name, status, contact_email, phone, metadata, version, created_at, updated_at, deleted_at
@@ -4100,15 +4496,16 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const ticket of this.store.assetRecoveryTickets) {
+    for (const ticket of source.assetRecoveryTickets) {
       await client.query(
         `INSERT INTO assets.asset_recovery_tickets (
-          id, employee_user_id, asset_id, status, settlement_status, settlement_amount,
+          id, employee_user_id, asset_id, assignment_id, status, settlement_status, settlement_amount,
           settlement_remarks, settled_by_user_id, settled_at, version, created_at, updated_at
         )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          ON CONFLICT (id) DO UPDATE
-         SET status = EXCLUDED.status,
+         SET assignment_id = EXCLUDED.assignment_id,
+             status = EXCLUDED.status,
              settlement_status = EXCLUDED.settlement_status,
              settlement_amount = EXCLUDED.settlement_amount,
              settlement_remarks = EXCLUDED.settlement_remarks,
@@ -4120,6 +4517,7 @@ class PostgresPersistence {
           ticket.id,
           ticket.employee_user_id,
           ticket.asset_id,
+          ticket.assignment_id,
           ticket.status,
           ticket.settlement_status,
           ticket.settlement_amount,
@@ -4132,7 +4530,7 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const entitlement of this.store.licenseEntitlements) {
+    for (const entitlement of source.licenseEntitlements) {
       await client.query(
         `INSERT INTO assets.license_entitlements (id, product_id, seat_count, status, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $5, $6)
@@ -4148,7 +4546,7 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const activation of this.store.licenseActivations) {
+    for (const activation of source.licenseActivations) {
       await client.query(
         `INSERT INTO assets.license_activations (
           id, product_id, entitlement_id, hardware_fingerprint_hash, status, created_at, updated_at
@@ -4167,7 +4565,7 @@ class PostgresPersistence {
         ],
       );
     }
-    for (const key of this.store.compromisedKeys) {
+    for (const key of source.compromisedKeys) {
       await client.query(
         `INSERT INTO assets.compromised_keys (id, key_hash, status, created_at, updated_at)
          VALUES ($1, $2, $3, $4, $4)

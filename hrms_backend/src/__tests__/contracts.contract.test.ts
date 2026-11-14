@@ -79,6 +79,8 @@ const expectedOperations = [
   "GET /api/v1/admin/security-settings",
   "GET /api/v1/admin/workflows",
   "GET /api/v1/assets/",
+  "GET /api/v1/assets/assignees",
+  "GET /api/v1/assets/my",
   "GET /api/v1/assets/recovery-queue",
   "GET /api/v1/assets/requests/my",
   "GET /api/v1/assets/requests/queue",
@@ -1543,7 +1545,7 @@ describe("API contracts", () => {
     expect(rows.map((row) => row.key).sort()).toEqual(
       [...expectedOperations].sort(),
     );
-    expect(rows.length).toBe(281);
+    expect(rows.length).toBe(283);
 
     const attendancePunch = spec.paths?.["/api/v1/attendance/punches"]?.post as
       | Record<string, any>

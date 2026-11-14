@@ -169,7 +169,8 @@ export const coreRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const params = z.object({ id: z.uuid() }).parse(request.params);
-    const service = new CoreService(fastify.store);
+    const store = await fastify.store.persistence?.assetReadStore?.() ?? fastify.store;
+    const service = new CoreService(store);
     return service.getUser(request.actor, params.id);
   });
 

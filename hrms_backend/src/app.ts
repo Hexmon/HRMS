@@ -285,6 +285,11 @@ function persistenceFlushTarget(method: string, url: string, statusCode: number)
   }
   const path = url.split("?")[0] ?? url;
   const routeKey = `${method.toUpperCase()} ${path}`;
+  // Asset mutations own their SQL transaction and durable command result.
+  // This also keeps the read-only POST scan/validate routes out of flushDomain.
+  if (path === "/api/v1/assets" || path.startsWith("/api/v1/assets/")) {
+    return { kind: "none" };
+  }
   if (sessionOnlyMutationRoutes.has(routeKey)) {
     return { kind: "none" };
   }
