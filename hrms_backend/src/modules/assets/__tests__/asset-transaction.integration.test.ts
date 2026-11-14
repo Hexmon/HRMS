@@ -325,6 +325,7 @@ describe("asset transaction boundary", () => {
     if (!persistence) throw new Error("Expected PostgreSQL persistence");
     const originalConnect = pool.connect.bind(pool);
     let connectionNumber = 0;
+    let assetBackendPid: number | undefined;
     let fullFlushAtRole!: () => void;
     let continueFullFlush!: () => void;
     let assetAtUser!: () => void;
@@ -335,6 +336,10 @@ describe("asset transaction boundary", () => {
       const client = await originalConnect();
       connectionNumber += 1;
       const connection = connectionNumber;
+      if (connection === 2) {
+        const pid = await client.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
+        assetBackendPid = pid.rows[0]?.pid;
+      }
       const originalQuery = client.query.bind(client);
       client.query = (async (sql: unknown, ...args: unknown[]) => {
         if (connection === 1 && typeof sql === "string" && sql.includes("INSERT INTO core.roles")) {
@@ -358,11 +363,28 @@ describe("asset transaction boundary", () => {
       payload: { asset_code: "FULL-LOCK-ORDER-S25", asset_type: "Laptop", name: "Full flush lock order" },
     });
     await assetAtUserPromise;
-    continueFullFlush();
+    const observer = await originalConnect();
+    let waitAssertionError: unknown;
+    try {
+      await vi.waitFor(async () => {
+        const activity = await observer.query<{ wait_event_type: string | null; query: string }>(
+          "SELECT wait_event_type, query FROM pg_stat_activity WHERE pid = $1",
+          [assetBackendPid],
+        );
+        expect(activity.rows[0]?.wait_event_type).toBe("Lock");
+        expect(activity.rows[0]?.query).toContain("FROM core.users u");
+      }, { timeout: 2_000, interval: 25 });
+    } catch (error) {
+      waitAssertionError = error;
+    } finally {
+      observer.release();
+      continueFullFlush();
+    }
     try {
       await expect(fullFlush).resolves.toBeUndefined();
       const result = await command;
       expect(result.statusCode, result.body).toBe(200);
+      if (waitAssertionError) throw waitAssertionError;
     } finally {
       spy.mockRestore();
     }

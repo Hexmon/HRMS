@@ -44,7 +44,7 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/assets/$id")({ component: AssetDetail });
 
-function AssetDetail() {
+export function AssetDetail() {
   const { id } = useParams({ from: "/_app/assets/$id" });
   const { activeRole, user } = useAuth();
   const {
@@ -400,7 +400,7 @@ function Info({ k, v }: { k: string; v: React.ReactNode }) {
   );
 }
 
-function AssignDialog({
+export function AssignDialog({
   employees,
   search,
   onSearch,
@@ -475,8 +475,9 @@ function AssignDialog({
         </DialogHeader>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="sm:col-span-2 space-y-1">
-            <Label>Search employees</Label>
+            <Label htmlFor="asset-assignee-search">Search employees</Label>
             <Input
+              id="asset-assignee-search"
               value={search}
               onChange={(event) => onSearch(event.target.value)}
               placeholder="Search by name"
@@ -488,9 +489,9 @@ function AssignDialog({
             )}
           </div>
           <div className="sm:col-span-2 space-y-1">
-            <Label>Employee</Label>
+            <Label htmlFor="asset-assignee">Employee</Label>
             <Select value={selectedEmployeeId} onValueChange={setEid}>
-              <SelectTrigger>
+              <SelectTrigger id="asset-assignee">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -505,17 +506,27 @@ function AssignDialog({
           {showDetails && (
             <>
               <div className="space-y-1">
-                <Label>Assignment date</Label>
-                <Input type="date" value={on} onChange={(e) => setOn(e.target.value)} />
+                <Label htmlFor="asset-assignment-date">Assignment date</Label>
+                <Input
+                  id="asset-assignment-date"
+                  type="date"
+                  value={on}
+                  onChange={(e) => setOn(e.target.value)}
+                />
               </div>
               <div className="space-y-1">
-                <Label>Expected return</Label>
-                <Input type="date" value={ret} onChange={(e) => setRet(e.target.value)} />
+                <Label htmlFor="asset-expected-return">Expected return</Label>
+                <Input
+                  id="asset-expected-return"
+                  type="date"
+                  value={ret}
+                  onChange={(e) => setRet(e.target.value)}
+                />
               </div>
               <div className="space-y-1">
-                <Label>Condition at handover</Label>
+                <Label htmlFor="asset-handover-condition">Condition at handover</Label>
                 <Select value={cond} onValueChange={(v) => setCond(v as AssetCondition)}>
-                  <SelectTrigger>
+                  <SelectTrigger id="asset-handover-condition">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -528,8 +539,13 @@ function AssignDialog({
                 </Select>
               </div>
               <div className="sm:col-span-2 space-y-1">
-                <Label>Remarks</Label>
-                <Textarea rows={2} value={rem} onChange={(e) => setRem(e.target.value)} />
+                <Label htmlFor="asset-assignment-remarks">Remarks</Label>
+                <Textarea
+                  id="asset-assignment-remarks"
+                  rows={2}
+                  value={rem}
+                  onChange={(e) => setRem(e.target.value)}
+                />
               </div>
             </>
           )}
@@ -560,7 +576,7 @@ function AssignDialog({
   );
 }
 
-function ReturnDialog({
+export function ReturnDialog({
   onReturn,
   showDetails,
 }: {
@@ -596,13 +612,18 @@ function ReturnDialog({
         {showDetails && (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
-              <Label>Return date</Label>
-              <Input type="date" value={d} onChange={(e) => setD(e.target.value)} />
+              <Label htmlFor="asset-return-date">Return date</Label>
+              <Input
+                id="asset-return-date"
+                type="date"
+                value={d}
+                onChange={(e) => setD(e.target.value)}
+              />
             </div>
             <div className="space-y-1">
-              <Label>Condition</Label>
+              <Label htmlFor="asset-return-condition">Condition</Label>
               <Select value={c} onValueChange={(v) => setC(v as AssetCondition)}>
-                <SelectTrigger>
+                <SelectTrigger id="asset-return-condition">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -615,8 +636,13 @@ function ReturnDialog({
               </Select>
             </div>
             <div className="space-y-1 sm:col-span-2">
-              <Label>Recovery remarks</Label>
-              <Textarea rows={2} value={r} onChange={(e) => setR(e.target.value)} />
+              <Label htmlFor="asset-recovery-remarks">Recovery remarks</Label>
+              <Textarea
+                id="asset-recovery-remarks"
+                rows={2}
+                value={r}
+                onChange={(e) => setR(e.target.value)}
+              />
             </div>
           </div>
         )}
@@ -653,7 +679,7 @@ function ReturnDialog({
   );
 }
 
-function MaintenanceDialog({ onAdd }: { onAdd: (m: MaintenanceEntry) => void }) {
+export function MaintenanceDialog({ onAdd }: { onAdd: (m: MaintenanceEntry) => void }) {
   const [open, setOpen] = useState(false);
   const [type, setType] = useState<MaintenanceEntry["type"]>("service");
   const [vendor, setVendor] = useState("");
@@ -673,9 +699,9 @@ function MaintenanceDialog({ onAdd }: { onAdd: (m: MaintenanceEntry) => void }) 
         </DialogHeader>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="space-y-1">
-            <Label>Type</Label>
+            <Label htmlFor="asset-maintenance-type">Type</Label>
             <Select value={type} onValueChange={(v) => setType(v as MaintenanceEntry["type"])}>
-              <SelectTrigger>
+              <SelectTrigger id="asset-maintenance-type">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -688,20 +714,30 @@ function MaintenanceDialog({ onAdd }: { onAdd: (m: MaintenanceEntry) => void }) 
             </Select>
           </div>
           <div className="space-y-1">
-            <Label>Vendor</Label>
-            <Input value={vendor} onChange={(e) => setVendor(e.target.value)} />
+            <Label htmlFor="asset-maintenance-vendor">Vendor</Label>
+            <Input
+              id="asset-maintenance-vendor"
+              value={vendor}
+              onChange={(e) => setVendor(e.target.value)}
+            />
           </div>
           <div className="space-y-1 sm:col-span-2">
-            <Label>Cost (USD)</Label>
+            <Label htmlFor="asset-maintenance-cost">Cost (USD)</Label>
             <Input
+              id="asset-maintenance-cost"
               type="number"
               value={cost || ""}
               onChange={(e) => setCost(Number(e.target.value))}
             />
           </div>
           <div className="space-y-1 sm:col-span-2">
-            <Label>Notes</Label>
-            <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
+            <Label htmlFor="asset-maintenance-notes">Notes</Label>
+            <Textarea
+              id="asset-maintenance-notes"
+              rows={2}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+            />
           </div>
         </div>
         <DialogFooter>

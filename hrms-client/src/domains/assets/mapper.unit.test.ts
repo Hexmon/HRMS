@@ -58,6 +58,43 @@ describe("asset API projection", () => {
     });
   });
 
+  it("preserves present overview metadata and reports warranty expiry boundaries", () => {
+    const asset = mapApiAsset({
+      id: "asset-complete",
+      asset_type: "Laptop",
+      name: "Complete laptop",
+      purchase_date: "2026-01-02T00:00:00Z",
+      warranty_expiry: "2026-12-31T00:00:00Z",
+      cost: 1250,
+      condition: "fair",
+    });
+    expect(asset.apiMissing).toEqual({});
+    expect(assetOverviewMetadata(asset, 47)).toEqual({
+      purchaseDate: "2026-01-02",
+      warranty: "2026-12-31 (47d left)",
+      cost: 1250,
+      condition: "fair",
+    });
+    expect(assetOverviewMetadata(asset, -1).warranty).toBe("2026-12-31 (expired)");
+  });
+
+  it("treats null, undefined and empty API metadata as missing and defaults blank condition", () => {
+    const asset = mapApiAsset({
+      id: "asset-empty",
+      purchase_date: null,
+      warranty_expiry: undefined,
+      cost: "",
+      condition: "",
+    });
+    expect(asset.apiMissing).toEqual({
+      purchaseDate: true,
+      warrantyExpiry: true,
+      cost: true,
+      condition: true,
+    });
+    expect(asset.condition).toBe("good");
+  });
+
   it("maps recovery custody identity and fails closed when review state is absent", () => {
     const base = {
       id: "ticket-a",
