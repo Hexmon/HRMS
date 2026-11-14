@@ -296,15 +296,13 @@ export function AssetDetail() {
             <DataCard
               title="Maintenance & repair log"
               actions={
-                isAdmin ? (
-                  <MaintenanceDialog
-                    onAdd={(e) => {
-                      void addMaintenance(asset.id, e)
-                        .then(() => toast.success("Maintenance logged"))
-                        .catch((error) => toastApiError(error, "Maintenance could not be logged."));
-                    }}
-                  />
-                ) : undefined
+                <MaintenanceDialog
+                  onAdd={(e) => {
+                    void addMaintenance(asset.id, e)
+                      .then(() => toast.success("Maintenance logged"))
+                      .catch((error) => toastApiError(error, "Maintenance could not be logged."));
+                  }}
+                />
               }
             >
               {asset.maintenance.length === 0 ? (

@@ -38,6 +38,37 @@ describe("asset API projection", () => {
     ).toBe(true);
   });
 
+  it("derives a safe employee history entry when the employee projection omits internal assignment ids", () => {
+    expect(
+      mapApiAsset({
+        id: "asset-employee",
+        asset_type: "Laptop",
+        name: "Employee laptop",
+        is_assigned_to_current_user: true,
+        assigned_on: "2026-11-14T10:00:00Z",
+        assignment_acknowledged: true,
+      }),
+    ).toMatchObject({
+      assignedTo: "You",
+      history: [
+        {
+          id: "asset-employee:current-assignment",
+          employee: "You",
+          assignedOn: "2026-11-14T10:00:00Z",
+          acknowledged: true,
+        },
+      ],
+    });
+
+    expect(
+      mapApiAsset({
+        id: "asset-unassigned",
+        is_assigned_to_current_user: true,
+        assigned_on: "",
+      }).history,
+    ).toEqual([]);
+  });
+
   it("shows missing backend metadata as unavailable in the detail overview", () => {
     const asset = mapApiAsset({
       id: "asset-new",

@@ -232,6 +232,59 @@ describe("asset routes with the memory persistence fallback", () => {
     });
   });
 
+  it("fails acknowledgement closed when custody has no matching active assignment", async () => {
+    const asset = store.assets[0]!;
+    const assigned = await app.inject({
+      method: "POST",
+      url: `/assets/${asset.id}/assign`,
+      headers: commandHeaders(seedIds.assetManager),
+      payload: { assigned_to_user_id: seedIds.employee1, expected_version: asset.version },
+    });
+    expect(assigned.statusCode).toBe(200);
+    const assignment = store.assetAssignments.find(
+      (candidate) => candidate.asset_id === asset.id && candidate.status === "active",
+    )!;
+
+    assignment.status = "returned";
+    const missingAssignment = await app.inject({
+      method: "POST",
+      url: `/assets/${asset.id}/acknowledgements`,
+      headers: commandHeaders(seedIds.employee1),
+      payload: { acknowledgement_type: "received", expected_version: assigned.json().version },
+    });
+    expect(missingAssignment.statusCode).toBe(409);
+
+    assignment.status = "active";
+    assignment.assigned_to_user_id = seedIds.employee2;
+    const mismatchedAssignment = await app.inject({
+      method: "POST",
+      url: `/assets/${asset.id}/acknowledgements`,
+      headers: commandHeaders(seedIds.employee1),
+      payload: { acknowledgement_type: "received", expected_version: assigned.json().version },
+    });
+    expect(mismatchedAssignment.statusCode).toBe(409);
+  });
+
+  it("keeps an incomplete employee projection safe when optional metadata and assignment are absent", async () => {
+    const asset = store.assets[0]!;
+    (asset as unknown as { metadata: Record<string, unknown> | null }).metadata = null;
+    asset.current_assigned_user_id = seedIds.employee1;
+    store.assetAssignments = store.assetAssignments.filter((candidate) => candidate.asset_id !== asset.id);
+
+    const mine = await app.inject({
+      method: "GET",
+      url: "/assets/my",
+      headers: { [actorHeader]: seedIds.employee1 },
+    });
+    expect(mine.statusCode).toBe(200);
+    expect(mine.json().items[0]).toMatchObject({
+      id: asset.id,
+      assigned_on: null,
+      assignment_acknowledged: false,
+    });
+    expect(mine.json().items[0]).not.toHaveProperty("metadata");
+  });
+
   it("binds and settles one exact custody assignment in the memory lifecycle", async () => {
     const asset = store.assets[0]!;
     // Prove imported nonstandard request codes do not break monotonic request

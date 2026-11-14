@@ -207,6 +207,15 @@ describe("employee asset journey", () => {
     expect(state.myAssetsApi).toHaveBeenCalledWith({ page_size: 100 });
   });
 
+  it("does not fall back to shared inventory while the server-scoped list is unresolved", () => {
+    state.isApiBacked = true;
+    state.assets = [asset({ id: "shared-inventory" })];
+    state.myQuery = { data: undefined, isLoading: true, error: null };
+    render(<MyAssets />);
+    expect(screen.getByText("Loading assigned assets")).toBeInTheDocument();
+    expect(screen.queryByText("shared-inventory")).not.toBeInTheDocument();
+  });
+
   it("renders expiring and absent warranty states", () => {
     state.warrantyDays.mockReturnValue(30);
     state.assets = [asset(), asset({ id: "asset-b", warrantyExpiry: undefined, history: [] })];
