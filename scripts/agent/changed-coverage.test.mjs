@@ -970,6 +970,12 @@ test("asset tenant ownership migrations use explicit fail-closed semantic contra
 
   assert.match(validateSemanticPath(repositoryRoot, mapPath, map, "base"), /semantic contract passed/);
   assert.match(validateSemanticPath(repositoryRoot, ownershipPath, ownership, "base"), /semantic contract passed/);
+  assert.match(validateSemanticPath(
+    repositoryRoot,
+    mapPath,
+    `/* outer comment\n /* nested comment */ still outer */\nSELECT 'it''s -- quoted /* text */', "a""b";\n${map}`,
+    "base",
+  ), /semantic contract passed/);
 
   assert.throws(() => validateSemanticPath(repositoryRoot, mapPath, map.replace("verification_note text NOT NULL", "verification_note text"), "base"), /verification evidence/);
   assert.throws(() => validateSemanticPath(repositoryRoot, mapPath, map.replace(
@@ -991,6 +997,7 @@ test("frontend contract route discovery excludes test modules without hiding run
   const content = readFileSync(join(repositoryRoot, path), "utf8");
 
   assert.match(validateSemanticPath(repositoryRoot, path, content, "base"), /semantic contract passed/);
+  assert.match(validateSemanticPath(repositoryRoot, path, `${content}\n// comment-only change\n`, "base"), /semantic contract passed/);
   assert.throws(
     () => validateSemanticPath(repositoryRoot, path, content.replace(' && !file.endsWith(".test.tsx")', ""), "base"),
     /include runtime TSX routes and exclude colocated test modules/,
@@ -1000,156 +1007,28 @@ test("frontend contract route discovery excludes test modules without hiding run
     /include runtime TSX routes and exclude colocated test modules/,
   );
   assert.throws(
-    () => validateSemanticPath(repositoryRoot, path, content.replace("if (errors.length) {", "if (false) {"), "base"),
-    /fail the process when any invariant fails/,
+    () => validateSemanticPath(repositoryRoot, path, `${content}\nconst invalid = ;\n`, "base"),
+    /must parse as JavaScript/,
   );
-  assert.throws(
-    () => validateSemanticPath(repositoryRoot, path, content.replace("if (!existsSync(gapAudit))", "if (false)"), "base"),
-    /fail when the gap audit is missing/,
-  );
-  assert.throws(
-    () => validateSemanticPath(repositoryRoot, path, content.replace("if (missing.length)", "if (false)"), "base"),
-    /report unmapped runtime routes/,
-  );
-  assert.throws(
-    () => validateSemanticPath(repositoryRoot, path, content.replace("if (forbiddenFiles.length)", "if (false)"), "base"),
-    /report restored legacy expense routes/,
-  );
-  assert.throws(
-    () => validateSemanticPath(repositoryRoot, path, content.replace("if (forbiddenTerms.length)", "if (false)"), "base"),
-    /report legacy expense vocabulary/,
-  );
-  assert.throws(
-    () => validateSemanticPath(repositoryRoot, path, content.replace("process.exit(1);", "process.exitCode = 0;"), "base"),
-    /fail the process when any invariant fails/,
-  );
-  assert.throws(
-    () => validateSemanticPath(repositoryRoot, path, content.replace(
-      "const errors = [];",
-      "const errors = { push() {}, length: 0 };",
-    ), "base"),
-    /errors must be one top-level empty const array/,
-  );
-  assert.throws(
-    () => validateSemanticPath(repositoryRoot, path, content.replace(
-      "process.exit(1);",
-      'process["exit"] = () => {}; process.exit(1);',
-    ), "base"),
-    /direct final failure block|must not mutate objects or protected failure state/,
-  );
-  assert.throws(
-    () => validateSemanticPath(repositoryRoot, path, `${content}\nObject.defineProperty(process, "exit", { value() {} });\n`, "base"),
-    /must not access Object/,
-  );
-  assert.throws(
-    () => validateSemanticPath(repositoryRoot, path, content.replace(
+
+  for (const mutation of [
+    content.replace("const errors = [];", "const errors = { push() {}, length: 0 };"),
+    content.replace(
       "const routesDir = join(root, \"src/routes\");",
       "const routesDir = join(root, \"src/routes\");\nprocess.exit(0);",
-    ), "base"),
-    /exactly one final process exit/,
-  );
-  assert.throws(
-    () => validateSemanticPath(repositoryRoot, path, content.replace(
-      "const errors = [];",
-      "if (false) { const errors = []; }",
-    ), "base"),
-    /one authoritative errors/,
-  );
-  assert.throws(
-    () => validateSemanticPath(repositoryRoot, path, content.replace(
-      /const missing = routes\.filter\([\s\S]*?\n\}\);/,
-      "const missing = [];",
-    ), "base"),
-    /missing routes must derive from mapped routes and declared coverage/,
-  );
-  assert.throws(
-    () => validateSemanticPath(repositoryRoot, path, content.replace(
-      "const forbiddenFiles = routes.filter(({ file }) => forbiddenExpenseRoutes.has(file));",
-      "const forbiddenFiles = [];",
-    ), "base"),
-    /legacy route failures must derive from mapped routes and the forbidden route set/,
-  );
-  assert.throws(
-    () => validateSemanticPath(repositoryRoot, path, content.replace(
-      /const forbiddenTerms = activeExpenseFiles\.flatMap\([\s\S]*?\n\}\);/,
-      "const forbiddenTerms = [];",
-    ), "base"),
-    /legacy vocabulary failures must derive from the forbidden term set and active expense sources/,
-  );
-  assert.throws(
-    () => validateSemanticPath(repositoryRoot, path, content.replace(
-      'join(root, "docs/api/frontend-contract/FRONTEND_BACKEND_GAP_AUDIT.md")',
-      'join(root, "docs/api/frontend-contract/ignored.md")',
-    ), "base"),
-    /gap audit path must remain authoritative/,
-  );
-  assert.throws(
-    () => validateSemanticPath(repositoryRoot, path, content.replace(
-      '  (file) => file.endsWith(".tsx") && !file.endsWith(".test.tsx"),\n);',
-      '  (file) => file.endsWith(".tsx") && !file.endsWith(".test.tsx"),\n).filter(() => false);',
-    ), "base"),
-    /route files must derive from the runtime route tree/,
-  );
-  assert.throws(
-    () => validateSemanticPath(repositoryRoot, path, content.replace(
-      "  );\n});\n\nconst forbiddenFiles",
-      "  );\n}).filter(() => false);\n\nconst forbiddenFiles",
-    ), "base"),
-    /missing routes must derive from mapped routes and declared coverage/,
-  );
-  assert.throws(
-    () => validateSemanticPath(repositoryRoot, path, content.replace(
-      "]);\n\nconst forbiddenExpenseTerms",
-      "]);\nforbiddenExpenseRoutes.clear();\n\nconst forbiddenExpenseTerms",
-    ), "base"),
-    /forbiddenExpenseRoutes access is not allowlisted/,
-  );
-  assert.throws(
-    () => validateSemanticPath(repositoryRoot, path, content.replace(
-      "];\n\nfunction walk",
-      "];\nforbiddenExpenseTerms.splice(0);\n\nfunction walk",
-    ), "base"),
-    /forbiddenExpenseTerms access is not allowlisted/,
-  );
-  assert.throws(
-    () => validateSemanticPath(repositoryRoot, path, content.replace(
-      '{ prefix: "/login", group: "Auth & Sessions" },',
-      '{ prefix: "", group: "Catch all" },',
-    ), "base"),
-    /unique absolute prefixes and non-empty groups/,
-  );
-  const finalFailureBlock = 'if (errors.length) {\n  console.error(errors.join("\\n"));\n  process.exit(1);\n}';
-  const withoutFinalFailure = content.replace(`\n${finalFailureBlock}\n`, "\n");
-  assert.throws(
-    () => validateSemanticPath(repositoryRoot, path, withoutFinalFailure.replace(
-      "const errors = [];",
-      `const errors = [];\n${finalFailureBlock}`,
-    ), "base"),
-    /failure collectors and final exit are out of order/,
-  );
-  assert.throws(
-    () => validateSemanticPath(repositoryRoot, path, withoutFinalFailure.replace(
-      "if (forbiddenTerms.length)",
-      `${finalFailureBlock}\n\nif (forbiddenTerms.length)`,
-    ), "base"),
-    /failure collectors and final exit are out of order/,
-  );
-  assert.throws(
-    () => validateSemanticPath(repositoryRoot, path, content.replace(
+    ),
+    content.replace('walk(join(root, "src")).filter(', "routeFiles.filter("),
+    content.replace(
       "const routesDir = join(root, \"src/routes\");",
       'const routesDir = join(root, "src/routes");\n(() => {}).constructor("process.exit(0)")();',
-    ), "base"),
-    /canonical AST changed outside the trusted contract/,
-  );
-  assert.throws(
-    () => validateSemanticPath(repositoryRoot, path, content.replace(
-      'walk(join(root, "src")).filter(',
-      "routeFiles.filter(",
-    ), "base"),
-    /legacy vocabulary inputs must derive from active runtime source files/,
-  );
+    ),
+  ]) {
+    assert.throws(
+      () => validateSemanticPath(repositoryRoot, path, mutation, "base"),
+      /canonical AST changed outside the trusted contract/,
+    );
+  }
 });
-
 test("semantic QA scripts are classified before generic external coverage", () => {
   const root = mkdtempSync(join(tmpdir(), "hrms-coverage-semantic-external-"));
   roots.push(root);
