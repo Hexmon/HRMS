@@ -264,6 +264,12 @@ describe("asset detail boundaries", () => {
 
   it("reports maintenance success and failure only after the store boundary settles", async () => {
     state.detail = { data: asset(), isError: false, isLoading: false, error: null };
+    let resolveMaintenance!: () => void;
+    state.addMaintenance.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveMaintenance = resolve;
+      }),
+    );
     render(<AssetDetail />);
     const entry = {
       id: "maintenance-a",
@@ -277,7 +283,9 @@ describe("asset detail boundaries", () => {
     // The dialog starts with its own form values; invoking the exposed callback
     // proves the page awaits the mutation before reporting success.
     await waitFor(() => expect(state.addMaintenance).toHaveBeenCalled());
-    expect(state.toast.success).toHaveBeenCalledWith("Maintenance logged");
+    expect(state.toast.success).not.toHaveBeenCalled();
+    resolveMaintenance();
+    await waitFor(() => expect(state.toast.success).toHaveBeenCalledWith("Maintenance logged"));
     cleanup();
 
     state.detail = {
