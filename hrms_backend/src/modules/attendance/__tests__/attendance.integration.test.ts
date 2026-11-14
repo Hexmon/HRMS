@@ -782,7 +782,9 @@ describe("attendance", () => {
   it("applies admin company schedule, holidays, and attendance policy to day status", async () => {
     const employee = await loginAs(app, "E1");
     const company = ensureActiveCompany(app);
-    company.working_week = "Mon-Sat";
+    // Keep the real-time punch assertion valid on every CI day, including Sunday.
+    // The fixed May calendar assertions below still prove Saturday schedule handling.
+    company.working_week = "Mon-Sun";
     company.work_hours_per_day = 7.5;
     const policy = app.store.adminPolicies.find(
       (candidate) => candidate.company_id === company.id && candidate.policy_key === "attendance",
