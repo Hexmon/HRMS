@@ -112,9 +112,25 @@ describe("cross-schema reference integrity triggers", () => {
       constraint: "core_user_attendance_reference",
     });
 
+    const otherTemplate = await app.store.pgPool!.query<{ id: string }>(
+      `INSERT INTO attendance.shift_templates (
+        company_id, code, name, status, is_company_default, version
+      ) VALUES ($1, 'OTHER_INTEGRITY', 'Other integrity', 'active', false, 1)
+      RETURNING id`,
+      [otherCompanyId],
+    );
+    const otherTemplateId = otherTemplate.rows[0]?.id;
+    if (!otherTemplateId) throw new Error("Other shift template fixture was not created.");
+    await app.store.pgPool!.query(
+      `INSERT INTO attendance.shift_assignments (
+        company_id, employee_user_id, template_id, effective_from, status, version
+      ) VALUES ($1, $2, $3, '2026-01-01', 'active', 1)`,
+      [otherCompanyId, otherEmployee.id, otherTemplateId],
+    );
+
     await expect(
       app.store.pgPool!.query("DELETE FROM platform.company_profiles WHERE id = $1", [
-        preference.company_id,
+        otherCompanyId,
       ]),
     ).rejects.toMatchObject({
       code: "23503",
