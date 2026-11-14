@@ -1602,6 +1602,51 @@ function validateFrontendContractRouteCoverage(path, content) {
     /if\s*\(\s*errors\.length\s*\)\s*\{[\s\S]*console\.error\(errors\.join\("\\n"\)\)[\s\S]*process\.exit\(1\)[\s\S]*\}/,
     "frontend contract coverage must fail the process when any invariant fails",
   );
+
+  const semanticRoot = mkdtempSync(join(tmpdir(), "hrms-frontend-route-semantic-"));
+  const checkerPath = join(semanticRoot, "frontend-contract-route-coverage.mjs");
+  const writeFixture = (name, { audit = true, route = "index.tsx", expenseText = "" } = {}) => {
+    const fixtureRoot = join(semanticRoot, name);
+    mkdirSync(join(fixtureRoot, "src/routes"), { recursive: true });
+    mkdirSync(join(fixtureRoot, "src/lib"), { recursive: true });
+    if (audit) {
+      const auditPath = join(fixtureRoot, "docs/api/frontend-contract/FRONTEND_BACKEND_GAP_AUDIT.md");
+      mkdirSync(dirname(auditPath), { recursive: true });
+      writeFileSync(auditPath, "# Fixture gap audit\n");
+    }
+    const routePath = join(fixtureRoot, "src/routes", route);
+    mkdirSync(dirname(routePath), { recursive: true });
+    writeFileSync(routePath, "export default function Route() { return null; }\n");
+    writeFileSync(join(fixtureRoot, "src/lib/expenses-store.tsx"), `${expenseText}\n`);
+    return fixtureRoot;
+  };
+  const runFixture = (name, options, expectedStatus, expectedDiagnostic = "") => {
+    const fixtureRoot = writeFixture(name, options);
+    const result = spawnSync(process.execPath, [checkerPath], {
+      cwd: fixtureRoot,
+      env: { PATH: process.env.PATH ?? "" },
+      encoding: "utf8",
+      timeout: 10000,
+    });
+    if (result.error) semanticFailure(path, `fixture ${name} failed to execute: ${result.error.message}`);
+    if (result.status !== expectedStatus) {
+      semanticFailure(path, `fixture ${name} exited ${String(result.status)} instead of ${expectedStatus}`);
+    }
+    if (expectedDiagnostic && !result.stderr.includes(expectedDiagnostic)) {
+      semanticFailure(path, `fixture ${name} did not report ${expectedDiagnostic}`);
+    }
+  };
+
+  try {
+    writeFileSync(checkerPath, content, { mode: 0o644 });
+    runFixture("valid", {}, 0);
+    runFixture("missing-audit", { audit: false }, 1, "Missing docs/api/frontend-contract/FRONTEND_BACKEND_GAP_AUDIT.md");
+    runFixture("unmapped-route", { route: "unmapped.tsx" }, 1, "Routes without contract coverage:");
+    runFixture("legacy-route", { route: "_app/expenses.director.tsx" }, 1, "Removed legacy expense routes are present:");
+    runFixture("legacy-vocabulary", { expenseText: "export const state = 'pending_reviewer';" }, 1, "Legacy expense vocabulary found:");
+  } finally {
+    rmSync(semanticRoot, { recursive: true, force: true });
+  }
 }
 
 function validateQaSeedSafety(path, content) {

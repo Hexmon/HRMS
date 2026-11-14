@@ -1019,6 +1019,20 @@ test("frontend contract route discovery excludes test modules without hiding run
     () => validateSemanticPath(repositoryRoot, path, content.replace("process.exit(1);", "process.exitCode = 0;"), "base"),
     /fail the process when any invariant fails/,
   );
+  assert.throws(
+    () => validateSemanticPath(repositoryRoot, path, content.replace(
+      "const errors = [];",
+      "const errors = { push() {}, length: 0 };",
+    ), "base"),
+    /fixture missing-audit exited 0 instead of 1/,
+  );
+  assert.throws(
+    () => validateSemanticPath(repositoryRoot, path, content.replace(
+      "process.exit(1);",
+      'process["exit"] = () => {}; process.exit(1);',
+    ), "base"),
+    /fixture missing-audit exited 0 instead of 1/,
+  );
 });
 
 test("semantic QA scripts are classified before generic external coverage", () => {
