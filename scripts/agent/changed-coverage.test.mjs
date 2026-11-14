@@ -995,6 +995,30 @@ test("frontend contract route discovery excludes test modules without hiding run
     () => validateSemanticPath(repositoryRoot, path, content.replace('file.endsWith(".tsx")', "true"), "base"),
     /include runtime TSX routes and exclude colocated test modules/,
   );
+  assert.throws(
+    () => validateSemanticPath(repositoryRoot, path, content.replace("if (errors.length) {", "if (false) {"), "base"),
+    /fail the process when any invariant fails/,
+  );
+  assert.throws(
+    () => validateSemanticPath(repositoryRoot, path, content.replace("if (!existsSync(gapAudit))", "if (false)"), "base"),
+    /fail when the gap audit is missing/,
+  );
+  assert.throws(
+    () => validateSemanticPath(repositoryRoot, path, content.replace("if (missing.length)", "if (false)"), "base"),
+    /report unmapped runtime routes/,
+  );
+  assert.throws(
+    () => validateSemanticPath(repositoryRoot, path, content.replace("if (forbiddenFiles.length)", "if (false)"), "base"),
+    /report restored legacy expense routes/,
+  );
+  assert.throws(
+    () => validateSemanticPath(repositoryRoot, path, content.replace("if (forbiddenTerms.length)", "if (false)"), "base"),
+    /report legacy expense vocabulary/,
+  );
+  assert.throws(
+    () => validateSemanticPath(repositoryRoot, path, content.replace("process.exit(1);", "process.exitCode = 0;"), "base"),
+    /fail the process when any invariant fails/,
+  );
 });
 
 test("semantic QA scripts are classified before generic external coverage", () => {

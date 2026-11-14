@@ -1572,6 +1572,36 @@ function validateFrontendContractRouteCoverage(path, content) {
     /walk\(routesDir\)\.filter\(\s*\(file\)\s*=>\s*file\.endsWith\("\.tsx"\)\s*&&\s*!file\.endsWith\("\.test\.tsx"\)\s*,?\s*\)/,
     "frontend route discovery must include runtime TSX routes and exclude colocated test modules",
   );
+  requireSemanticText(
+    path,
+    content,
+    /if\s*\(\s*!existsSync\(gapAudit\)\s*\)\s*errors\.push\(\s*"Missing docs\/api\/frontend-contract\/FRONTEND_BACKEND_GAP_AUDIT\.md"\s*\)/,
+    "frontend contract coverage must fail when the gap audit is missing",
+  );
+  requireSemanticText(
+    path,
+    content,
+    /if\s*\(\s*missing\.length\s*\)\s*errors\.push\([\s\S]*Routes without contract coverage:/,
+    "frontend contract coverage must report unmapped runtime routes",
+  );
+  requireSemanticText(
+    path,
+    content,
+    /if\s*\(\s*forbiddenFiles\.length\s*\)\s*errors\.push\([\s\S]*Removed legacy expense routes are present:/,
+    "frontend contract coverage must report restored legacy expense routes",
+  );
+  requireSemanticText(
+    path,
+    content,
+    /if\s*\(\s*forbiddenTerms\.length\s*\)\s*errors\.push\(\s*`Legacy expense vocabulary found:/,
+    "frontend contract coverage must report legacy expense vocabulary",
+  );
+  requireSemanticText(
+    path,
+    content,
+    /if\s*\(\s*errors\.length\s*\)\s*\{[\s\S]*console\.error\(errors\.join\("\\n"\)\)[\s\S]*process\.exit\(1\)[\s\S]*\}/,
+    "frontend contract coverage must fail the process when any invariant fails",
+  );
 }
 
 function validateQaSeedSafety(path, content) {
