@@ -65,8 +65,8 @@ export function AssetDetail() {
     enabled: isApiBacked && isUuid(id),
     staleTime: queryTimings.detailStaleMs,
   });
-  const resolvedAsset =
-    isApiBacked && detailQuery.isError ? undefined : (detailQuery.data ?? listAsset);
+  const detailFailed = isApiBacked && detailQuery.isError;
+  const resolvedAsset = detailFailed ? undefined : (detailQuery.data ?? listAsset);
   const isAdmin = !!activeRole && (ASSET_ADMIN_ROLES as readonly string[]).includes(activeRole);
   const [assigneeSearch, setAssigneeSearch] = useState("");
   const assigneesQuery = useQuery({
