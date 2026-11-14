@@ -168,7 +168,17 @@ export const reportRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get("/assets/summary", async (request) => {
     const actor = withActor(request);
-    const store = await fastify.store.persistence?.assetReadStore?.() ?? fastify.store;
+    const company = resolveActiveCompanyMembershipContext(fastify.store, {
+      userId: actor.id,
+      operation: "reports.assets.summary",
+      requireActiveEmployment: true,
+    });
+    const store = await fastify.store.persistence?.assetReadStore?.(
+      undefined,
+      company.companyId,
+      actor.id,
+      "reports.assets.summary",
+    ) ?? fastify.store;
     return new ReportService(store).assetsSummary(actor, reportSummaryQuerySchema.parse(request.query));
   });
 

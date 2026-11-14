@@ -1528,6 +1528,43 @@ function validateAssetRecoveryAssignmentMigration(path, content) {
   requireSemanticText(path, content, /UPDATE\s+assets\.asset_recovery_tickets[\s\S]*SET\s+assignment_id\s*=\s*unique_matches\.assignment_id/i, "recovery backfill update is missing");
 }
 
+function validateAssetTenantOwnershipMapMigration(path, content) {
+  requireSemanticText(path, content, /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+assets\.asset_tenant_ownership_map/i, "verified asset ownership map is missing");
+  requireSemanticText(path, content, /PRIMARY\s+KEY\s*\(\s*resource_type\s*,\s*resource_id\s*\)/i, "ownership map must identify each root resource exactly once");
+  requireSemanticText(path, content, /resource_type\s+IN\s*\(\s*'asset'\s*,\s*'request'\s*,\s*'vendor'\s*\)/i, "ownership map must cover only verified root resource types");
+  requireSemanticText(path, content, /verification_note\s+text\s+NOT\s+NULL/i, "ownership map must retain operator verification evidence");
+  requireSemanticText(path, content, /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+assets\.validate_company_profile_reference/i, "cross-schema company validator is missing");
+  requireSemanticText(path, content, /FROM\s+platform\.company_profiles[\s\S]*FOR\s+KEY\s+SHARE/i, "company validation must lock the referenced company");
+  requireSemanticText(path, content, /BEFORE\s+INSERT\s+OR\s+UPDATE\s+OF\s+company_id/i, "ownership map company validation trigger is missing");
+  requireSemanticText(path, content, /BEFORE\s+DELETE\s+OR\s+UPDATE\s+OF\s+id\s+ON\s+platform\.company_profiles/i, "company deletion and identity mutation must be restricted");
+}
+
+function validateAssetTenantOwnershipMigration(path, content) {
+  for (const table of [
+    "assets", "asset_assignments", "asset_state_events", "asset_requests",
+    "asset_acknowledgements", "asset_maintenance_records", "software_vendors",
+    "asset_recovery_tickets",
+  ]) {
+    requireSemanticText(path, content, new RegExp(`ALTER\\s+TABLE\\s+assets\\.${table}[\\s\\S]*?company_id`, "i"), `tenant ownership column or constraint is missing for ${table}`);
+    requireSemanticText(path, content, new RegExp(`ALTER\\s+TABLE\\s+assets\\.${table}\\s+ALTER\\s+COLUMN\\s+company_id\\s+SET\\s+NOT\\s+NULL`, "i"), `tenant ownership must be required for ${table}`);
+  }
+  requireSemanticText(path, content, /SET\s+LOCAL\s+hrms\.asset_writer_v2\s*=\s*'on'/i, "tenant backfill must use only the transaction-local writer marker");
+  requireSemanticText(path, content, /ownership\.resource_type\s*=\s*'asset'[\s\S]*ownership\.resource_id\s*=\s*target\.id/i, "asset roots must backfill only from verified ownership mappings");
+  requireSemanticText(path, content, /Asset tenant ownership mapping is incomplete/i, "migration must fail closed when verified ownership is missing");
+  requireSemanticText(path, content, /Asset tenant ownership relationships conflict/i, "migration must fail closed when related ownership conflicts");
+  requireSemanticText(path, content, /DISABLE\s+TRIGGER\s+assets_state_events_immutable_trg[\s\S]*ENABLE\s+TRIGGER\s+assets_state_events_immutable_trg/i, "immutable event trigger must be restored after the bounded backfill");
+  requireSemanticText(path, content, /assets_company_asset_code_uq[\s\S]*\(company_id\s*,\s*asset_code\)/i, "asset codes must be unique only within a company");
+  requireSemanticText(path, content, /asset_requests_company_request_code_uq[\s\S]*\(company_id\s*,\s*request_code\)/i, "request codes must be unique only within a company");
+  requireSemanticText(path, content, /software_vendors_company_name_uq[\s\S]*\(company_id\s*,\s*lower\(name\)\)[\s\S]*deleted_at\s+IS\s+NULL/i, "active vendor names must be case-insensitively unique within a company");
+  requireSemanticText(path, content, /FOREIGN\s+KEY\s*\(company_id\s*,\s*asset_id\)\s+REFERENCES\s+assets\.assets\s*\(company_id\s*,\s*id\)/i, "child asset references must include company ownership");
+  requireSemanticText(path, content, /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+assets\.prevent_company_ownership_change/i, "immutable tenant ownership function is missing");
+  requireSemanticText(path, content, /NEW\.company_id\s+IS\s+DISTINCT\s+FROM\s+OLD\.company_id/i, "ownership mutation must be rejected");
+  requireSemanticText(path, content, /CONSTRAINT\s*=\s*'assets_company_ownership_immutable'/i, "ownership mutation must expose a stable database constraint");
+  requireSemanticText(path, content, /'asset_command_results'/i, "durable command results must use the same company validation and immutability triggers");
+  requireSemanticText(path, content, /FROM\s+assets\.asset_command_results\s+WHERE\s+company_id\s*=\s*OLD\.id/i, "company deletion must retain durable command-result ownership");
+  forbidText(path, content, /REFERENCES\s+platform\.company_profiles/i, "asset migration must not create unsupported cross-schema foreign keys");
+}
+
 function validateQaSeedSafety(path, content) {
   requireSemanticText(path, content, /HRMS_QA_SEED_ALLOW/, "QA seed safety must require explicit opt-in");
   requireSemanticText(path, content, /only isolated local or QA/, "QA seed safety must reject non-isolated targets");
@@ -1565,6 +1602,8 @@ export function validateSemanticPath(root, path, content, base) {
     case "hrms_backend/src/db/migrations/0065_holiday_company_unique_constraint.sql": validateHolidayMigration(path, content); break;
     case "hrms_backend/src/db/migrations/0066_asset_transaction_fence.sql": validateAssetTransactionFenceMigration(path, content); break;
     case "hrms_backend/src/db/migrations/0067_asset_recovery_assignment_identity.sql": validateAssetRecoveryAssignmentMigration(path, content); break;
+    case "hrms_backend/src/db/migrations/0068_asset_tenant_ownership_map.sql": validateAssetTenantOwnershipMapMigration(path, content); break;
+    case "hrms_backend/src/db/migrations/0069_asset_tenant_ownership.sql": validateAssetTenantOwnershipMigration(path, content); break;
     case "hrms_backend/scripts/qa-seed-safety.ts": validateQaSeedSafety(path, content); break;
     case "hrms_backend/scripts/seed-qa.ts": validateQaSeedEntrypoint(path, content); break;
     case "hrms_backend/scripts/seed-qa-data.ts":
@@ -1589,6 +1628,8 @@ export const semanticCoveragePaths = new Set([
   "hrms_backend/src/db/migrations/0065_holiday_company_unique_constraint.sql",
   "hrms_backend/src/db/migrations/0066_asset_transaction_fence.sql",
   "hrms_backend/src/db/migrations/0067_asset_recovery_assignment_identity.sql",
+  "hrms_backend/src/db/migrations/0068_asset_tenant_ownership_map.sql",
+  "hrms_backend/src/db/migrations/0069_asset_tenant_ownership.sql",
   "hrms_backend/scripts/qa-seed-safety.ts",
   "hrms_backend/scripts/seed-qa.ts",
   "hrms_backend/scripts/seed-qa-data.ts",

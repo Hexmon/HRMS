@@ -16,7 +16,12 @@ export const dashboardRoutes: FastifyPluginAsync = async (fastify) => {
     const attendanceStore = fastify.store.persistence?.attendanceReadStore
       ? await fastify.store.persistence.attendanceReadStore({ companyId: company.companyId, includePendingOutbox: true })
       : fastify.store;
-    const store = await fastify.store.persistence?.assetReadStore?.(attendanceStore) ?? attendanceStore;
+    const store = await fastify.store.persistence?.assetReadStore?.(
+      attendanceStore,
+      company.companyId,
+      request.actor.id,
+      "dashboard.summary",
+    ) ?? attendanceStore;
     return new DashboardService(store).summary(request.actor);
   });
 };

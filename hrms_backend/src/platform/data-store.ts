@@ -155,6 +155,7 @@ export interface DocumentAccessLogRecord {
 
 export interface AssetAssignmentRecord {
   id: UUID;
+  company_id: UUID;
   asset_id: UUID;
   assigned_to_user_id: UUID;
   assigned_by_user_id: UUID;
@@ -254,6 +255,7 @@ export interface UserSessionPreferenceRecord {
 
 export interface AssetStateEventRecord {
   id: UUID;
+  company_id: UUID;
   asset_id: UUID;
   actor_user_id: UUID | null;
   event_type: string;
@@ -263,6 +265,7 @@ export interface AssetStateEventRecord {
 
 export interface AssetRequestRecord {
   id: UUID;
+  company_id: UUID;
   request_code: string;
   requester_user_id: UUID;
   request_type: "new" | "replacement" | "repair" | "return";
@@ -291,6 +294,7 @@ export interface AssetRequestRecord {
 
 export interface AssetAcknowledgementRecord {
   id: UUID;
+  company_id: UUID;
   asset_id: UUID;
   employee_user_id: UUID;
   assignment_id: UUID | null;
@@ -304,6 +308,7 @@ export interface AssetAcknowledgementRecord {
 
 export interface AssetMaintenanceRecord {
   id: UUID;
+  company_id: UUID;
   asset_id: UUID;
   maintenance_type:
     | "repair"
@@ -325,6 +330,7 @@ export interface AssetMaintenanceRecord {
 
 export interface AssetVendorRecord {
   id: UUID;
+  company_id: UUID;
   name: string;
   status: "active" | "inactive";
   contact_email: string | null;
@@ -344,6 +350,7 @@ export type AssetRecoverySettlementStatus =
 
 export interface AssetRecoveryTicketRecord {
   id: UUID;
+  company_id: UUID;
   employee_user_id: UUID;
   asset_id: UUID;
   assignment_id: UUID | null;
@@ -454,7 +461,13 @@ export interface DataStorePersistence {
   attendanceReadStore?(scope: { companyId: UUID; employeeUserIds?: UUID[]; includePendingOutbox?: boolean }): Promise<DataStore>;
   reportExportReadStore?(scope: { companyId?: UUID; exportId?: UUID }): Promise<DataStore>;
   auditReportReadContext?(userId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }>;
-  assetReadStore?(baseStore?: DataStore): Promise<DataStore>;
+  /** Request-local asset snapshot. Pass companyId for every authenticated tenant-owned read. */
+  assetReadStore?(
+    baseStore?: DataStore,
+    companyId?: UUID,
+    actorUserId?: UUID,
+    actionKey?: string,
+  ): Promise<DataStore>;
   assetPublicScan?(qrHash: string): Promise<PublicAssetScan | null>;
   assetAssignees?(actorUserId: UUID, companyId: UUID, search?: string): Promise<{ items: Array<{ id: UUID; full_name: string }>; has_more: boolean }>;
   assetCommand?<T>(
@@ -2390,6 +2403,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     assets: [
       {
         id: firstAssetId,
+        company_id: defaultCompanyId,
         asset_code: "LAP-001",
         qr_hash: createQrHash("LAP-001"),
         asset_type: "Laptop",
@@ -2412,6 +2426,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     assetVendors: [
       {
         id: uuidFromName("asset-vendor-lenovo"),
+        company_id: defaultCompanyId,
         name: "Lenovo India",
         status: "active",
         contact_email: "support@lenovo.example.test",

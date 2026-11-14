@@ -14,6 +14,7 @@ Runbooks are operational procedures. Architecture decisions belong in `../archit
 | `worker-operations-runbook.md` | Legacy Render-to-Cloudflare worker transition, Queue/Cron operations, attendance auto-checkout, and coordinate cleanup. |
 | `media-storage-runbook.md` | Cloudinary/media/document upload and download troubleshooting. |
 | `resend-email-verification-deployment.md` | Resend email verification deployment and support. |
+| `asset-tenant-ownership-cutover.md` | Two-phase verified ownership mapping and forward-only asset tenant cutover. |
 
 ## General Incident Data To Capture
 

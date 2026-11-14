@@ -3,6 +3,7 @@ import { z } from "zod";
 import { EmploymentStatuses, Roles } from "#shared";
 import { paginationQuerySchema } from "#shared";
 import { badRequest, unauthorized } from "../../platform/errors.js";
+import { resolveActiveCompanyMembershipContext } from "../../platform/company-membership-context.js";
 import { CoreService, type ProfilePhotoPolicy, type ProfilePhotoUploadInput } from "./service.js";
 
 const roleValues = [
@@ -169,7 +170,17 @@ export const coreRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const params = z.object({ id: z.uuid() }).parse(request.params);
-    const store = await fastify.store.persistence?.assetReadStore?.() ?? fastify.store;
+    const company = resolveActiveCompanyMembershipContext(fastify.store, {
+      userId: request.actor.id,
+      operation: "core.users.detail",
+      requireActiveEmployment: true,
+    });
+    const store = await fastify.store.persistence?.assetReadStore?.(
+      undefined,
+      company.companyId,
+      request.actor.id,
+      "core.users.detail",
+    ) ?? fastify.store;
     const service = new CoreService(store);
     return service.getUser(request.actor, params.id);
   });

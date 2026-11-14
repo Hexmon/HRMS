@@ -961,6 +961,26 @@ test("asset migrations use explicit fail-closed semantic contracts", () => {
   assert.throws(() => validateSemanticPath(repositoryRoot, recoveryPath, recovery.replace("assignment.assigned_at <= ticket.created_at", "TRUE"), "base"), /custody interval/);
 });
 
+test("asset tenant ownership migrations use explicit fail-closed semantic contracts", () => {
+  const repositoryRoot = process.cwd();
+  const mapPath = "hrms_backend/src/db/migrations/0068_asset_tenant_ownership_map.sql";
+  const ownershipPath = "hrms_backend/src/db/migrations/0069_asset_tenant_ownership.sql";
+  const map = readFileSync(join(repositoryRoot, mapPath), "utf8");
+  const ownership = readFileSync(join(repositoryRoot, ownershipPath), "utf8");
+
+  assert.match(validateSemanticPath(repositoryRoot, mapPath, map, "base"), /semantic contract passed/);
+  assert.match(validateSemanticPath(repositoryRoot, ownershipPath, ownership, "base"), /semantic contract passed/);
+
+  assert.throws(() => validateSemanticPath(repositoryRoot, mapPath, map.replace("verification_note text NOT NULL", "verification_note text"), "base"), /verification evidence/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, mapPath, map.replace("FOR KEY SHARE", ""), "base"), /lock the referenced company/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, ownershipPath, ownership.replace("SET LOCAL hrms.asset_writer_v2", "SET hrms.asset_writer_v2"), "base"), /transaction-local writer marker/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, ownershipPath, ownership.replace("Asset tenant ownership mapping is incomplete", "Ownership warning"), "base"), /fail closed when verified ownership is missing/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, ownershipPath, ownership.replace("ALTER TABLE assets.asset_state_events ENABLE TRIGGER assets_state_events_immutable_trg", ""), "base"), /immutable event trigger/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, ownershipPath, ownership.replace("NEW.company_id IS DISTINCT FROM OLD.company_id", "FALSE"), "base"), /ownership mutation must be rejected/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, ownershipPath, ownership.replace("UNION ALL SELECT 1 FROM assets.asset_command_results WHERE company_id = OLD.id", ""), "base"), /command-result ownership/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, ownershipPath, `${ownership}\nALTER TABLE assets.assets ADD FOREIGN KEY (company_id) REFERENCES platform.company_profiles(id);`, "base"), /cross-schema foreign keys/);
+});
+
 test("semantic QA scripts are classified before generic external coverage", () => {
   const root = mkdtempSync(join(tmpdir(), "hrms-coverage-semantic-external-"));
   roots.push(root);

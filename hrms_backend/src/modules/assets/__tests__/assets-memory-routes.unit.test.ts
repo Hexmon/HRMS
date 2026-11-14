@@ -193,7 +193,8 @@ describe("asset routes with the memory persistence fallback", () => {
     asset.status = "Assigned";
     asset.current_assigned_user_id = seedIds.employee1;
     store.assetAssignments = [];
-    expect(() => createRecoveryTicketsForTerminatedEmployee(store, seedIds.employee1))
+    const companyId = store.userSessionPreferences.find((item) => item.user_id === seedIds.employee1)!.company_id!;
+    expect(() => createRecoveryTicketsForTerminatedEmployee(store, companyId, seedIds.employee1))
       .toThrow(/no unique active assignment/u);
   });
 
@@ -231,6 +232,7 @@ describe("asset routes with the memory persistence fallback", () => {
   it("presents legacy recovery rows with missing employee and asset as review-only", async () => {
     store.assetRecoveryTickets.push({
       id: randomUUID(),
+      company_id: store.userSessionPreferences.find((item) => item.user_id === seedIds.assetManager)!.company_id!,
       employee_user_id: randomUUID(),
       asset_id: randomUUID(),
       assignment_id: null,

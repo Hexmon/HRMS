@@ -7765,6 +7765,7 @@ Success body highlights:
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `id` | string<uuid> | required | Asset UUID |
+| `company_id` | string<uuid> | required | Owning company UUID |
 | `asset_code` | string | required | - |
 | `asset_type` | string | required | - |
 | `name` | string | required | - |
@@ -7959,6 +7960,7 @@ Success body highlights:
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `id` | string<uuid> | required | Asset UUID |
+| `company_id` | string<uuid> | required | Owning company UUID |
 | `asset_code` | string | required | - |
 | `asset_type` | string | required | - |
 | `name` | string | required | - |
@@ -8017,6 +8019,7 @@ Success body highlights:
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `id` | string<uuid> | required | Asset UUID |
+| `company_id` | string<uuid> | required | Owning company UUID |
 | `asset_code` | string | required | - |
 | `asset_type` | string | required | - |
 | `name` | string | required | - |
@@ -8075,6 +8078,7 @@ Success body highlights:
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `id` | string<uuid> | required | Asset UUID |
+| `company_id` | string<uuid> | required | Owning company UUID |
 | `asset_code` | string | required | - |
 | `asset_type` | string | required | - |
 | `name` | string | required | - |
