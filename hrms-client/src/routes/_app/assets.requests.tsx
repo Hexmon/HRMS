@@ -25,7 +25,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Inbox, Plus, Upload, Check, X, PackageCheck } from "lucide-react";
+import { Inbox, Plus, Check, X, PackageCheck } from "lucide-react";
 import type { AssetRequest, RequestPriority, RequestStatus, RequestType } from "@/lib/mock/assets";
 import { toast } from "sonner";
 import { toastApiError } from "@/shared/api";
@@ -235,6 +235,7 @@ export function AdminQueue({
               size="icon"
               variant="ghost"
               className="h-8 w-8 text-success"
+              aria-label={`Approve request ${r.id}`}
               onClick={() => onDecide(r.id, "approved", "")}
             >
               <Check className="h-4 w-4" />
@@ -243,6 +244,7 @@ export function AdminQueue({
               size="icon"
               variant="ghost"
               className="h-8 w-8 text-destructive"
+              aria-label={`Reject request ${r.id}`}
               onClick={() => onDecide(r.id, "rejected", "Rejected from queue")}
             >
               <X className="h-4 w-4" />
@@ -386,10 +388,11 @@ export function RaiseForm({
           </Select>
         </div>
         <div className="space-y-1.5">
-          <Label>Attachment</Label>
-          <div className="grid place-items-center rounded-xl border border-dashed bg-muted/20 px-3 py-3 text-center">
-            <Upload className="mb-1 h-4 w-4 text-muted-foreground" />
-            <p className="text-xs text-muted-foreground">Click to attach</p>
+          <p className="text-sm font-medium">Attachment</p>
+          <div className="rounded-xl border border-dashed bg-muted/20 px-3 py-3 text-center">
+            <p className="text-xs text-muted-foreground">
+              Attachments are not available for asset requests yet.
+            </p>
           </div>
         </div>
       </div>

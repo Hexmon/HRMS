@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { useAssets, warrantyDaysLeft, fmtMoney } from "@/lib/assets-store";
-import { DataTable, StatusBadge, type Column } from "@/components/ui-kit";
+import { useAssets, warrantyDaysLeft, fmtMoney, ASSET_ADMIN_ROLES } from "@/lib/assets-store";
+import { DataCard, DataTable, StatusBadge, type Column } from "@/components/ui-kit";
+import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { documentsApi } from "@/domains/documents";
 import { useCreateReportExportMutation } from "@/domains/reports";
@@ -20,6 +21,9 @@ import { toast } from "sonner";
 export const Route = createFileRoute("/_app/assets/inventory")({ component: Inventory });
 
 export function Inventory() {
+  const { activeRole } = useAuth();
+  const canManageAssets =
+    !!activeRole && (ASSET_ADMIN_ROLES as readonly string[]).includes(activeRole);
   const { assets, loading, error, isApiBacked } = useAssets();
   const exportMutation = useCreateReportExportMutation();
   const [type, setType] = useState("all");
@@ -189,6 +193,16 @@ export function Inventory() {
     link.click();
     URL.revokeObjectURL(url);
   };
+
+  if (!canManageAssets) {
+    return (
+      <DataCard title="Asset inventory">
+        <p className="text-sm text-muted-foreground">
+          Asset Admin access is required to view inventory and exports.
+        </p>
+      </DataCard>
+    );
+  }
 
   return (
     <div className="space-y-4">

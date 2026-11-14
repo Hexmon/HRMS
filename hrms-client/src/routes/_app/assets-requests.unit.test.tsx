@@ -150,9 +150,8 @@ describe("asset request controls", () => {
         onDecide={onDecide}
       />,
     );
-    const actionButtons = screen.getAllByRole("button");
-    fireEvent.click(actionButtons[0]!);
-    fireEvent.click(actionButtons[1]!);
+    fireEvent.click(screen.getByRole("button", { name: "Approve request REQ-1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reject request REQ-1" }));
     expect(onDecide).toHaveBeenNthCalledWith(1, "REQ-1", "approved", "");
     expect(onDecide).toHaveBeenNthCalledWith(2, "REQ-1", "rejected", "Rejected from queue");
     expect(screen.getByRole("button", { name: /Fulfillment unavailable/ })).toBeDisabled();
@@ -165,6 +164,10 @@ describe("asset request controls", () => {
     for (const label of ["Request type", "Asset type", "Reason", "Priority"]) {
       expect(screen.getByLabelText(label)).toBeInTheDocument();
     }
+    expect(
+      screen.getByText("Attachments are not available for asset requests yet."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText("Click to attach")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Submit request" }));
     expect(state.toast.error).toHaveBeenCalledWith("Please add a reason.");
     expect(onSubmit).not.toHaveBeenCalled();
@@ -273,11 +276,7 @@ describe("asset request controls", () => {
     state.auth.activeRole = "asset_admin";
     state.decideRequest.mockRejectedValueOnce(new Error("decision conflict"));
     render(<RequestsScreen />);
-    const approve = screen
-      .getAllByRole("button")
-      .find((button) => button.querySelector("svg.lucide-check"));
-    expect(approve).toBeDefined();
-    fireEvent.click(approve!);
+    fireEvent.click(screen.getByRole("button", { name: "Approve request REQ-1" }));
     await waitFor(() =>
       expect(state.toastApiError).toHaveBeenCalledWith(
         expect.any(Error),

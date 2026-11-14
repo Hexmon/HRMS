@@ -12,6 +12,9 @@ const state = vi.hoisted(() => ({
   download: vi.fn(),
   toast: { success: vi.fn(), error: vi.fn() },
   drawerOpen: false,
+  selectHandlers: [] as Array<(value: string) => void>,
+  triggerIndex: 0,
+  activeRole: "asset_admin" as string | null,
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -20,9 +23,11 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 vi.mock("@/lib/assets-store", () => ({
   useAssets: () => state,
+  ASSET_ADMIN_ROLES: ["main_admin", "asset_admin"],
   warrantyDaysLeft: (value?: string) => (value === "expired" ? -5 : value === "soon" ? 30 : 100),
   fmtMoney: (value: number) => `$${value}`,
 }));
+vi.mock("@/lib/auth", () => ({ useAuth: () => ({ activeRole: state.activeRole }) }));
 vi.mock("@/domains/reports", () => ({
   useCreateReportExportMutation: () => ({
     mutateAsync: state.createExport,
@@ -61,6 +66,12 @@ vi.mock("@/components/ui-kit", () => ({
     </div>
   ),
   StatusBadge: ({ status }: { status: string }) => <span>{status}</span>,
+  DataCard: ({ title, children }: { title: string; children: ReactNode }) => (
+    <section>
+      <h2>{title}</h2>
+      {children}
+    </section>
+  ),
 }));
 vi.mock("@/components/ui/select", () => ({
   Select: ({
@@ -69,19 +80,26 @@ vi.mock("@/components/ui/select", () => ({
   }: {
     children: ReactNode;
     onValueChange: (value: string) => void;
-  }) => (
-    <div>
-      <button type="button" onClick={() => onValueChange("expired")}>
-        Choose expired
+  }) => {
+    state.selectHandlers.push(onValueChange);
+    return <div>{children}</div>;
+  },
+  SelectTrigger: ({ children, id, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => {
+    const handler = state.selectHandlers[state.triggerIndex++];
+    const value =
+      id === "asset-filter-type"
+        ? "Laptop"
+        : id === "asset-filter-status"
+          ? "assigned"
+          : id === "asset-filter-assigned"
+            ? "assigned"
+            : "expired";
+    return (
+      <button type="button" id={id} onClick={() => handler?.(value)} {...props}>
+        {children}
       </button>
-      {children}
-    </div>
-  ),
-  SelectTrigger: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
-    <button type="button" {...props}>
-      {children}
-    </button>
-  ),
+    );
+  },
   SelectValue: () => null,
   SelectContent: ({ children }: { children: ReactNode }) => <>{children}</>,
   SelectItem: ({ children }: { children: ReactNode }) => <span>{children}</span>,
@@ -124,6 +142,9 @@ describe("asset inventory", () => {
     state.toast.success.mockReset();
     state.toast.error.mockReset();
     state.drawerOpen = false;
+    state.selectHandlers = [];
+    state.triggerIndex = 0;
+    state.activeRole = "asset_admin";
     vi.spyOn(window, "open").mockImplementation(() => null);
   });
   afterEach(() => {
@@ -152,19 +173,29 @@ describe("asset inventory", () => {
     expect(screen.getByText("Add Asset drawer")).toBeInTheDocument();
   });
 
+  it("fails closed when a non-Asset-Admin opens the inventory URL directly", () => {
+    state.activeRole = "employee";
+    render(<Inventory />);
+    expect(
+      screen.getByText("Asset Admin access is required to view inventory and exports."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add Asset" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Export" })).not.toBeInTheDocument();
+  });
+
   it("passes API filters to a queued backend export", async () => {
     state.assets = [asset("asset-a", { warrantyExpiry: "expired" })];
     state.createExport.mockResolvedValue({ job_id: "job-123456789" });
     render(<Inventory />);
-    for (const button of screen.getAllByRole("button", { name: "Choose expired" }))
-      fireEvent.click(button);
+    fireEvent.click(screen.getByLabelText("Type"));
+    fireEvent.click(screen.getByLabelText("Status"));
     fireEvent.click(screen.getByRole("button", { name: "Export" }));
     await waitFor(() =>
       expect(state.createExport).toHaveBeenCalledWith(
         expect.objectContaining({
           format: "csv",
           report_type: "assets/summary",
-          filters: expect.objectContaining({ status: "expired", type: "expired" }),
+          filters: expect.objectContaining({ status: "assigned", type: "Laptop" }),
         }),
       ),
     );
@@ -177,7 +208,7 @@ describe("asset inventory", () => {
       asset("unknown-warranty", { warrantyExpiry: undefined }),
     ];
     render(<Inventory />);
-    fireEvent.click(screen.getAllByRole("button", { name: "Choose expired" })[3]!);
+    fireEvent.click(screen.getByLabelText("Warranty"));
     expect(screen.getByText("expired-asset")).toBeInTheDocument();
     expect(screen.queryByText("unknown-warranty")).not.toBeInTheDocument();
   });

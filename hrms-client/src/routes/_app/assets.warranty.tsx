@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { useAssets, warrantyDaysLeft, fmtMoney } from "@/lib/assets-store";
+import { useAssets, warrantyDaysLeft, fmtMoney, ASSET_ADMIN_ROLES } from "@/lib/assets-store";
+import { useAuth } from "@/lib/auth";
 import { DataCard, EmptyState, PhoneInput, StatCard } from "@/components/ui-kit";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -34,10 +35,16 @@ import {
 export const Route = createFileRoute("/_app/assets/warranty")({ component: WarrantyScreen });
 
 export function WarrantyScreen() {
+  const { activeRole } = useAuth();
+  const canManageAssets =
+    !!activeRole && (ASSET_ADMIN_ROLES as readonly string[]).includes(activeRole);
   const { assets } = useAssets();
   const apiEnabled = useApiRouteEnabled(["/assets"]);
-  const vendorQuery = useAssetVendors({ page_size: 100 }, apiEnabled);
-  const warrantyAlertQuery = useAssetWarrantyAlerts({ page_size: 100 }, apiEnabled);
+  const vendorQuery = useAssetVendors({ page_size: 100 }, apiEnabled && canManageAssets);
+  const warrantyAlertQuery = useAssetWarrantyAlerts(
+    { page_size: 100 },
+    apiEnabled && canManageAssets,
+  );
   const vendorMutation = useAssetVendorMutation();
   const [vendorEditor, setVendorEditor] = useState<AssetVendorView | "new" | null>(null);
 
@@ -134,6 +141,16 @@ export function WarrantyScreen() {
     toast.success(input.id ? "Vendor updated" : "Vendor created");
     setVendorEditor(null);
   };
+
+  if (!canManageAssets) {
+    return (
+      <DataCard title="Warranty and vendors">
+        <p className="text-sm text-muted-foreground">
+          Asset Admin access is required to manage warranties and vendors.
+        </p>
+      </DataCard>
+    );
+  }
 
   return (
     <div className="space-y-4">

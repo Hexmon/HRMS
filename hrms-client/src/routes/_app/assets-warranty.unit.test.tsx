@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({
+  activeRole: "asset_admin" as string | null,
   assets: [
     {
       id: "asset-a",
@@ -52,9 +53,11 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 vi.mock("@/lib/assets-store", () => ({
   useAssets: () => ({ assets: state.assets }),
+  ASSET_ADMIN_ROLES: ["main_admin", "asset_admin"],
   warrantyDaysLeft: (value?: string) => (value === "expired" ? -5 : value === "soon" ? 30 : 100),
   fmtMoney: (value: number) => `$${value}`,
 }));
+vi.mock("@/lib/auth", () => ({ useAuth: () => ({ activeRole: state.activeRole }) }));
 vi.mock("@/shared/api", () => ({ useApiRouteEnabled: () => false }));
 vi.mock("@/domains/assets", () => ({
   useAssetVendors: () => ({ data: undefined, isLoading: false, error: null }),
@@ -115,7 +118,10 @@ vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 import { WarrantyScreen } from "./assets.warranty";
 
 describe("local warranty projection", () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    state.activeRole = "asset_admin";
+  });
 
   it("derives warranty, maintenance and vendor summaries from complete local assets", () => {
     render(<WarrantyScreen />);
@@ -140,5 +146,14 @@ describe("local warranty projection", () => {
     });
     expect(screen.getByLabelText("Vendor name")).toHaveValue("Vendor C");
     expect(screen.getByLabelText("Contact email")).toHaveValue("it@example.com");
+  });
+
+  it("fails closed when a non-Asset-Admin opens the warranty URL directly", () => {
+    state.activeRole = "employee";
+    render(<WarrantyScreen />);
+    expect(
+      screen.getByText("Asset Admin access is required to manage warranties and vendors."),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add vendor" })).not.toBeInTheDocument();
   });
 });
