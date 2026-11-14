@@ -276,7 +276,7 @@ export function ReturnsScreen() {
   );
 }
 
-function ReturnInline({
+export function ReturnInline({
   onConfirm,
   detailsSupported,
 }: {
@@ -314,13 +314,18 @@ function ReturnInline({
         {detailsSupported && (
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <Label>Return date</Label>
-              <Input type="date" value={d} onChange={(e) => setD(e.target.value)} />
+              <Label htmlFor="asset-inline-return-date">Return date</Label>
+              <Input
+                id="asset-inline-return-date"
+                type="date"
+                value={d}
+                onChange={(e) => setD(e.target.value)}
+              />
             </div>
             <div className="space-y-1">
-              <Label>Condition</Label>
+              <Label htmlFor="asset-inline-return-condition">Condition</Label>
               <Select value={c} onValueChange={(v) => setC(v as AssetCondition)}>
-                <SelectTrigger>
+                <SelectTrigger id="asset-inline-return-condition">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -333,8 +338,13 @@ function ReturnInline({
               </Select>
             </div>
             <div className="col-span-2 space-y-1">
-              <Label>Remarks</Label>
-              <Textarea rows={2} value={r} onChange={(e) => setR(e.target.value)} />
+              <Label htmlFor="asset-inline-return-remarks">Remarks</Label>
+              <Textarea
+                id="asset-inline-return-remarks"
+                rows={2}
+                value={r}
+                onChange={(e) => setR(e.target.value)}
+              />
             </div>
           </div>
         )}
