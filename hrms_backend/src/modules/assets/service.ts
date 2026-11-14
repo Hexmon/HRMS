@@ -266,13 +266,16 @@ export class AssetService {
       throw forbidden("Only the assigned employee can acknowledge this asset.");
     }
     const assignment = this.repository.activeAssignment(id);
+    if (!assignment || assignment.assigned_to_user_id !== actor.id) {
+      throw conflict("Asset acknowledgement requires one active employee assignment.", { id });
+    }
     const updated = this.repository.updateVersioned(id, input.expected_version, (candidate) => {
       candidate.updated_at = nowIso();
     });
     const acknowledgement = this.repository.createAcknowledgement({
       asset_id: id,
       employee_user_id: actor.id,
-      assignment_id: assignment?.id ?? null,
+      assignment_id: assignment.id,
       acknowledgement_type: input.acknowledgement_type
     });
     this.appendAssetEvent(id, actor.id, "asset.acknowledged", {
