@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useAuth } from "@/lib/auth";
-import { useAssets, warrantyDaysLeft, fmtMoney } from "@/lib/assets-store";
+import { useAssets, warrantyDaysLeft } from "@/lib/assets-store";
 import { DataCard, EmptyState, StatusBadge } from "@/components/ui-kit";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -12,8 +12,8 @@ export const Route = createFileRoute("/_app/assets/my")({ component: MyAssets })
 
 export function MyAssets() {
   const { user } = useAuth();
-  const { assets, acknowledgeAssignment, loading, error } = useAssets();
-  const mine = assets.filter((a) => a.assignedToId === user?.id);
+  const { assets, acknowledgeAssignment, loading, error, isApiBacked } = useAssets();
+  const mine = isApiBacked ? assets : assets.filter((a) => a.assignedToId === user?.id);
 
   return (
     <div className="space-y-4">
@@ -73,7 +73,6 @@ export function MyAssets() {
                       )
                     }
                   />
-                  <Row k="Cost" v={a.apiMissing?.cost ? "—" : fmtMoney(a.cost)} />
                   <Row
                     k="Warranty"
                     v={

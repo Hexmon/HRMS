@@ -7956,17 +7956,7 @@ No request body.
 
 Success body highlights:
 
-| Field | Type | Required | Notes |
-|---|---|---|---|
-| `id` | string<uuid> | required | Asset UUID |
-| `asset_code` | string | required | - |
-| `asset_type` | string | required | - |
-| `name` | string | required | - |
-| `serial_no` | string | optional, nullable | - |
-| `qr_hash` | string | optional | - |
-| `status` | string | required | - |
-| `assigned_to_user_id` | string<uuid> | optional, nullable | Assigned employee UUID |
-| `version` | integer | required | minimum 1 |
+Schema: `unknown`.
 
 **Frontend behavior notes**
 

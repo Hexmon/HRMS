@@ -3,10 +3,12 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { authApi, type SessionContextResponse } from "@/domains/auth";
 import {
   ApiError,
+  clearApiActorScope,
   clearApiAccessToken,
   isApiEnabled,
   isMockFallbackEnabled,
   onApiUnauthorized,
+  setApiActorScope,
   setApiAccessToken,
   shouldUseMockFallback,
   userFacingErrorMessage,
@@ -337,7 +339,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const applyApiUser = React.useCallback(
-    (apiUserRecord: ApiRecord, roleValues?: unknown[], activeRoleOverride?: Role) => {
+    (
+      apiUserRecord: ApiRecord,
+      roleValues?: unknown[],
+      activeRoleOverride?: Role,
+      companyId?: string | null,
+    ) => {
       const apiUser = apiUserToLocalUser(apiUserRecord, roleValues);
       const nextRole = activeRoleOverride ?? apiUser.roles[0];
       setUsers((current) => {
@@ -347,6 +354,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
       setUser(apiUser);
       setActiveRoleState(nextRole);
+      if (companyId) setApiActorScope(apiUser.id, companyId);
+      else clearApiActorScope();
       persistSession(apiUser, nextRole);
       return { user: apiUser, role: nextRole };
     },
@@ -357,7 +366,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     (session: SessionContextResponse) => {
       const roleValues = sessionRoleValues(session);
       const apiUser = apiUserToLocalUser(session.user, roleValues);
-      return applyApiUser(session.user, roleValues, activeRoleFromSession(session, apiUser));
+      const companyId =
+        session.company_id ?? (typeof session.company?.id === "string" ? session.company.id : null);
+      return applyApiUser(
+        session.user,
+        roleValues,
+        activeRoleFromSession(session, apiUser),
+        companyId,
+      );
     },
     [applyApiUser],
   );
@@ -365,6 +381,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const clearAuthenticatedSession = React.useCallback(() => {
     setSessionBlocked(true);
     queryClient.clear();
+    clearApiActorScope();
     clearApiAccessToken();
     setUser(null);
     setActiveRoleState(null);
@@ -470,7 +487,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } catch {
           const responseUserId = typeof response.user.id === "string" ? response.user.id : null;
           setSetupDone(!loginSetupRequired && !currentBootstrapToken(responseUserId));
-          applyApiUser(response.user);
+          applyApiUser(response.user, undefined, undefined, response.company_id);
         }
         return { ok: true };
       } catch (error) {

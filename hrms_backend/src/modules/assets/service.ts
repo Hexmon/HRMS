@@ -33,7 +33,7 @@ export class AssetService {
   myAssets(actor: AuthUser, pageNumber: number, pageSize: number) {
     const items = this.repository.list()
       .filter((asset) => asset.current_assigned_user_id === actor.id)
-      .map((asset) => this.presentAsset(asset));
+      .map((asset) => this.presentEmployeeAsset(asset));
     const start = (pageNumber - 1) * pageSize;
     return { items: items.slice(start, start + pageSize), page: pageNumber, page_size: pageSize, total: items.length };
   }
@@ -100,7 +100,10 @@ export class AssetService {
   }
 
   detail(actor: AuthUser, id: UUID) {
-    return this.presentAsset(this.assertAssetVisible(actor, id));
+    const asset = this.assertAssetVisible(actor, id);
+    return actor.roles.includes(Roles.AssetManager) || actor.roles.includes(Roles.Admin)
+      ? this.presentAsset(asset)
+      : this.presentEmployeeAsset(asset);
   }
 
   assign(actor: AuthUser, id: UUID, assignedToUserId: UUID, expectedVersion: number): AssetRecord {
@@ -674,6 +677,40 @@ export class AssetService {
       active_assignment_id: activeAssignment?.id ?? null,
       latest_acknowledgement: latestAcknowledgement ?? null,
       maintenance: this.repository.listMaintenance(asset.id).map((record) => this.presentMaintenance(record))
+    };
+  }
+
+  /**
+   * Employee-facing asset data is deliberately allow-listed. Never spread the
+   * database record or metadata here: those objects contain QR credentials,
+   * procurement data, internal assignment identifiers, and maintenance costs.
+   */
+  private presentEmployeeAsset(asset: AssetRecord) {
+    const activeAssignment = this.repository.activeAssignment(asset.id);
+    const acknowledged = this.store.assetAcknowledgements.some((item) =>
+      item.asset_id === asset.id &&
+      item.assignment_id === activeAssignment?.id &&
+      item.employee_user_id === asset.current_assigned_user_id &&
+      item.status === "acknowledged"
+    );
+    const metadata = asset.metadata ?? {};
+    return {
+      id: asset.id,
+      asset_code: asset.asset_code,
+      asset_type: asset.asset_type,
+      name: asset.name,
+      serial_no: asset.serial_no,
+      status: asset.status,
+      version: asset.version,
+      category: metadata.category,
+      brand: metadata.brand,
+      model: metadata.model,
+      warranty_expiry: metadata.warranty_expiry,
+      location: metadata.location,
+      condition: metadata.condition,
+      assigned_on: activeAssignment?.assigned_at ?? null,
+      is_assigned_to_current_user: asset.current_assigned_user_id !== null,
+      assignment_acknowledged: acknowledged,
     };
   }
 

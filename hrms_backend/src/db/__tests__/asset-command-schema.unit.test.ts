@@ -35,4 +35,38 @@ describe("asset command schema and OpenAPI boundary", () => {
     expect(transform("POST", "/api/v1/auth/login").schema.headers).toBeUndefined();
     expect(transform([], "/api/v1/assets/").schema.headers).toBeUndefined();
   });
+
+  it("documents an explicit employee-safe asset response without procurement fields", () => {
+    const transform = (url: string) => swaggerTransform({
+      schema: {},
+      url,
+      route: { method: "GET", url, handler: async () => undefined },
+      openapiObject: {},
+    });
+    const mineSchema = transform("/api/v1/assets/my").schema as { response?: Record<number, unknown> };
+    const mineResponse = mineSchema.response?.[200] as {
+      content?: { "application/json"?: { schema?: {
+        properties?: { items?: { items?: { properties?: Record<string, unknown>; additionalProperties?: boolean } } };
+      } } };
+    };
+    const employeeAsset = mineResponse.content?.["application/json"]?.schema?.properties?.items?.items;
+    expect(employeeAsset?.additionalProperties).toBe(false);
+    expect(Object.keys(employeeAsset?.properties ?? {})).toEqual(expect.arrayContaining([
+      "id", "asset_code", "asset_type", "name", "status", "version",
+      "assigned_on", "is_assigned_to_current_user", "assignment_acknowledged",
+    ]));
+    for (const protectedField of [
+      "qr_hash", "metadata", "purchase_date", "vendor", "invoice_no", "cost", "maintenance",
+      "assigned_to_user_id", "active_assignment_id", "latest_acknowledgement",
+    ]) {
+      expect(employeeAsset?.properties).not.toHaveProperty(protectedField);
+    }
+
+    const detailSchema = transform("/api/v1/assets/:id").schema as { response?: Record<number, unknown> };
+    const detailResponse = detailSchema.response?.[200] as {
+      content?: { "application/json"?: { schema?: { anyOf?: unknown[] } } };
+    };
+    const detail = detailResponse.content?.["application/json"]?.schema;
+    expect(detail?.anyOf).toHaveLength(2);
+  });
 });

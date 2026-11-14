@@ -11,6 +11,7 @@ const state = vi.hoisted(() => ({
   warrantyDays: vi.fn(() => 100),
   toast: { success: vi.fn() },
   toastApiError: vi.fn(),
+  isApiBacked: false,
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -24,6 +25,7 @@ vi.mock("@/lib/assets-store", () => ({
     acknowledgeAssignment: state.acknowledge,
     loading: state.loading,
     error: state.error,
+    isApiBacked: state.isApiBacked,
   }),
   warrantyDaysLeft: state.warrantyDays,
   fmtMoney: (value: number) => `$${value}`,
@@ -100,6 +102,7 @@ describe("employee asset journey", () => {
     state.warrantyDays.mockReset().mockReturnValue(100);
     state.toast.success.mockReset();
     state.toastApiError.mockReset();
+    state.isApiBacked = false;
   });
   afterEach(cleanup);
 
@@ -163,7 +166,16 @@ describe("employee asset journey", () => {
     expect(screen.getByText("Acknowledged")).toBeInTheDocument();
     expect(screen.getByText("Expired 5d ago")).toBeInTheDocument();
     expect(screen.getByText(/Warranty expired/)).toBeInTheDocument();
-    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(4);
+    expect(screen.getAllByText("—").length).toBeGreaterThanOrEqual(3);
+    expect(screen.queryByText("Cost")).not.toBeInTheDocument();
+  });
+
+  it("trusts the server-scoped my-assets result without requiring an employee identifier", () => {
+    state.isApiBacked = true;
+    state.assets = [asset({ assignedToId: "" })];
+    render(<MyAssets />);
+    expect(screen.getByText("Dell Latitude")).toBeInTheDocument();
+    expect(screen.queryByText("Cost")).not.toBeInTheDocument();
   });
 
   it("renders expiring and absent warranty states", () => {

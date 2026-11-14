@@ -55903,7 +55903,10 @@
                           "asset_type",
                           "name",
                           "status",
-                          "version"
+                          "version",
+                          "assigned_on",
+                          "is_assigned_to_current_user",
+                          "assignment_acknowledged"
                         ],
                         "properties": {
                           "id": {
@@ -55929,28 +55932,62 @@
                             "nullable": true,
                             "example": "SN-001"
                           },
-                          "qr_hash": {
-                            "type": "string",
-                            "example": "release-qr-hash-lap-available"
-                          },
                           "status": {
                             "type": "string",
-                            "example": "In Stock"
-                          },
-                          "assigned_to_user_id": {
-                            "type": "string",
-                            "format": "uuid",
-                            "description": "Assigned employee UUID",
-                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                            "nullable": true
+                            "example": "Assigned"
                           },
                           "version": {
                             "type": "integer",
                             "minimum": 1,
-                            "example": 1
+                            "example": 2
+                          },
+                          "category": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "Computer"
+                          },
+                          "brand": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "Lenovo"
+                          },
+                          "model": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "T14"
+                          },
+                          "warranty_expiry": {
+                            "type": "string",
+                            "format": "date",
+                            "nullable": true
+                          },
+                          "location": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "Hyderabad"
+                          },
+                          "condition": {
+                            "type": "string",
+                            "nullable": true,
+                            "example": "good"
+                          },
+                          "assigned_on": {
+                            "type": "string",
+                            "format": "date-time",
+                            "description": "Current assignment timestamp",
+                            "example": "2026-05-04T10:00:00.000Z",
+                            "nullable": true
+                          },
+                          "is_assigned_to_current_user": {
+                            "type": "boolean",
+                            "example": true
+                          },
+                          "assignment_acknowledged": {
+                            "type": "boolean",
+                            "example": false
                           }
                         },
-                        "additionalProperties": true
+                        "additionalProperties": false
                       }
                     },
                     "page": {
@@ -56603,7 +56640,7 @@
         "tags": [
           "Assets"
         ],
-        "description": "Returns full asset details for Asset/Admin actors.",
+        "description": "Returns full details to Asset/Admin actors and an allow-listed operational view to the assigned employee.",
         "parameters": [
           {
             "schema": {
@@ -56631,61 +56668,159 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "required": [
-                    "id",
-                    "asset_code",
-                    "asset_type",
-                    "name",
-                    "status",
-                    "version"
-                  ],
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Asset UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "asset_code",
+                        "asset_type",
+                        "name",
+                        "status",
+                        "version"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Asset UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "asset_code": {
+                          "type": "string",
+                          "example": "LAP-001"
+                        },
+                        "asset_type": {
+                          "type": "string",
+                          "example": "Laptop"
+                        },
+                        "name": {
+                          "type": "string",
+                          "example": "ThinkPad T-Series"
+                        },
+                        "serial_no": {
+                          "type": "string",
+                          "nullable": true,
+                          "example": "SN-001"
+                        },
+                        "qr_hash": {
+                          "type": "string",
+                          "example": "release-qr-hash-lap-available"
+                        },
+                        "status": {
+                          "type": "string",
+                          "example": "In Stock"
+                        },
+                        "assigned_to_user_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Assigned employee UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
+                          "nullable": true
+                        },
+                        "version": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 1
+                        }
+                      },
+                      "additionalProperties": true
                     },
-                    "asset_code": {
-                      "type": "string",
-                      "example": "LAP-001"
-                    },
-                    "asset_type": {
-                      "type": "string",
-                      "example": "Laptop"
-                    },
-                    "name": {
-                      "type": "string",
-                      "example": "ThinkPad T-Series"
-                    },
-                    "serial_no": {
-                      "type": "string",
-                      "nullable": true,
-                      "example": "SN-001"
-                    },
-                    "qr_hash": {
-                      "type": "string",
-                      "example": "release-qr-hash-lap-available"
-                    },
-                    "status": {
-                      "type": "string",
-                      "example": "In Stock"
-                    },
-                    "assigned_to_user_id": {
-                      "type": "string",
-                      "format": "uuid",
-                      "description": "Assigned employee UUID",
-                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
-                      "nullable": true
-                    },
-                    "version": {
-                      "type": "integer",
-                      "minimum": 1,
-                      "example": 1
+                    {
+                      "type": "object",
+                      "required": [
+                        "id",
+                        "asset_code",
+                        "asset_type",
+                        "name",
+                        "status",
+                        "version",
+                        "assigned_on",
+                        "is_assigned_to_current_user",
+                        "assignment_acknowledged"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Asset UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "asset_code": {
+                          "type": "string",
+                          "example": "LAP-001"
+                        },
+                        "asset_type": {
+                          "type": "string",
+                          "example": "Laptop"
+                        },
+                        "name": {
+                          "type": "string",
+                          "example": "ThinkPad T-Series"
+                        },
+                        "serial_no": {
+                          "type": "string",
+                          "nullable": true,
+                          "example": "SN-001"
+                        },
+                        "status": {
+                          "type": "string",
+                          "example": "Assigned"
+                        },
+                        "version": {
+                          "type": "integer",
+                          "minimum": 1,
+                          "example": 2
+                        },
+                        "category": {
+                          "type": "string",
+                          "nullable": true,
+                          "example": "Computer"
+                        },
+                        "brand": {
+                          "type": "string",
+                          "nullable": true,
+                          "example": "Lenovo"
+                        },
+                        "model": {
+                          "type": "string",
+                          "nullable": true,
+                          "example": "T14"
+                        },
+                        "warranty_expiry": {
+                          "type": "string",
+                          "format": "date",
+                          "nullable": true
+                        },
+                        "location": {
+                          "type": "string",
+                          "nullable": true,
+                          "example": "Hyderabad"
+                        },
+                        "condition": {
+                          "type": "string",
+                          "nullable": true,
+                          "example": "good"
+                        },
+                        "assigned_on": {
+                          "type": "string",
+                          "format": "date-time",
+                          "description": "Current assignment timestamp",
+                          "example": "2026-05-04T10:00:00.000Z",
+                          "nullable": true
+                        },
+                        "is_assigned_to_current_user": {
+                          "type": "boolean",
+                          "example": true
+                        },
+                        "assignment_acknowledged": {
+                          "type": "boolean",
+                          "example": false
+                        }
+                      },
+                      "additionalProperties": false
                     }
-                  },
-                  "additionalProperties": true
+                  ]
                 }
               }
             }

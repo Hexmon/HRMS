@@ -140,6 +140,62 @@ describe("asset routes with the memory persistence fallback", () => {
     expect(wrongVersionReturn.statusCode).toBe(409);
   });
 
+  it("returns an allow-listed asset view to the assigned employee", async () => {
+    const asset = store.assets[0]!;
+    asset.metadata = {
+      category: "Computer",
+      brand: "Lenovo",
+      model: "T14",
+      warranty_expiry: "2027-11-01",
+      location: "Hyderabad",
+      condition: "good",
+      procurement_cost: "65000.00",
+      vendor: "Private vendor",
+      invoice_no: "INV-PRIVATE",
+      confidential_note: "never expose",
+    };
+    const assigned = await app.inject({
+      method: "POST",
+      url: `/assets/${asset.id}/assign`,
+      headers: commandHeaders(seedIds.assetManager),
+      payload: { assigned_to_user_id: seedIds.employee1, expected_version: asset.version },
+    });
+    expect(assigned.statusCode).toBe(200);
+
+    const employeeHeaders = { [actorHeader]: seedIds.employee1 };
+    const mine = await app.inject({ method: "GET", url: "/assets/my", headers: employeeHeaders });
+    const detail = await app.inject({ method: "GET", url: `/assets/${asset.id}`, headers: employeeHeaders });
+    expect(mine.statusCode).toBe(200);
+    expect(detail.statusCode).toBe(200);
+    for (const employeeAsset of [mine.json().items[0], detail.json()]) {
+      expect(employeeAsset).toMatchObject({
+        id: asset.id,
+        brand: "Lenovo",
+        is_assigned_to_current_user: true,
+        assignment_acknowledged: false,
+      });
+      for (const protectedField of [
+        "qr_hash", "metadata", "purchase_date", "vendor", "invoice_no", "cost", "maintenance",
+        "current_assigned_user_id", "assigned_to_user_id", "assigned_to_name", "active_assignment_id",
+        "latest_acknowledgement", "created_at", "updated_at", "deleted_at",
+      ]) {
+        expect(employeeAsset).not.toHaveProperty(protectedField);
+      }
+    }
+
+    const managerDetail = await app.inject({
+      method: "GET",
+      url: `/assets/${asset.id}`,
+      headers: { [actorHeader]: seedIds.assetManager },
+    });
+    expect(managerDetail.json()).toMatchObject({
+      qr_hash: asset.qr_hash,
+      vendor: "Private vendor",
+      invoice_no: "INV-PRIVATE",
+      cost: "65000.00",
+    });
+  });
+
   it("binds and settles one exact custody assignment in the memory lifecycle", async () => {
     const asset = store.assets[0]!;
     // Prove imported nonstandard request codes do not break monotonic request

@@ -961,6 +961,45 @@ test("asset migrations use explicit fail-closed semantic contracts", () => {
   assert.throws(() => validateSemanticPath(repositoryRoot, recoveryPath, recovery.replace("assignment.assigned_at <= ticket.created_at", "TRUE"), "base"), /custody interval/);
 });
 
+test("frontend contract route discovery excludes test modules without hiding runtime routes", () => {
+  const repositoryRoot = process.cwd();
+  const path = "hrms-client/scripts/frontend-contract-route-coverage.mjs";
+  const content = readFileSync(join(repositoryRoot, path), "utf8");
+
+  assert.match(validateSemanticPath(repositoryRoot, path, content, "base"), /semantic contract passed/);
+  assert.match(validateSemanticPath(repositoryRoot, path, `${content}\n// comment-only change\n`, "base"), /semantic contract passed/);
+  assert.throws(
+    () => validateSemanticPath(repositoryRoot, path, content.replace(' && !file.endsWith(".test.tsx")', ""), "base"),
+    /include runtime TSX routes and exclude colocated test modules/,
+  );
+  assert.throws(
+    () => validateSemanticPath(repositoryRoot, path, content.replace('file.endsWith(".tsx")', "true"), "base"),
+    /include runtime TSX routes and exclude colocated test modules/,
+  );
+  assert.throws(
+    () => validateSemanticPath(repositoryRoot, path, `${content}\nconst invalid = ;\n`, "base"),
+    /must parse as JavaScript/,
+  );
+
+  for (const mutation of [
+    content.replace("const errors = [];", "const errors = { push() {}, length: 0 };"),
+    content.replace(
+      "const routesDir = join(root, \"src/routes\");",
+      "const routesDir = join(root, \"src/routes\");\nprocess.exit(0);",
+    ),
+    content.replace('walk(join(root, "src")).filter(', "routeFiles.filter("),
+    content.replace(
+      "const routesDir = join(root, \"src/routes\");",
+      'const routesDir = join(root, "src/routes");\n(() => {}).constructor("process.exit(0)")();',
+    ),
+  ]) {
+    assert.throws(
+      () => validateSemanticPath(repositoryRoot, path, mutation, "base"),
+      /canonical AST changed outside the trusted contract/,
+    );
+  }
+});
+
 test("semantic QA scripts are classified before generic external coverage", () => {
   const root = mkdtempSync(join(tmpdir(), "hrms-coverage-semantic-external-"));
   roots.push(root);

@@ -1528,6 +1528,26 @@ function validateAssetRecoveryAssignmentMigration(path, content) {
   requireSemanticText(path, content, /UPDATE\s+assets\.asset_recovery_tickets[\s\S]*SET\s+assignment_id\s*=\s*unique_matches\.assignment_id/i, "recovery backfill update is missing");
 }
 
+function validateFrontendContractRouteCoverage(path, content) {
+  requireSemanticText(
+    path,
+    content,
+    /walk\(routesDir\)\.filter\(\s*\(file\)\s*=>\s*file\.endsWith\("\.tsx"\)\s*&&\s*!file\.endsWith\("\.test\.tsx"\)\s*,?\s*\)/,
+    "frontend route discovery must include runtime TSX routes and exclude colocated test modules",
+  );
+  const source = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
+  if (source.parseDiagnostics.length) {
+    semanticFailure(path, "frontend contract coverage must parse as JavaScript");
+  }
+  const printer = ts.createPrinter({ removeComments: true });
+  const canonicalProgramHash = createHash("sha256").update(printer.printFile(source)).digest("hex");
+  // Regenerate only after reviewing the printed, comment-free checker AST and
+  // updating the negative mutations in changed-coverage.test.mjs.
+  if (canonicalProgramHash !== "2ad41f461efdfad60e8ba7cac6357c68b3111811505ce846ee29232889ba347d") {
+    semanticFailure(path, "frontend contract coverage canonical AST changed outside the trusted contract");
+  }
+}
+
 function validateQaSeedSafety(path, content) {
   requireSemanticText(path, content, /HRMS_QA_SEED_ALLOW/, "QA seed safety must require explicit opt-in");
   requireSemanticText(path, content, /only isolated local or QA/, "QA seed safety must reject non-isolated targets");
@@ -1559,6 +1579,7 @@ export function validateSemanticPath(root, path, content, base) {
     case "hrms-client/pnpm-lock.yaml": validateLockfile(path, content, true); break;
     case "hrms_backend/pnpm-lock.yaml": validateLockfile(path, content, false); break;
     case "hrms-client/vitest.config.ts": validateVitestConfig(path, content, true); break;
+    case "hrms-client/scripts/frontend-contract-route-coverage.mjs": validateFrontendContractRouteCoverage(path, content); break;
     case "hrms_backend/vitest.config.ts": validateVitestConfig(path, content, false); break;
     case "scripts/agent/verify-change.sh": validateShellVerifier(root, path, content, base); break;
     case "hrms_backend/infra/docker/docker-compose.qa.yml": validateQaCompose(path, content); break;
@@ -1581,6 +1602,7 @@ export const semanticCoveragePaths = new Set([
   "hrms-client/package.json",
   "hrms-client/pnpm-lock.yaml",
   "hrms-client/vitest.config.ts",
+  "hrms-client/scripts/frontend-contract-route-coverage.mjs",
   "hrms_backend/package.json",
   "hrms_backend/pnpm-lock.yaml",
   "hrms_backend/vitest.config.ts",

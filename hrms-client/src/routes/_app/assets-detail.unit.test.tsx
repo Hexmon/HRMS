@@ -262,6 +262,26 @@ describe("asset detail boundaries", () => {
     ).toBeInTheDocument();
   });
 
+  it("hides procurement, maintenance, document and audit data from an employee", () => {
+    state.auth.activeRole = "employee";
+    state.detail = { data: asset(), isError: false, isLoading: false, error: null };
+    render(<AssetDetail />);
+
+    for (const label of [
+      "Vendor",
+      "Invoice #",
+      "Purchased",
+      "Cost",
+      "Maintenance",
+      "Documents",
+      "Audit Trail",
+    ]) {
+      expect(screen.queryByText(label)).not.toBeInTheDocument();
+    }
+    expect(screen.getByText("Warranty")).toBeInTheDocument();
+    expect(screen.getByText("Location")).toBeInTheDocument();
+  });
+
   it("executes API detail and assignee query functions with the current search", async () => {
     state.executeQueries = true;
     state.detail = { data: asset(), isError: false, isLoading: false, error: null };

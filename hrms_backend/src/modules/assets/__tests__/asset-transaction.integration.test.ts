@@ -89,6 +89,11 @@ describe("asset transaction boundary", () => {
       [asset.id],
     );
     expect(assignments.rows[0]?.count).toBe("1");
+    const assignmentEvents = await first.store.pgPool!.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM assets.asset_state_events WHERE asset_id = $1 AND event_type = 'asset.assigned'",
+      [asset.id],
+    );
+    expect(assignmentEvents.rows[0]?.count).toBe("1");
     const changed = await first.inject({ ...options, payload: { ...options.payload, assigned_to_user_id: seedIds.employee2 } });
     expect(changed.statusCode).toBe(409);
     await first.store.pgPool!.query("UPDATE core.users SET employment_status = 'inactive' WHERE id = $1", [seedIds.employee1]);
@@ -409,6 +414,11 @@ describe("asset transaction boundary", () => {
     expect([a.statusCode, b.statusCode].sort()).toEqual([200, 409]);
     const durable = await first.store.pgPool!.query<{ count: string }>("SELECT count(*)::text AS count FROM assets.asset_assignments WHERE asset_id = $1 AND status = 'active'", [asset.id]);
     expect(durable.rows[0]?.count).toBe("1");
+    const durableEvents = await first.store.pgPool!.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM assets.asset_state_events WHERE asset_id = $1 AND event_type = 'asset.assigned'",
+      [asset.id],
+    );
+    expect(durableEvents.rows[0]?.count).toBe("1");
   });
 
   it("keeps read-only POST routes out of command persistence and reads fresh state on a stale replica", async () => {
@@ -434,7 +444,23 @@ describe("asset transaction boundary", () => {
     const employee = await loginAs(second, "E1");
     const mine = await second.inject({ method: "GET", url: "/api/v1/assets/my", headers: authHeader(employee.token) });
     expect(mine.statusCode).toBe(200);
-    expect(mine.json().items.map((item: { id: string }) => item.id)).toContain(asset.id);
+    const employeeAsset = mine.json().items.find((item: { id: string }) => item.id === asset.id);
+    expect(employeeAsset).toMatchObject({
+      id: asset.id,
+      is_assigned_to_current_user: true,
+      assignment_acknowledged: false,
+    });
+    for (const protectedField of [
+      "qr_hash", "metadata", "purchase_date", "vendor", "invoice_no", "cost", "maintenance",
+      "current_assigned_user_id", "assigned_to_user_id", "assigned_to_name", "active_assignment_id",
+      "latest_acknowledgement", "created_at", "updated_at", "deleted_at",
+    ]) {
+      expect(employeeAsset).not.toHaveProperty(protectedField);
+    }
+    const ownDetail = await second.inject({ method: "GET", url: `/api/v1/assets/${asset.id}`, headers: authHeader(employee.token) });
+    expect(ownDetail.statusCode).toBe(200);
+    expect(ownDetail.json()).toEqual(employeeAsset);
+    expect(staleDetail.json()).toHaveProperty("qr_hash");
     const admin = await loginAs(second, "ADM");
     const coreDetail = await second.inject({ method: "GET", url: `/api/v1/core/users/${seedIds.employee1}`, headers: authHeader(admin.token) });
     expect(coreDetail.statusCode).toBe(200);
@@ -944,6 +970,11 @@ describe("asset transaction boundary", () => {
       [seedIds.employee1],
     );
     expect(tickets.rows[0]?.count).toBe("0");
+    const recoveryEvents = await first.store.pgPool!.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM assets.asset_state_events WHERE asset_id = $1 AND event_type = 'asset.recovery_requested'",
+      [asset.id],
+    );
+    expect(recoveryEvents.rows[0]?.count).toBe("0");
   });
 
   it("validates command keys, escapes assignee search, and rejects malformed acknowledgement replay", async () => {
