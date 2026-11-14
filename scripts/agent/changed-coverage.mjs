@@ -1199,6 +1199,11 @@ export function changedLines(root, base, head, gitCommand = git) {
       deletionOnly.push(`${path}:deleted source file`);
     } else if (status === "D" && instrumentableExternal(path)) {
       deletionOnly.push(`${path}:deleted external executable file`);
+    } else if (semanticCoveragePaths.has(path)) {
+      // Operational QA scripts have explicit semantic contracts rather than
+      // executable package coverage. Classify them before the generic
+      // external-program path so they cannot be treated as uninstrumented.
+      outside.push(path);
     } else if (instrumentableExternal(path)) {
       external.push(path);
     } else if ((sourceTreePath || outsideExecutableOrConfig(path)) && !instrumentedSource) {
