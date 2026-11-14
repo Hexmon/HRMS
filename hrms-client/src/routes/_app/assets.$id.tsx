@@ -65,7 +65,10 @@ export function AssetDetail() {
     enabled: isApiBacked && isUuid(id),
     staleTime: queryTimings.detailStaleMs,
   });
-  const asset = isApiBacked && detailQuery.isError ? undefined : (detailQuery.data ?? listAsset);
+  const resolvedAsset = isApiBacked && detailQuery.isError ? undefined : (detailQuery.data ?? listAsset);
+  const asset = resolvedAsset?.apiMissing?.condition
+    ? { ...resolvedAsset, condition: "—" as AssetCondition }
+    : resolvedAsset;
   const isAdmin = !!activeRole && (ASSET_ADMIN_ROLES as readonly string[]).includes(activeRole);
   const [assigneeSearch, setAssigneeSearch] = useState("");
   const assigneesQuery = useQuery({
@@ -207,13 +210,9 @@ export function AssetDetail() {
                 <Info k="Invoice #" v={asset.invoiceNumber} />
                 <Info k="Purchased" v={overview.purchaseDate} />
                 <Info k="Warranty" v={overview.warranty} />
-                {overview.condition === null ? (
-                  <Info k="Condition" v="—" />
-                ) : (
-                  <Info k="Condition" v={<span className="uppercase">{asset.condition}</span>} />
-                )}
                 <Info k="Cost" v={overview.cost === null ? "—" : fmtMoney(overview.cost)} />
                 <Info k="Location" v={asset.location} />
+                <Info k="Condition" v={<span className="uppercase">{asset.condition}</span>} />
               </dl>
             </DataCard>
             <DataCard title="Current assignment">

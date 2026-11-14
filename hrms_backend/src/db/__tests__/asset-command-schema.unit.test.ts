@@ -32,5 +32,11 @@ describe("asset command schema and OpenAPI boundary", () => {
     expect(transform("POST", "/api/v1/assets/scan/token").schema.headers).toBeUndefined();
     expect(transform("POST", "/api/v1/assets/licenses/validate").schema.headers).toBeUndefined();
     expect(transform("POST", "/api/v1/auth/login").schema.headers).toBeUndefined();
+    expect(swaggerTransform({
+      schema: {},
+      url: "/api/v1/assets/",
+      route: { method: undefined as unknown as string, url: "/api/v1/assets/", handler: async () => undefined },
+      openapiObject: {},
+    }).schema.headers).toBeUndefined();
   });
 });
