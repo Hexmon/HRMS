@@ -11,6 +11,9 @@ const state = vi.hoisted(() => ({
   decideRequest: vi.fn(),
   cancelRequest: vi.fn(),
   toastApiError: vi.fn(),
+  requestError: null as Error | null,
+  requestsLoading: false,
+  submitAction: null as null | (() => void),
 }));
 
 vi.mock("@tanstack/react-router", () => ({ createFileRoute: () => (options: unknown) => options }));
@@ -21,8 +24,8 @@ vi.mock("@/lib/assets-store", () => ({
     addRequest: state.addRequest,
     decideRequest: state.decideRequest,
     cancelRequest: state.cancelRequest,
-    requestError: null,
-    requestsLoading: false,
+    requestError: state.requestError,
+    requestsLoading: state.requestsLoading,
   }),
   nextRequestId: () => "REQ-NEXT",
   ASSET_ADMIN_ROLES: ["main_admin", "asset_admin"],
@@ -86,9 +89,19 @@ vi.mock("@/components/ui/select", () => ({
   SelectItem: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
 vi.mock("@/components/ui/button", () => ({
-  Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
-    <button {...props}>{children}</button>
-  ),
+  Button: ({ children, onClick, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => {
+    if (typeof children !== "string" && onClick) {
+      const text = Array.isArray(children)
+        ? children.find((child) => child === "Submit request")
+        : null;
+      if (text) state.submitAction = onClick as () => void;
+    }
+    return (
+      <button onClick={onClick} {...props}>
+        {children}
+      </button>
+    );
+  },
 }));
 vi.mock("@/components/ui/tabs", () => ({
   Tabs: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -123,6 +136,9 @@ describe("asset request controls", () => {
     state.decideRequest.mockReset().mockResolvedValue(undefined);
     state.cancelRequest.mockReset().mockResolvedValue(undefined);
     state.toastApiError.mockReset();
+    state.requestError = null;
+    state.requestsLoading = false;
+    state.submitAction = null;
   });
   afterEach(cleanup);
 
@@ -169,7 +185,7 @@ describe("asset request controls", () => {
     const submit = screen.getByRole("button", { name: "Submit request" });
     fireEvent.click(submit);
     expect(submit).toBeDisabled();
-    fireEvent.click(submit);
+    state.submitAction?.();
     expect(onSubmit).toHaveBeenCalledTimes(1);
     expect(onSubmit).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -214,6 +230,31 @@ describe("asset request controls", () => {
       ),
     );
     expect(state.toast.success).toHaveBeenCalledWith("REQ-NEXT submitted");
+  });
+
+  it("distinguishes a loading queue from a backend failure", () => {
+    state.requestsLoading = true;
+    render(<RequestsScreen />);
+    expect(screen.getByText("Loading request queues...")).toBeInTheDocument();
+    cleanup();
+    state.requestsLoading = false;
+    state.requestError = new Error("queue denied");
+    render(<RequestsScreen />);
+    expect(screen.getByText("queue denied")).toBeInTheDocument();
+  });
+
+  it("reports request submission failure and preserves the form draft", async () => {
+    state.addRequest.mockRejectedValueOnce(new Error("submission offline"));
+    render(<RequestsScreen />);
+    fireEvent.change(screen.getByLabelText("Reason"), { target: { value: "Keep request draft" } });
+    fireEvent.click(screen.getByRole("button", { name: "Submit request" }));
+    await waitFor(() =>
+      expect(state.toastApiError).toHaveBeenCalledWith(
+        expect.any(Error),
+        "Asset request could not be submitted.",
+      ),
+    );
+    expect(screen.getByLabelText("Reason")).toHaveValue("Keep request draft");
   });
 
   it("reports employee request and Admin decision failures without false success", async () => {

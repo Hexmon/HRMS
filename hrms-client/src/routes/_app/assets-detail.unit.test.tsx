@@ -26,6 +26,8 @@ const state = vi.hoisted(() => ({
   executeQueries: false,
   getAsset: vi.fn(),
   getAssignees: vi.fn(),
+  dialogOpenChange: null as null | ((open: boolean) => void),
+  buttonActions: {} as Record<string, (() => void) | undefined>,
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -105,7 +107,16 @@ vi.mock("@/components/ui/tabs", () => ({
   TabsContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 vi.mock("@/components/ui/dialog", () => ({
-  Dialog: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Dialog: ({
+    children,
+    onOpenChange,
+  }: {
+    children: ReactNode;
+    onOpenChange: (open: boolean) => void;
+  }) => {
+    state.dialogOpenChange = onOpenChange;
+    return <div>{children}</div>;
+  },
   DialogTrigger: ({ children }: { children: ReactNode }) => <>{children}</>,
   DialogContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   DialogDescription: ({ children }: { children: ReactNode }) => <p>{children}</p>,
@@ -117,12 +128,35 @@ vi.mock("@/components/ui/button", () => ({
   Button: ({
     asChild,
     children,
+    onClick,
     ...props
-  }: React.ButtonHTMLAttributes<HTMLButtonElement> & { asChild?: boolean }) =>
-    asChild ? children : <button {...props}>{children}</button>,
+  }: React.ButtonHTMLAttributes<HTMLButtonElement> & { asChild?: boolean }) => {
+    if (typeof children === "string" && onClick)
+      state.buttonActions[children] = onClick as () => void;
+    return asChild ? (
+      children
+    ) : (
+      <button onClick={onClick} {...props}>
+        {children}
+      </button>
+    );
+  },
 }));
 vi.mock("@/components/ui/select", () => ({
-  Select: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  Select: ({
+    children,
+    onValueChange,
+  }: {
+    children: ReactNode;
+    onValueChange: (value: string) => void;
+  }) => (
+    <div>
+      <button type="button" onClick={() => onValueChange("poor")}>
+        Choose poor
+      </button>
+      {children}
+    </div>
+  ),
   SelectTrigger: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   SelectValue: () => null,
   SelectContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -182,6 +216,8 @@ describe("asset detail boundaries", () => {
     state.executeQueries = false;
     state.getAsset.mockReset().mockResolvedValue(asset());
     state.getAssignees.mockReset().mockResolvedValue({ items: [] });
+    state.dialogOpenChange = null;
+    state.buttonActions = {};
   });
   afterEach(cleanup);
 
@@ -256,6 +292,20 @@ describe("asset detail boundaries", () => {
     expect(state.toast.success).not.toHaveBeenCalledWith("Asset returned to inventory");
   });
 
+  it("reports assignment failure without a false success", async () => {
+    state.detail = { data: asset(), isError: false, isLoading: false, error: null };
+    state.assignAsset.mockRejectedValueOnce(new Error("assignee became ineligible"));
+    render(<AssetDetail />);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm assignment" }));
+    await waitFor(() =>
+      expect(state.toastApiError).toHaveBeenCalledWith(
+        expect.any(Error),
+        "Asset could not be assigned.",
+      ),
+    );
+    expect(state.toast.success).not.toHaveBeenCalledWith("Assigned to Employee A");
+  });
+
   it("renders assigned and local history, maintenance, documents and audit evidence", () => {
     state.isApiBacked = false;
     state.detail = { data: undefined, isError: false, isLoading: false, error: null };
@@ -312,6 +362,48 @@ describe("asset detail boundaries", () => {
       "Marco Rossi",
       "Sent for service",
     );
+  });
+
+  it("renders local missing optional evidence without inventing values", () => {
+    state.isApiBacked = false;
+    state.employees = [{ id: "employee-a", apiId: "api-employee-a", name: "Employee A" }];
+    state.assets = [
+      asset({
+        brand: "—",
+        cost: null,
+        condition: null,
+        assignedTo: "Employee A",
+        assignedOn: "2026-11-01",
+        expectedReturn: undefined,
+        apiMissing: { condition: true },
+        history: [
+          {
+            id: "assignment-a",
+            employee: "Employee A",
+            assignedOn: "2026-11-01",
+            returnedOn: undefined,
+            conditionAtHandover: "good",
+            conditionAtReturn: undefined,
+            acknowledged: false,
+          },
+        ],
+        documents: [],
+        audit: [
+          {
+            id: "audit-a",
+            at: "2026-11-01T00:00:00Z",
+            actor: "Admin A",
+            action: "Created",
+            remarks: "",
+          },
+        ],
+      }),
+    ];
+    render(<AssetDetail />);
+    expect(screen.getByRole("heading", { name: "Latitude" })).toBeInTheDocument();
+    expect(screen.getByText("No documents uploaded for this asset.")).toBeInTheDocument();
+    expect(screen.getByText("Pending")).toBeInTheDocument();
+    expect(screen.getAllByText("—").length).toBeGreaterThan(1);
   });
 });
 
@@ -381,9 +473,11 @@ describe("asset detail dialogs", () => {
     fireEvent.change(screen.getByLabelText("Assignment date"), { target: { value: "2026-12-01" } });
     fireEvent.change(screen.getByLabelText("Expected return"), { target: { value: "2027-01-01" } });
     fireEvent.change(screen.getByLabelText("Remarks"), { target: { value: "Issued by IT" } });
+    fireEvent.click(screen.getAllByRole("button", { name: "Choose poor" })[1]!);
     fireEvent.click(screen.getByRole("button", { name: "Confirm assignment" }));
     expect(screen.getByRole("button", { name: "Confirm assignment" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "Confirm assignment" }));
+    state.dialogOpenChange?.(false);
+    state.buttonActions["Confirm assignment"]?.();
     expect(onAssign).toHaveBeenCalledTimes(1);
     resolveAssign();
     await waitFor(() =>
@@ -394,9 +488,37 @@ describe("asset detail dialogs", () => {
       "employee-a",
       "2026-12-01",
       "2027-01-01",
-      "good",
+      "poor",
       "Issued by IT",
     );
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    state.dialogOpenChange?.(true);
+  });
+
+  it("edits return evidence and blocks duplicate submission while pending", async () => {
+    let resolveReturn!: () => void;
+    const onReturn = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveReturn = resolve;
+        }),
+    );
+    render(<ReturnDialog showDetails onReturn={onReturn} />);
+    fireEvent.change(screen.getByLabelText("Return date"), { target: { value: "2026-12-02" } });
+    fireEvent.click(screen.getAllByRole("button", { name: "Choose poor" })[0]!);
+    fireEvent.change(screen.getByLabelText("Recovery remarks"), {
+      target: { value: "Screen cracked" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    expect(screen.getByRole("button", { name: "Confirm" })).toBeDisabled();
+    state.dialogOpenChange?.(false);
+    state.buttonActions.Confirm?.();
+    expect(onReturn).toHaveBeenCalledTimes(1);
+    resolveReturn();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Confirm" })).toBeEnabled());
+    expect(onReturn).toHaveBeenCalledWith("2026-12-02", "poor", "Screen cracked");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    state.dialogOpenChange?.(true);
   });
 
   it("submits return and maintenance values", async () => {
