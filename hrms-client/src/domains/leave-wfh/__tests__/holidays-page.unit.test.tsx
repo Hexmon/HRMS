@@ -81,6 +81,20 @@ describe("holiday create form retry", () => {
     );
   });
 
+  it("closes the form and clears an unfinished draft without submitting", () => {
+    render(<HolidaysPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Add holiday" }));
+    fillHoliday("Draft Holiday");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(mock.mutateAsync).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Add holiday" }));
+    expect(screen.getByLabelText("Name")).toHaveValue("");
+    expect(screen.getByLabelText("Date")).toHaveValue("");
+  });
+
   it("keeps date-only holidays in their calendar month across local time zones", () => {
     const date = "2026-12-01";
     // Parsing the old value as an instant yields the previous local date in LA.

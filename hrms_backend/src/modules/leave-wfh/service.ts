@@ -429,10 +429,11 @@ export class LeaveWfhService {
     if (this.store.persistence && !this.store.persistence.holidaysForActor) {
       throw new Error("Holiday SQL read is unavailable.");
     }
-    const rows = this.store.persistence
+    const companyId = this.store.persistence ? undefined : this.requireCompanyId(actor.id);
+    const holidays = (this.store.persistence
       ? await this.store.persistence.holidaysForActor!(actor.id, year)
-      : this.repository.listHolidays(this.requireCompanyId(actor.id), year);
-    const holidays = rows.map((holiday) => this.presentHoliday(holiday));
+      : this.repository.listHolidays(companyId!, year)
+    ).map((holiday) => this.presentHoliday(holiday));
     return {
       holidays,
       calendar_metadata: {
