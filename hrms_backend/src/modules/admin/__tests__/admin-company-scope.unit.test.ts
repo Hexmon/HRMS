@@ -45,6 +45,87 @@ describe("admin company-scoped master data", () => {
     expect(store.adminPolicies.filter((policy) => policy.company_id === companyA)).toHaveLength(6);
     expect(store.adminPolicies.filter((policy) => policy.company_id === null)).toHaveLength(6);
   });
+
+  it("rejects an already-corrupt department cycle without mutating master data or outbox", () => {
+    const store = createMemoryDataStore();
+    const service = new AdminService(store);
+    const admin = store.users.find((user) => user.id === seedIds.admin)!;
+    assignCompany(store, admin.id, companyA);
+    const first = addCompanyMasterData(store, companyA, "CYCLE_A").department;
+    const second = addCompanyMasterData(store, companyA, "CYCLE_B").department;
+    first.parent_department_id = second.id;
+    second.parent_department_id = first.id;
+    const departmentsBefore = structuredClone(store.departments);
+    const outboxBefore = structuredClone(store.outbox);
+
+    expect(() =>
+      service.createDepartment(admin, {
+        name: "Blocked Child",
+        code: "BLOCKED_CHILD",
+        parent_department_id: first.id,
+      }),
+    ).toThrowError("Department hierarchy contains a cycle.");
+
+    expect(store.departments).toEqual(departmentsBefore);
+    expect(store.outbox).toEqual(outboxBefore);
+  });
+
+  it("rejects self, descendant, inactive, foreign-company, and orphaned department parents while preserving valid chains", () => {
+    const store = createMemoryDataStore();
+    const service = new AdminService(store);
+    const admin = store.users.find((user) => user.id === seedIds.admin)!;
+    assignCompany(store, admin.id, companyA);
+    const root = addCompanyMasterData(store, companyA, "ROOT").department;
+    const child = addCompanyMasterData(store, companyA, "CHILD").department;
+    child.parent_department_id = root.id;
+    const foreign = addCompanyMasterData(store, companyB, "FOREIGN").department;
+    const inactive = addCompanyMasterData(store, companyA, "INACTIVE").department;
+    inactive.status = "inactive";
+    const orphaned = addCompanyMasterData(store, companyA, "ORPHANED").department;
+    orphaned.parent_department_id = "missing-department";
+
+    expect(() =>
+      service.updateDepartment(admin, root.id, {
+        expected_version: root.version,
+        parent_department_id: root.id,
+      }),
+    ).toThrowError("Department cannot be its own parent.");
+    expect(() =>
+      service.updateDepartment(admin, root.id, {
+        expected_version: root.version,
+        parent_department_id: child.id,
+      }),
+    ).toThrowError("Department parent would create a hierarchy cycle.");
+    expect(() =>
+      service.createDepartment(admin, {
+        name: "Foreign Child",
+        code: "FOREIGN_CHILD",
+        parent_department_id: foreign.id,
+      }),
+    ).toThrowError("Parent department not found");
+    expect(() =>
+      service.createDepartment(admin, {
+        name: "Inactive Child",
+        code: "INACTIVE_CHILD",
+        parent_department_id: inactive.id,
+      }),
+    ).toThrowError("Parent department not found");
+    expect(() =>
+      service.createDepartment(admin, {
+        name: "Orphaned Child",
+        code: "ORPHANED_CHILD",
+        parent_department_id: orphaned.id,
+      }),
+    ).toThrowError("Department hierarchy contains an invalid parent reference.");
+
+    expect(
+      service.createDepartment(admin, {
+        name: "Grandchild",
+        code: "GRANDCHILD",
+        parent_department_id: child.id,
+      }).department,
+    ).toMatchObject({ parent_department_id: child.id, version: 1 });
+  });
 });
 
 const companyA = "11111111-1111-4111-8111-111111111111";
@@ -69,7 +150,7 @@ function assignCompany(store: ReturnType<typeof createMemoryDataStore>, userId: 
 }
 
 function addCompanyMasterData(store: ReturnType<typeof createMemoryDataStore>, companyId: string, suffix: string) {
-  const department = {
+  const department: ReturnType<typeof createMemoryDataStore>["departments"][number] = {
     id: `dept-${suffix}`,
     company_id: companyId,
     department_code: `D-${suffix}`,
@@ -81,7 +162,7 @@ function addCompanyMasterData(store: ReturnType<typeof createMemoryDataStore>, c
     deleted_at: null,
     version: 1
   };
-  const designation = {
+  const designation: ReturnType<typeof createMemoryDataStore>["designations"][number] = {
     id: `desg-${suffix}`,
     company_id: companyId,
     designation_code: `G-${suffix}`,

@@ -986,16 +986,33 @@ export class AdminService {
     if (!parent) {
       throw notFound("Parent department not found", { parent_id: parentId });
     }
-    let cursor: Department | undefined = parent;
-    while (cursor?.parent_department_id) {
-      if (cursor.parent_department_id === currentId) {
+    const visitedDepartmentIds = new Set<string>();
+    let cursor: Department = parent;
+    while (true) {
+      if (visitedDepartmentIds.has(cursor.id)) {
+        throw conflict("Department hierarchy contains a cycle.", {
+          parent_id: parentId,
+          cycle_department_id: cursor.id,
+        });
+      }
+      visitedDepartmentIds.add(cursor.id);
+      const nextParentId = cursor.parent_department_id;
+      if (!nextParentId) return;
+      if (nextParentId === currentId) {
         throw conflict("Department parent would create a hierarchy cycle.", {
           parent_id: parentId,
         });
       }
-      cursor = departments.find(
-        (department) => department.id === cursor?.parent_department_id,
+      const nextParent = departments.find(
+        (department) => department.id === nextParentId,
       );
+      if (!nextParent) {
+        throw conflict("Department hierarchy contains an invalid parent reference.", {
+          parent_id: parentId,
+          missing_department_id: nextParentId,
+        });
+      }
+      cursor = nextParent;
     }
   }
 
