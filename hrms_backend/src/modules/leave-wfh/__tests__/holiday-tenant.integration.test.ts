@@ -254,6 +254,72 @@ describe("holiday tenant transaction boundary", () => {
     expect(await events(suspendedUserId)).toEqual([]);
   });
 
+  it("fails closed for invalid SQL company context and preserves newer memory snapshots", async () => {
+    const admin = await loginAs(app, "ADM");
+    const preference = app.store.userSessionPreferences.find((row) => row.user_id === admin.user.id)!;
+    const companyId = preference.company_id!;
+    const persistence = app.store.persistence!;
+
+    await pool.query("UPDATE platform.user_session_preferences SET company_id = NULL WHERE user_id = $1", [admin.user.id]);
+    await expect(persistence.holidaysForActor!(admin.user.id, 2026)).rejects.toMatchObject({ statusCode: 400 });
+    await expect(persistence.workingWeekForActor!(admin.user.id)).rejects.toMatchObject({ statusCode: 400 });
+    await expect(persistence.upsertHoliday!(admin.user.id, randomUUID(), holidayBody("Missing Company")))
+      .rejects.toMatchObject({ statusCode: 400 });
+
+    await pool.query(
+      "UPDATE platform.user_session_preferences SET company_id = $2, active_role = $3 WHERE user_id = $1",
+      [admin.user.id, companyId, Roles.Employee],
+    );
+    await expect(persistence.holidaysForActor!(admin.user.id, 2026)).rejects.toMatchObject({ statusCode: 403 });
+    await pool.query(
+      "UPDATE platform.user_session_preferences SET active_role = $2 WHERE user_id = $1",
+      [admin.user.id, Roles.Admin],
+    );
+    await pool.query("UPDATE platform.company_profiles SET status = 'inactive' WHERE id = $1", [companyId]);
+    await expect(persistence.holidaysForActor!(admin.user.id, 2026)).rejects.toMatchObject({ statusCode: 400 });
+    await pool.query("UPDATE platform.company_profiles SET status = 'active' WHERE id = $1", [companyId]);
+    await expect(persistence.workingWeekForActor!(admin.user.id)).resolves.toBe("Mon-Fri");
+
+    const ghostId = randomUUID();
+    app.store.holidays.push({
+      id: ghostId, company_id: companyId, name: "Newer Memory Value", holiday_date: "2026-12-26",
+      region: "A Region", optional: false, version: 99,
+      created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z", deleted_at: null,
+    });
+    const created = await app.inject({
+      method: "PUT", url: `/api/v1/holidays/${ghostId}`,
+      headers: authHeader(admin.token), payload: holidayBody("SQL Value"),
+    });
+    expect(created.statusCode).toBe(200);
+    expect(await holiday(ghostId)).toMatchObject({ name: "SQL Value", version: 1 });
+    expect(app.store.holidays.find((row) => row.id === ghostId)).toMatchObject({ name: "Newer Memory Value", version: 99 });
+
+    const blockedId = randomUUID();
+    const initial = await app.inject({
+      method: "PUT", url: `/api/v1/holidays/${blockedId}`,
+      headers: authHeader(admin.token), payload: holidayBody("Trigger Original"),
+    });
+    expect(initial.statusCode).toBe(200);
+    await pool.query(`
+      CREATE FUNCTION leave_wfh.hrms_test_skip_holiday_update() RETURNS trigger
+      LANGUAGE plpgsql AS 'BEGIN RETURN NULL; END';
+      CREATE TRIGGER hrms_test_skip_holiday_update
+      BEFORE UPDATE ON leave_wfh.holidays
+      FOR EACH ROW EXECUTE FUNCTION leave_wfh.hrms_test_skip_holiday_update();
+    `);
+    try {
+      const blocked = await app.inject({
+        method: "PUT", url: `/api/v1/holidays/${blockedId}`,
+        headers: authHeader(admin.token), payload: holidayBody("Trigger Update", 1),
+      });
+      expect(blocked.statusCode).toBe(404);
+      expect(await holiday(blockedId)).toMatchObject({ name: "Trigger Original", version: 1 });
+    } finally {
+      await pool.query("DROP TRIGGER hrms_test_skip_holiday_update ON leave_wfh.holidays");
+      await pool.query("DROP FUNCTION leave_wfh.hrms_test_skip_holiday_update() ");
+    }
+  });
+
   it("serializes competing same-company edits and a stale instance full flush cannot revert the committed holiday", async () => {
     const admin = await loginAs(app, "ADM");
     const id = randomUUID();

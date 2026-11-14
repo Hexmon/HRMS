@@ -60,6 +60,76 @@ describe("holiday ID tenant ownership", () => {
     expect(store.outbox).toEqual(beforeEvents);
   });
 
+  it("uses the in-memory company calendar and rejects non-working half days", async () => {
+    const store = createMemoryDataStore();
+    const employee = store.users.find((user) => user.employee_code === "E1")!;
+    const companyId = store.userSessionPreferences.find((row) => row.user_id === employee.id)!.company_id!;
+    store.companyProfiles.find((company) => company.id === companyId)!.working_week = "Mon-Fri";
+    const makeHoliday = (holidayDate: string, optional: boolean, deletedAt: string | null): Holiday => ({
+      id: randomUUID(), company_id: companyId, name: `${holidayDate}-${optional}-${deletedAt ?? "active"}`,
+      holiday_date: holidayDate, region: "All", optional, version: 1,
+      created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z", deleted_at: deletedAt,
+    });
+    store.holidays = [
+      makeHoliday("2026-12-28", false, null),
+      makeHoliday("2026-12-29", true, null),
+      makeHoliday("2026-12-30", false, "2026-01-02T00:00:00.000Z"),
+    ];
+    const service = new LeaveWfhService(store);
+
+    expect((await service.listHolidays(employee, { page: 1, page_size: 10, year: 2026 })).holidays).toHaveLength(2);
+    await expect(service.createWfhRequest(employee, {
+      date_from: "2026-12-27", date_to: "2026-12-27", half_day: true, reason: "Sunday support",
+    })).rejects.toThrow("company non-working day");
+    await expect(service.createWfhRequest(employee, {
+      date_from: "2026-12-28", date_to: "2026-12-28", half_day: true, reason: "Holiday support",
+    })).rejects.toThrow("company non-working day");
+    await expect(service.createWfhRequest(employee, {
+      date_from: "2026-12-29", date_to: "2026-12-29", half_day: true, reason: "Optional holiday work",
+    })).resolves.toMatchObject({ request: { duration: 0.5 } });
+  });
+
+  it("fails closed when persistent calendar readers are incomplete", async () => {
+    const store = createMemoryDataStore();
+    const employee = store.users.find((user) => user.employee_code === "E1")!;
+    const basePersistence = { flush: async () => undefined, reload: async () => undefined, close: async () => undefined };
+    const service = new LeaveWfhService(store);
+
+    store.persistence = { ...basePersistence, holidaysForActor: async () => [] };
+    await expect(service.createWfhRequest(employee, {
+      date_from: "2026-12-29", date_to: "2026-12-29", half_day: false, reason: "Reader check",
+    })).rejects.toThrow("Company working-week SQL read is unavailable.");
+
+    store.persistence = { ...basePersistence, workingWeekForActor: async () => "Mon-Fri" };
+    await expect(service.createWfhRequest(employee, {
+      date_from: "2026-12-29", date_to: "2026-12-29", half_day: false, reason: "Reader check",
+    })).rejects.toThrow("Holiday SQL read is unavailable.");
+  });
+
+  it("does not project attendance for rejected leave or returned WFH", async () => {
+    const store = createMemoryDataStore();
+    const employee = store.users.find((user) => user.employee_code === "E1")!;
+    const manager = store.users.find((user) => user.employee_code === "D1")!;
+    const service = new LeaveWfhService(store);
+    const attendanceBefore = structuredClone(store.attendanceDayRecords);
+
+    const leave = await service.createLeaveRequest(employee, {
+      leave_type: "casual", date_from: "2026-12-29", date_to: "2026-12-29",
+      half_day: false, reason: "Family appointment", document_ids: [],
+    });
+    await expect(service.decideLeaveRequest(manager, leave.request_id, {
+      decision: "reject", remarks: "Coverage unavailable", expected_version: 1,
+    })).resolves.toMatchObject({ next_status: "rejected" });
+
+    const wfh = await service.createWfhRequest(employee, {
+      date_from: "2026-12-30", date_to: "2026-12-30", half_day: false, reason: "Home service",
+    });
+    await expect(service.decideWfhRequest(manager, wfh.request_id, {
+      decision: "return", remarks: "Add project details", expected_version: 1,
+    })).resolves.toMatchObject({ next_status: "returned" });
+    expect(store.attendanceDayRecords).toEqual(attendanceBefore);
+  });
+
   it.each([undefined, 2, 99])("rejects a foreign UUID without a memory ghost, expected version %s", (expectedVersion) => {
     const { store, companyA, foreignId, foreignHoliday, repository } = fixture();
     const before = structuredClone(foreignHoliday);

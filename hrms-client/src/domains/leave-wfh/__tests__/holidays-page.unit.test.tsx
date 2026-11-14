@@ -8,6 +8,9 @@ const mock = vi.hoisted(() => ({
   toastSuccess: vi.fn(),
   holidays: [] as Array<Record<string, unknown>>,
   activeRole: "main_admin",
+  isLoading: false,
+  isError: false,
+  queryError: null as unknown,
 }));
 
 vi.mock("@/lib/auth", () => ({ useAuth: () => ({ activeRole: mock.activeRole }) }));
@@ -15,8 +18,9 @@ vi.mock("@/domains/leave-wfh", () => ({
   useHolidayMutation: () => ({ mutateAsync: mock.mutateAsync, isPending: false }),
   useHolidays: () => ({
     data: { holidays: mock.holidays },
-    isLoading: false,
-    isError: false,
+    isLoading: mock.isLoading,
+    isError: mock.isError,
+    error: mock.queryError,
     refetch: mock.refetch,
   }),
   holidaysFromResponse: (value: { holidays?: Array<Record<string, unknown>> }) =>
@@ -44,6 +48,9 @@ afterEach(() => {
   vi.useRealTimers();
   mock.holidays = [];
   mock.activeRole = "main_admin";
+  mock.isLoading = false;
+  mock.isError = false;
+  mock.queryError = null;
 });
 
 function fillHoliday(name = "Founders Day") {
@@ -93,6 +100,31 @@ describe("holiday create form retry", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add holiday" }));
     expect(screen.getByLabelText("Name")).toHaveValue("");
     expect(screen.getByLabelText("Date")).toHaveValue("");
+  });
+
+  it("renders loading and request failure states", () => {
+    mock.isLoading = true;
+    const loading = render(<HolidaysPage />);
+    expect(screen.getByText("Loading holidays...")).toBeInTheDocument();
+    loading.unmount();
+
+    mock.isLoading = false;
+    mock.isError = true;
+    mock.queryError = new Error("Calendar unavailable");
+    render(<HolidaysPage />);
+    expect(screen.getByText("Could not load holidays")).toBeInTheDocument();
+  });
+
+  it("defaults a blank region to All", async () => {
+    mock.mutateAsync.mockResolvedValueOnce({});
+    render(<HolidaysPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Add holiday" }));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Founders Day" } });
+    fireEvent.change(screen.getByLabelText("Date"), { target: { value: "2026-12-26" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Add$/ }));
+
+    await waitFor(() => expect(mock.mutateAsync).toHaveBeenCalledTimes(1));
+    expect(mock.mutateAsync.mock.calls[0]?.[0].input.region).toBe("All");
   });
 
   it("keeps date-only holidays in their calendar month across local time zones", () => {
@@ -249,6 +281,34 @@ describe("holiday create form retry", () => {
     expect(mock.refetch).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the draft editable when a stale holiday was removed during refresh", async () => {
+    mock.holidays = [
+      {
+        id: firstId,
+        name: "Removed Holiday",
+        date: "2026-12-01",
+        region: "IN",
+        optional: false,
+        expectedVersion: 2,
+      },
+    ];
+    const conflict = Object.assign(new Error("Conflict"), {
+      status: 409,
+      details: { reason: "stale_version" },
+    });
+    Object.setPrototypeOf(conflict, (await import("@/shared/api")).ApiError.prototype);
+    mock.mutateAsync.mockRejectedValueOnce(conflict);
+    mock.refetch.mockResolvedValueOnce({ data: { holidays: [] } });
+
+    render(<HolidaysPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit Removed Holiday" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(mock.refetch).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("A newer version is available")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save changes" })).toBeEnabled();
+  });
+
   it("keeps the same ID and draft after a network error, refetches, and resets only after confirmed success", async () => {
     mock.mutateAsync
       .mockRejectedValueOnce(new Error("Network disconnected"))
@@ -294,6 +354,8 @@ describe("holiday create form retry", () => {
     fireEvent.click(add);
     fireEvent.click(add);
     expect(mock.mutateAsync).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
     await act(async () => {
       finish({});
     });

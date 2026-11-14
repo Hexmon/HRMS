@@ -522,7 +522,7 @@ class PostgresPersistence {
       await client.query("COMMIT");
       return holidays;
     } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
+      await client.query("ROLLBACK").catch(Boolean);
       throw error;
     } finally {
       client.release();
@@ -539,9 +539,9 @@ class PostgresPersistence {
         [companyId],
       );
       await client.query("COMMIT");
-      return result.rows[0]?.working_week ?? "Mon-Fri";
+      return result.rows[0]!.working_week;
     } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
+      await client.query("ROLLBACK").catch(Boolean);
       throw error;
     } finally {
       client.release();
@@ -617,7 +617,7 @@ class PostgresPersistence {
       }
       await client.query("COMMIT");
     } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
+      await client.query("ROLLBACK").catch(Boolean);
       if ((error as { code?: string }).code === "23505") {
         throw conflict("Holiday update conflicted with an existing record or event.", {
           reason: "write_conflict",

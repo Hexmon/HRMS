@@ -425,11 +425,11 @@ export class LeaveWfhService {
   }
 
   async listHolidays(actor: AuthUser, query: LeaveWfhQuery) {
+    const companyId = this.store.persistence ? undefined : this.requireCompanyId(actor.id);
     const year = query.year ?? currentYear();
     if (this.store.persistence && !this.store.persistence.holidaysForActor) {
       throw new Error("Holiday SQL read is unavailable.");
     }
-    const companyId = this.store.persistence ? undefined : this.requireCompanyId(actor.id);
     const holidays = (this.store.persistence
       ? await this.store.persistence.holidaysForActor!(actor.id, year)
       : this.repository.listHolidays(companyId!, year)

@@ -59,7 +59,7 @@ export function HolidaysPage() {
   const openForm = () => {
     setEditing(null);
     setLatestConflict(null);
-    draftId.current ??= createId();
+    draftId.current = createId();
     setOpen(true);
   };
 
@@ -94,7 +94,7 @@ export function HolidaysPage() {
     }
     if (submissionInFlight.current) return;
     submissionInFlight.current = true;
-    const id = draftId.current ?? (draftId.current = createId());
+    const id = draftId.current!;
     const editSnapshot = editing;
     try {
       await mutation.mutateAsync({
@@ -295,7 +295,7 @@ export function HolidaysPage() {
 
       <Modal
         open={open}
-        onOpenChange={(nextOpen) => (nextOpen ? openForm() : closeForm())}
+        onOpenChange={closeForm}
         title={editing ? "Edit holiday" : "Add holiday"}
         footer={
           <>
