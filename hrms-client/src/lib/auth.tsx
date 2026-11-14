@@ -486,8 +486,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           applyApiSession(session);
         } catch {
           const responseUserId = typeof response.user.id === "string" ? response.user.id : null;
+          const responseCompanyId =
+            typeof response.company_id === "string" ? response.company_id : null;
           setSetupDone(!loginSetupRequired && !currentBootstrapToken(responseUserId));
-          applyApiUser(response.user, undefined, undefined, response.company_id);
+          applyApiUser(response.user, undefined, undefined, responseCompanyId);
         }
         return { ok: true };
       } catch (error) {
