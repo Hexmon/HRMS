@@ -14,11 +14,11 @@ import { conflict, notFound } from "../../platform/errors.js";
 export class AssetRepository {
   constructor(private readonly store: MemoryDataStore) {}
 
-  create(input: { asset_code: string; asset_type: string; name: string; serial_no?: string }): AssetRecord {
+  create(companyId: UUID, input: { asset_code: string; asset_type: string; name: string; serial_no?: string }): AssetRecord {
     const now = nowIso();
     const qrHash = createQrHash(input.asset_code);
     if (this.store.assets.some((asset) =>
-      !asset.deleted_at && (asset.asset_code === input.asset_code || asset.qr_hash === qrHash)
+      !asset.deleted_at && ((asset.company_id === companyId && asset.asset_code === input.asset_code) || asset.qr_hash === qrHash)
     )) {
       throw conflict("An asset with the same code or QR identity already exists.", {
         reason: "duplicate_asset_identity",
@@ -26,6 +26,7 @@ export class AssetRepository {
     }
     const asset: AssetRecord = {
       id: randomUUID(),
+      company_id: companyId,
       asset_code: input.asset_code,
       qr_hash: qrHash,
       asset_type: input.asset_type,
@@ -43,8 +44,10 @@ export class AssetRepository {
     return asset;
   }
 
-  find(id: UUID): AssetRecord {
-    const asset = this.store.assets.find((candidate) => candidate.id === id && !candidate.deleted_at);
+  find(id: UUID, companyId: UUID): AssetRecord {
+    const asset = this.store.assets.find((candidate) =>
+      candidate.id === id && candidate.company_id === companyId && !candidate.deleted_at
+    );
     if (!asset) {
       throw notFound("Asset not found", { id });
     }
@@ -59,16 +62,18 @@ export class AssetRepository {
     return asset;
   }
 
-  list(): AssetRecord[] {
-    return this.store.assets.filter((asset) => !asset.deleted_at);
+  list(companyId: UUID): AssetRecord[] {
+    return this.store.assets.filter((asset) => asset.company_id === companyId && !asset.deleted_at);
   }
 
-  activeAssignment(assetId: UUID) {
-    return this.store.assetAssignments.find((candidate) => candidate.asset_id === assetId && candidate.status === "active") ?? null;
+  activeAssignment(assetId: UUID, companyId: UUID) {
+    return this.store.assetAssignments.find((candidate) =>
+      candidate.asset_id === assetId && candidate.company_id === companyId && candidate.status === "active"
+    ) ?? null;
   }
 
-  updateVersioned(id: UUID, expectedVersion: number, mutator: (asset: AssetRecord) => void): AssetRecord {
-    const asset = this.find(id);
+  updateVersioned(id: UUID, companyId: UUID, expectedVersion: number, mutator: (asset: AssetRecord) => void): AssetRecord {
+    const asset = this.find(id, companyId);
     if (asset.version !== expectedVersion) {
       throw conflict("Asset was modified by another actor.", { aggregate: "asset", id });
     }
@@ -78,16 +83,17 @@ export class AssetRepository {
     return asset;
   }
 
-  createRequest(input: Omit<AssetRequestRecord, "id" | "request_code" | "version" | "created_at" | "updated_at" | "deleted_at">): AssetRequestRecord {
+  createRequest(companyId: UUID, input: Omit<AssetRequestRecord, "id" | "company_id" | "request_code" | "version" | "created_at" | "updated_at" | "deleted_at">): AssetRequestRecord {
     const now = nowIso();
     // Asset commands load the current SQL snapshot under the DB command lock.
     // Count-based allocation reuses codes after imports or deleted/gapped rows.
-    const nextNumber = Math.max(400, ...this.store.assetRequests.map((request) => {
+    const nextNumber = Math.max(400, ...this.store.assetRequests.filter((request) => request.company_id === companyId).map((request) => {
       const match = /^REQ-(\d+)$/u.exec(request.request_code);
       return match ? Number(match[1]) : 400;
     })) + 1;
     const request: AssetRequestRecord = {
       id: randomUUID(),
+      company_id: companyId,
       request_code: `REQ-${nextNumber}`,
       ...input,
       version: 1,
@@ -99,25 +105,27 @@ export class AssetRepository {
     return request;
   }
 
-  listRequests(filters: { requesterUserId?: UUID; status?: string; assetType?: string }): AssetRequestRecord[] {
+  listRequests(filters: { companyId: UUID; requesterUserId?: UUID; status?: string; assetType?: string }): AssetRequestRecord[] {
     return this.store.assetRequests
-      .filter((request) => !request.deleted_at)
+      .filter((request) => request.company_id === filters.companyId && !request.deleted_at)
       .filter((request) => !filters.requesterUserId || request.requester_user_id === filters.requesterUserId)
       .filter((request) => !filters.status || request.status === filters.status)
       .filter((request) => !filters.assetType || request.asset_type === filters.assetType)
       .sort((a, b) => b.created_at.localeCompare(a.created_at));
   }
 
-  findRequest(id: UUID): AssetRequestRecord {
-    const request = this.store.assetRequests.find((candidate) => candidate.id === id && !candidate.deleted_at);
+  findRequest(id: UUID, companyId: UUID): AssetRequestRecord {
+    const request = this.store.assetRequests.find((candidate) =>
+      candidate.id === id && candidate.company_id === companyId && !candidate.deleted_at
+    );
     if (!request) {
       throw notFound("Asset request not found", { id });
     }
     return request;
   }
 
-  updateRequestVersioned(id: UUID, expectedVersion: number, mutator: (request: AssetRequestRecord) => void): AssetRequestRecord {
-    const request = this.findRequest(id);
+  updateRequestVersioned(id: UUID, companyId: UUID, expectedVersion: number, mutator: (request: AssetRequestRecord) => void): AssetRequestRecord {
+    const request = this.findRequest(id, companyId);
     if (request.version !== expectedVersion) {
       throw conflict("Asset request was modified by another actor.", { aggregate: "asset_request", id });
     }
@@ -127,10 +135,11 @@ export class AssetRepository {
     return request;
   }
 
-  createAcknowledgement(input: Omit<AssetAcknowledgementRecord, "id" | "status" | "acknowledged_at" | "version" | "created_at" | "updated_at">): AssetAcknowledgementRecord {
+  createAcknowledgement(companyId: UUID, input: Omit<AssetAcknowledgementRecord, "id" | "company_id" | "status" | "acknowledged_at" | "version" | "created_at" | "updated_at">): AssetAcknowledgementRecord {
     const now = nowIso();
     const acknowledgement: AssetAcknowledgementRecord = {
       id: randomUUID(),
+      company_id: companyId,
       ...input,
       status: "acknowledged",
       acknowledged_at: now,
@@ -142,17 +151,18 @@ export class AssetRepository {
     return acknowledgement;
   }
 
-  listMaintenance(assetId: UUID, status?: string): AssetMaintenanceRecord[] {
+  listMaintenance(assetId: UUID, companyId: UUID, status?: string): AssetMaintenanceRecord[] {
     return this.store.assetMaintenanceRecords
-      .filter((record) => record.asset_id === assetId && !record.deleted_at)
+      .filter((record) => record.asset_id === assetId && record.company_id === companyId && !record.deleted_at)
       .filter((record) => !status || record.status === status)
       .sort((a, b) => b.started_on.localeCompare(a.started_on));
   }
 
-  createMaintenance(input: Omit<AssetMaintenanceRecord, "id" | "version" | "created_at" | "updated_at" | "deleted_at">): AssetMaintenanceRecord {
+  createMaintenance(companyId: UUID, input: Omit<AssetMaintenanceRecord, "id" | "company_id" | "version" | "created_at" | "updated_at" | "deleted_at">): AssetMaintenanceRecord {
     const now = nowIso();
     const record: AssetMaintenanceRecord = {
       id: randomUUID(),
+      company_id: companyId,
       ...input,
       version: 1,
       created_at: now,
@@ -163,24 +173,26 @@ export class AssetRepository {
     return record;
   }
 
-  listVendors(filters: { activeOnly?: boolean; search?: string }): AssetVendorRecord[] {
+  listVendors(companyId: UUID, filters: { activeOnly?: boolean; search?: string }): AssetVendorRecord[] {
     const search = filters.search?.toLowerCase();
     return this.store.assetVendors
-      .filter((vendor) => !vendor.deleted_at)
+      .filter((vendor) => vendor.company_id === companyId && !vendor.deleted_at)
       .filter((vendor) => !filters.activeOnly || vendor.status === "active")
       .filter((vendor) => !search || vendor.name.toLowerCase().includes(search))
       .sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  findVendor(id: UUID): AssetVendorRecord {
-    const vendor = this.store.assetVendors.find((candidate) => candidate.id === id && !candidate.deleted_at);
+  findVendor(id: UUID, companyId: UUID): AssetVendorRecord {
+    const vendor = this.store.assetVendors.find((candidate) =>
+      candidate.id === id && candidate.company_id === companyId && !candidate.deleted_at
+    );
     if (!vendor) {
       throw notFound("Asset vendor not found", { id });
     }
     return vendor;
   }
 
-  createVendor(input: {
+  createVendor(companyId: UUID, input: {
     name: string;
     contact_email?: string | null;
     phone?: string | null;
@@ -188,13 +200,16 @@ export class AssetRepository {
     status?: "active" | "inactive";
   }): AssetVendorRecord {
     const normalized = input.name.trim().toLowerCase();
-    const duplicate = this.store.assetVendors.find((vendor) => !vendor.deleted_at && vendor.name.trim().toLowerCase() === normalized);
+    const duplicate = this.store.assetVendors.find((vendor) =>
+      vendor.company_id === companyId && !vendor.deleted_at && vendor.name.trim().toLowerCase() === normalized
+    );
     if (duplicate) {
       throw conflict("Asset vendor already exists.", { id: duplicate.id, name: duplicate.name });
     }
     const now = nowIso();
     const vendor: AssetVendorRecord = {
       id: randomUUID(),
+      company_id: companyId,
       name: input.name.trim(),
       status: input.status ?? "active",
       contact_email: input.contact_email ?? null,
@@ -209,15 +224,15 @@ export class AssetRepository {
     return vendor;
   }
 
-  updateVendorVersioned(id: UUID, expectedVersion: number, mutator: (vendor: AssetVendorRecord) => void): AssetVendorRecord {
-    const vendor = this.findVendor(id);
+  updateVendorVersioned(id: UUID, companyId: UUID, expectedVersion: number, mutator: (vendor: AssetVendorRecord) => void): AssetVendorRecord {
+    const vendor = this.findVendor(id, companyId);
     if (vendor.version !== expectedVersion) {
       throw conflict("Asset vendor was modified by another actor.", { aggregate: "asset_vendor", id });
     }
     mutator(vendor);
     const normalized = vendor.name.trim().toLowerCase();
     const duplicate = this.store.assetVendors.find(
-      (candidate) => candidate.id !== id && !candidate.deleted_at && candidate.name.trim().toLowerCase() === normalized
+      (candidate) => candidate.id !== id && candidate.company_id === companyId && !candidate.deleted_at && candidate.name.trim().toLowerCase() === normalized
     );
     if (duplicate) {
       throw conflict("Asset vendor already exists.", { id: duplicate.id, name: duplicate.name });
@@ -227,8 +242,10 @@ export class AssetRepository {
     return vendor;
   }
 
-  findRecoveryTicket(id: UUID) {
-    const ticket = this.store.assetRecoveryTickets.find((candidate) => candidate.id === id);
+  findRecoveryTicket(id: UUID, companyId: UUID) {
+    const ticket = this.store.assetRecoveryTickets.find((candidate) =>
+      candidate.id === id && candidate.company_id === companyId
+    );
     if (!ticket) {
       throw notFound("Asset recovery ticket not found", { id });
     }

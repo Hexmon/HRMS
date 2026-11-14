@@ -3055,9 +3055,10 @@ const expenseTimelineEventSchema = {
 
 const assetSchema = {
   type: "object",
-  required: ["id", "asset_code", "asset_type", "name", "status", "version"],
+  required: ["id", "company_id", "asset_code", "asset_type", "name", "status", "version"],
   properties: {
     id: uuid("Asset UUID"),
+    company_id: uuid("Owning company UUID"),
     asset_code: { type: "string", example: "LAP-001" },
     asset_type: { type: "string", example: "Laptop" },
     name: { type: "string", example: "ThinkPad T-Series" },
@@ -3074,6 +3075,7 @@ const assetRequestSchema = {
   type: "object",
   required: [
     "id",
+    "company_id",
     "request_code",
     "requester_user_id",
     "request_type",
@@ -3086,6 +3088,7 @@ const assetRequestSchema = {
   ],
   properties: {
     id: uuid("Asset request UUID"),
+    company_id: uuid("Owning company UUID"),
     request_code: { type: "string", example: "REQ-401" },
     requester_user_id: uuid("Requester user UUID"),
     requester_name: { type: "string", nullable: true, example: "Employee E1" },
@@ -3199,6 +3202,7 @@ const assetMaintenanceSchema = {
   type: "object",
   required: [
     "id",
+    "company_id",
     "asset_id",
     "maintenance_type",
     "started_on",
@@ -3207,6 +3211,7 @@ const assetMaintenanceSchema = {
   ],
   properties: {
     id: uuid("Maintenance record UUID"),
+    company_id: uuid("Owning company UUID"),
     asset_id: uuid("Asset UUID"),
     maintenance_type: {
       type: "string",
@@ -3236,9 +3241,10 @@ const assetMaintenanceSchema = {
 
 const assetVendorSchema = {
   type: "object",
-  required: ["id", "name", "status", "version"],
+  required: ["id", "company_id", "name", "status", "version"],
   properties: {
     id: uuid("Vendor UUID"),
+    company_id: uuid("Owning company UUID"),
     name: { type: "string", example: "Lenovo India" },
     status: { type: "string", enum: ["active", "inactive"], example: "active" },
     contact_email: {
@@ -3346,6 +3352,7 @@ const assetRecoveryTicketSchema = {
   type: "object",
   required: [
     "id",
+    "company_id",
     "employee_user_id",
     "asset_id",
     "assignment_id",
@@ -3357,6 +3364,7 @@ const assetRecoveryTicketSchema = {
   ],
   properties: {
     id: uuid("Recovery ticket UUID"),
+    company_id: uuid("Owning company UUID"),
     employee_user_id: uuid("Employee user UUID"),
     asset_id: uuid("Asset UUID"),
     assignment_id: { ...uuid("Custody assignment UUID"), nullable: true },
@@ -12475,12 +12483,15 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/assets/events/employee-terminated": operation(
     "Outbox / Platform Events",
     "Consume employee terminated event",
-    "Protected local event consumer that moves assigned assets into recovery workflow when an employee is terminated.",
+    "Protected HR/Admin event consumer that moves assigned assets into recovery workflow only after validating the durable employee-termination event.",
     {
       body: {
         type: "object",
-        required: ["employee_user_id"],
-        properties: { employee_user_id: uuid("Terminated employee UUID") },
+        required: ["employee_user_id", "lifecycle_event_id"],
+        properties: {
+          employee_user_id: uuid("Terminated employee UUID"),
+          lifecycle_event_id: uuid("Durable core.user.terminated outbox event UUID"),
+        },
       },
       response200: { type: "object", additionalProperties: true },
     },

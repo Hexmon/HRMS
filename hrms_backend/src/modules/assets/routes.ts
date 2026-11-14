@@ -1,15 +1,23 @@
 import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { assetAssignSchema, assetCreateSchema, licenseActivationSchema, paginationQuerySchema, Roles, type AuthUser } from "#shared";
-import { badRequest, forbidden, notFound, unauthorized } from "../../platform/errors.js";
-import type { DataStore } from "../../platform/data-store.js";
+import { assetAssignSchema, assetCreateSchema, EmploymentStatuses, licenseActivationSchema, paginationQuerySchema, Roles, type AuthUser } from "#shared";
+import { badRequest, conflict, forbidden, notFound, unauthorized } from "../../platform/errors.js";
+import type { AssetCommandInput, DataStore } from "../../platform/data-store.js";
 import { canonicalJsonHash } from "../attendance/canonical-json.js";
 import { resolveActiveCompanyMembershipContext } from "../../platform/company-membership-context.js";
 import { assertAssetManager } from "./policy.js";
 import { AssetService } from "./service.js";
 
-async function readStore(store: DataStore): Promise<DataStore> {
-  return store.persistence?.assetReadStore?.() ?? store;
+async function readContext(store: DataStore, actor: AuthUser, operation: string): Promise<{ store: DataStore; actor: AuthUser }> {
+  const membership = resolveActiveCompanyMembershipContext(store, {
+    userId: actor.id,
+    operation,
+    requireActiveEmployment: true,
+  });
+  const snapshot = await store.persistence?.assetReadStore?.(undefined, membership.companyId, actor.id, operation) ?? store;
+  const currentActor = snapshot.users.find((user) => user.id === actor.id);
+  if (!currentActor) throw unauthorized("User no longer exists");
+  return { store: snapshot, actor: currentActor };
 }
 
 async function assetMutation<T>(
@@ -17,25 +25,25 @@ async function assetMutation<T>(
   request: FastifyRequest,
   actionKey: string,
   body: Record<string, unknown>,
-  authorize: (store: DataStore, actor: AuthUser, replayBody?: T) => void,
+  authorize: (store: DataStore, actor: AuthUser, companyId: string, replayBody?: T) => void,
   execute: (service: AssetService, actor: AuthUser) => T,
-  assigneeUserId?: string,
+  commandContext: Pick<AssetCommandInput, "assigneeUserId" | "lifecycleEventId" | "terminatedEmployeeUserId"> = {},
 ): Promise<T> {
   if (!request.actor) throw unauthorized();
   const actor = request.actor;
+  const membership = resolveActiveCompanyMembershipContext(store, {
+    userId: actor.id,
+    operation: actionKey,
+    requireActiveEmployment: true,
+  });
   if (!store.persistence?.assetCommand) {
-    authorize(store, actor);
+    authorize(store, actor, membership.companyId);
     return execute(new AssetService(store), actor);
   }
   const key = request.headers["idempotency-key"];
   if (typeof key !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{7,199}$/u.test(key)) {
     throw badRequest("A unique Idempotency-Key header is required for asset changes.");
   }
-  const membership = resolveActiveCompanyMembershipContext(store, {
-    userId: actor.id,
-    operation: actionKey,
-    requireActiveEmployment: true,
-  });
   return store.persistence.assetCommand(
     {
       companyId: membership.companyId,
@@ -43,31 +51,33 @@ async function assetMutation<T>(
       actionKey,
       idempotencyKey: key,
       requestHash: canonicalJsonHash({ actionKey, body }),
-      assigneeUserId,
+      ...commandContext,
     },
-    authorize,
+    (snapshot, freshActor, replayBody) => authorize(snapshot, freshActor, membership.companyId, replayBody),
     (staged, freshActor) => execute(new AssetService(staged), freshActor),
   );
 }
 
-function authorizeOwnRequest(store: DataStore, actor: AuthUser, id: string): void {
-  if (!store.assetRequests.some((item) => item.id === id && !item.deleted_at && item.requester_user_id === actor.id)) {
+function authorizeOwnRequest(store: DataStore, actor: AuthUser, companyId: string, id: string): void {
+  if (!store.assetRequests.some((item) =>
+    item.id === id && item.company_id === companyId && !item.deleted_at && item.requester_user_id === actor.id
+  )) {
     throw notFound("Asset request not found", { id });
   }
 }
 
-function authorizeAcknowledgement(store: DataStore, actor: AuthUser, id: string, replayBody?: unknown): void {
-  const asset = store.assets.find((item) => item.id === id && !item.deleted_at);
+function authorizeAcknowledgement(store: DataStore, actor: AuthUser, companyId: string, id: string, replayBody?: unknown): void {
+  const asset = store.assets.find((item) => item.id === id && item.company_id === companyId && !item.deleted_at);
   if (!asset) throw forbidden("Only the assigned employee can acknowledge this asset.");
   if (replayBody !== undefined) {
     const body = replayBody && typeof replayBody === "object" ? replayBody as Record<string, unknown> : null;
     const acknowledgement = body?.acknowledgement && typeof body.acknowledgement === "object"
       ? body.acknowledgement as Record<string, unknown> : null;
     const recorded = store.assetAcknowledgements.find((item) =>
-      item.id === acknowledgement?.id && item.asset_id === id && item.employee_user_id === actor.id
+      item.id === acknowledgement?.id && item.company_id === companyId && item.asset_id === id && item.employee_user_id === actor.id
     );
     const originalEmployeeAssignment = recorded?.assignment_id && store.assetAssignments.some((assignment) =>
-      assignment.id === recorded.assignment_id && assignment.asset_id === id && assignment.assigned_to_user_id === actor.id
+      assignment.id === recorded.assignment_id && assignment.company_id === companyId && assignment.asset_id === id && assignment.assigned_to_user_id === actor.id
     );
     if (acknowledgement?.asset_id === id && recorded &&
         (actor.roles.includes(Roles.Admin) || originalEmployeeAssignment)) return;
@@ -78,9 +88,59 @@ function authorizeAcknowledgement(store: DataStore, actor: AuthUser, id: string,
   }
 }
 
-function authorizeTermination(_store: DataStore, actor: AuthUser): void {
-  if (![Roles.Admin, Roles.AssetManager, Roles.HRManager].some((role) => actor.roles.includes(role))) {
-    throw forbidden("Asset, HR, or Admin role required.");
+function authorizeAssetManagerResource(store: DataStore, actor: AuthUser, companyId: string, id: string): void {
+  assertAssetManager(actor);
+  if (!store.assets.some((asset) => asset.id === id && asset.company_id === companyId && !asset.deleted_at)) {
+    throw notFound("Asset not found", { id });
+  }
+}
+
+function authorizeAssetManagerRequest(store: DataStore, actor: AuthUser, companyId: string, id: string): void {
+  assertAssetManager(actor);
+  if (!store.assetRequests.some((request) => request.id === id && request.company_id === companyId && !request.deleted_at)) {
+    throw notFound("Asset request not found", { id });
+  }
+}
+
+function authorizeAssetManagerVendor(store: DataStore, actor: AuthUser, companyId: string, id: string): void {
+  assertAssetManager(actor);
+  if (!store.assetVendors.some((vendor) => vendor.id === id && vendor.company_id === companyId && !vendor.deleted_at)) {
+    throw notFound("Asset vendor not found", { id });
+  }
+}
+
+function authorizeAssetManagerRecovery(store: DataStore, actor: AuthUser, companyId: string, id: string): void {
+  assertAssetManager(actor);
+  if (!store.assetRecoveryTickets.some((ticket) => ticket.id === id && ticket.company_id === companyId)) {
+    throw notFound("Asset recovery ticket not found", { id });
+  }
+}
+
+function authorizeTermination(actor: AuthUser): void {
+  if (![Roles.Admin, Roles.HRManager].some((role) => actor.roles.includes(role))) {
+    throw forbidden("HR or Admin role required.");
+  }
+}
+
+function authorizeMemoryTermination(
+  store: DataStore,
+  companyId: string,
+  input: { employee_user_id: string; lifecycle_event_id: string },
+): void {
+  const employee = store.users.find((user) => user.id === input.employee_user_id);
+  const lifecycle = store.outbox.find((event) =>
+    event.event_id === input.lifecycle_event_id &&
+    event.aggregate_type === "core.user" &&
+    event.aggregate_id === input.employee_user_id &&
+    event.event_type === "core.user.terminated"
+  );
+  const assigned = store.assetAssignments.some((assignment) =>
+    assignment.company_id === companyId &&
+    assignment.assigned_to_user_id === input.employee_user_id &&
+    assignment.status === "active"
+  );
+  if (employee?.employment_status !== EmploymentStatuses.Terminated || !lifecycle || !assigned) {
+    throw conflict("Employee termination event is not eligible for asset recovery.");
   }
 }
 
@@ -167,15 +227,17 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const query = paginationQuerySchema.parse(request.query);
-    return new AssetService(await readStore(fastify.store)).list(request.actor, query.page, query.page_size);
+    const context = await readContext(fastify.store, request.actor, "assets.list");
+    return new AssetService(context.store).list(context.actor, query.page, query.page_size);
   });
 
   fastify.get("/warranty-alerts", async (request) => {
     if (!request.actor) {
       throw unauthorized();
     }
-    return new AssetService(await readStore(fastify.store)).warrantyAlerts(
-      request.actor,
+    const context = await readContext(fastify.store, request.actor, "assets.warranty-alerts");
+    return new AssetService(context.store).warrantyAlerts(
+      context.actor,
       warrantyAlertsQuerySchema.parse(request.query)
     );
   });
@@ -183,7 +245,8 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
   fastify.get("/my", async (request) => {
     if (!request.actor) throw unauthorized();
     const query = paginationQuerySchema.parse(request.query);
-    return new AssetService(await readStore(fastify.store)).myAssets(request.actor, query.page, query.page_size);
+    const context = await readContext(fastify.store, request.actor, "assets.my");
+    return new AssetService(context.store).myAssets(context.actor, query.page, query.page_size);
   });
 
   fastify.get("/assignees", async (request) => {
@@ -199,7 +262,8 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const params = idParamSchema.parse(request.params);
-    return new AssetService(await readStore(fastify.store)).detail(request.actor, params.id);
+    const context = await readContext(fastify.store, request.actor, "assets.detail");
+    return new AssetService(context.store).detail(context.actor, params.id);
   });
 
   fastify.post("/:id/assign", async (request) => {
@@ -208,7 +272,7 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     const body = assetAssignSchema.parse(request.body);
-    return assetMutation(fastify.store, request, `assets.assign:${params.id}`, body, (_store, actor) => assertAssetManager(actor), (service, actor) => service.assign(actor, params.id, body.assigned_to_user_id, body.expected_version), body.assigned_to_user_id);
+    return assetMutation(fastify.store, request, `assets.assign:${params.id}`, body, (store, actor, companyId) => authorizeAssetManagerResource(store, actor, companyId, params.id), (service, actor) => service.assign(actor, params.id, body.assigned_to_user_id, body.expected_version), { assigneeUserId: body.assigned_to_user_id });
   });
 
   fastify.post("/:id/return", async (request) => {
@@ -217,7 +281,7 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     const body = z.object({ expected_version: z.number().int().min(1) }).parse(request.body);
-    return assetMutation(fastify.store, request, `assets.return:${params.id}`, body, (_store, actor) => assertAssetManager(actor), (service, actor) => service.returnAsset(actor, params.id, body.expected_version));
+    return assetMutation(fastify.store, request, `assets.return:${params.id}`, body, (store, actor, companyId) => authorizeAssetManagerResource(store, actor, companyId, params.id), (service, actor) => service.returnAsset(actor, params.id, body.expected_version));
   });
 
   fastify.post("/scan/:qr_hash", async (request) => {
@@ -227,7 +291,7 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
       if (!asset) throw notFound("Asset not found", { qr_hash: params.qr_hash });
       return asset;
     }
-    return new AssetService(await readStore(fastify.store)).scan(params.qr_hash);
+    return new AssetService(fastify.store).scan(params.qr_hash);
   });
 
   fastify.post("/licenses/activate", async (request) => {
@@ -236,7 +300,7 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   fastify.post("/licenses/validate", async (request) => {
-    return new AssetService(await readStore(fastify.store)).validateLicense(
+    return new AssetService(await fastify.store.persistence?.assetReadStore?.() ?? fastify.store).validateLicense(
       z.object({ product_id: z.uuid(), hardware_fingerprint: z.string().min(8) }).parse(request.body)
     );
   });
@@ -253,8 +317,23 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
     if (!request.actor) {
       throw unauthorized();
     }
-    const body = z.object({ employee_user_id: z.uuid() }).parse(request.body);
-    return assetMutation(fastify.store, request, `assets.employee-terminated:${body.employee_user_id}`, body, authorizeTermination, (service) => service.consumeEmployeeTerminated(body.employee_user_id));
+    const body = z.object({ employee_user_id: z.uuid(), lifecycle_event_id: z.uuid() }).parse(request.body);
+    const company = resolveActiveCompanyMembershipContext(fastify.store, {
+      userId: request.actor.id,
+      operation: "assets.employee-terminated",
+      requireActiveEmployment: true,
+    });
+    authorizeTermination(request.actor);
+    if (!fastify.store.persistence?.assetCommand) authorizeMemoryTermination(fastify.store, company.companyId, body);
+    return assetMutation(
+      fastify.store,
+      request,
+      `assets.employee-terminated:${body.lifecycle_event_id}`,
+      body,
+      (_store, actor) => authorizeTermination(actor),
+      (service, actor) => service.consumeEmployeeTerminated(actor, body.employee_user_id, body.lifecycle_event_id),
+      { lifecycleEventId: body.lifecycle_event_id, terminatedEmployeeUserId: body.employee_user_id },
+    );
   });
 
   fastify.post("/requests", async (request) => {
@@ -269,8 +348,9 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
     if (!request.actor) {
       throw unauthorized();
     }
-    return new AssetService(await readStore(fastify.store)).myRequests(
-      request.actor,
+    const context = await readContext(fastify.store, request.actor, "assets.requests.my");
+    return new AssetService(context.store).myRequests(
+      context.actor,
       assetRequestQuerySchema.parse(request.query)
     );
   });
@@ -279,8 +359,9 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
     if (!request.actor) {
       throw unauthorized();
     }
-    return new AssetService(await readStore(fastify.store)).requestQueue(
-      request.actor,
+    const context = await readContext(fastify.store, request.actor, "assets.requests.queue");
+    return new AssetService(context.store).requestQueue(
+      context.actor,
       assetRequestQuerySchema.parse(request.query)
     );
   });
@@ -291,7 +372,7 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     const body = assetRequestDecisionSchema.parse(request.body);
-    return assetMutation(fastify.store, request, `assets.requests.decision:${params.id}`, body, (_store, actor) => assertAssetManager(actor), (service, actor) => service.decideRequest(actor, params.id, body));
+    return assetMutation(fastify.store, request, `assets.requests.decision:${params.id}`, body, (store, actor, companyId) => authorizeAssetManagerRequest(store, actor, companyId, params.id), (service, actor) => service.decideRequest(actor, params.id, body));
   });
 
   fastify.post("/requests/:id/cancel", async (request) => {
@@ -300,7 +381,7 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     const body = assetRequestCancelSchema.parse(request.body);
-    return assetMutation(fastify.store, request, `assets.requests.cancel:${params.id}`, body, (store, actor) => authorizeOwnRequest(store, actor, params.id), (service, actor) => service.cancelRequest(actor, params.id, body));
+    return assetMutation(fastify.store, request, `assets.requests.cancel:${params.id}`, body, (store, actor, companyId) => authorizeOwnRequest(store, actor, companyId, params.id), (service, actor) => service.cancelRequest(actor, params.id, body));
   });
 
   fastify.post("/:id/acknowledgements", async (request) => {
@@ -309,7 +390,7 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     const body = acknowledgementSchema.parse(request.body);
-    return assetMutation(fastify.store, request, `assets.acknowledge:${params.id}`, body, (store, actor, replayBody) => authorizeAcknowledgement(store, actor, params.id, replayBody), (service, actor) => service.acknowledge(actor, params.id, body));
+    return assetMutation(fastify.store, request, `assets.acknowledge:${params.id}`, body, (store, actor, companyId, replayBody) => authorizeAcknowledgement(store, actor, companyId, params.id, replayBody), (service, actor) => service.acknowledge(actor, params.id, body));
   });
 
   fastify.get("/:id/maintenance", async (request) => {
@@ -317,8 +398,9 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const params = idParamSchema.parse(request.params);
-    return new AssetService(await readStore(fastify.store)).listMaintenance(
-      request.actor,
+    const context = await readContext(fastify.store, request.actor, "assets.maintenance.list");
+    return new AssetService(context.store).listMaintenance(
+      context.actor,
       params.id,
       maintenanceQuerySchema.parse(request.query)
     );
@@ -330,14 +412,15 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     const body = maintenanceSchema.parse(request.body);
-    return assetMutation(fastify.store, request, `assets.maintenance.create:${params.id}`, body, (_store, actor) => assertAssetManager(actor), (service, actor) => service.createMaintenance(actor, params.id, body));
+    return assetMutation(fastify.store, request, `assets.maintenance.create:${params.id}`, body, (store, actor, companyId) => authorizeAssetManagerResource(store, actor, companyId, params.id), (service, actor) => service.createMaintenance(actor, params.id, body));
   });
 
   fastify.get("/vendors", async (request) => {
     if (!request.actor) {
       throw unauthorized();
     }
-    return new AssetService(await readStore(fastify.store)).vendors(request.actor, vendorQuerySchema.parse(request.query));
+    const context = await readContext(fastify.store, request.actor, "assets.vendors.list");
+    return new AssetService(context.store).vendors(context.actor, vendorQuerySchema.parse(request.query));
   });
 
   fastify.post("/vendors", async (request) => {
@@ -354,15 +437,16 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     const body = assetVendorUpdateSchema.parse(request.body);
-    return assetMutation(fastify.store, request, `assets.vendors.update:${params.id}`, body, (_store, actor) => assertAssetManager(actor), (service, actor) => service.updateVendor(actor, params.id, body));
+    return assetMutation(fastify.store, request, `assets.vendors.update:${params.id}`, body, (store, actor, companyId) => authorizeAssetManagerVendor(store, actor, companyId, params.id), (service, actor) => service.updateVendor(actor, params.id, body));
   });
 
   fastify.get("/recovery-queue", async (request) => {
     if (!request.actor) {
       throw unauthorized();
     }
-    return new AssetService(await readStore(fastify.store)).recoveryQueue(
-      request.actor,
+    const context = await readContext(fastify.store, request.actor, "assets.recovery.queue");
+    return new AssetService(context.store).recoveryQueue(
+      context.actor,
       recoveryQuerySchema.parse(request.query)
     );
   });
@@ -373,6 +457,6 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
     }
     const params = idParamSchema.parse(request.params);
     const body = recoverySettlementSchema.parse(request.body);
-    return assetMutation(fastify.store, request, `assets.recovery.settle:${params.id}`, body, (_store, actor) => assertAssetManager(actor), (service, actor) => service.settleRecovery(actor, params.id, body));
+    return assetMutation(fastify.store, request, `assets.recovery.settle:${params.id}`, body, (store, actor, companyId) => authorizeAssetManagerRecovery(store, actor, companyId, params.id), (service, actor) => service.settleRecovery(actor, params.id, body));
   });
 };

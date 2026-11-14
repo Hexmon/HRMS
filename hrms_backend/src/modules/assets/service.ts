@@ -20,18 +20,20 @@ export class AssetService {
 
   create(actor: AuthUser, input: { asset_code: string; asset_type: string; name: string; serial_no?: string }): AssetRecord {
     assertAssetManager(actor);
-    return this.repository.create(input);
+    return this.repository.create(this.companyId(actor, "assets.create"), input);
   }
 
   list(actor: AuthUser, page: number, pageSize: number) {
     assertAssetManager(actor);
-    const items = this.repository.list().map((asset) => this.presentAsset(asset));
+    const companyId = this.companyId(actor, "assets.list");
+    const items = this.repository.list(companyId).map((asset) => this.presentAsset(asset));
     const start = (page - 1) * pageSize;
     return { items: items.slice(start, start + pageSize), page, page_size: pageSize, total: items.length };
   }
 
   myAssets(actor: AuthUser, pageNumber: number, pageSize: number) {
-    const items = this.repository.list()
+    const companyId = this.companyId(actor, "assets.my");
+    const items = this.repository.list(companyId)
       .filter((asset) => asset.current_assigned_user_id === actor.id)
       .map((asset) => this.presentAsset(asset));
     const start = (pageNumber - 1) * pageSize;
@@ -40,9 +42,7 @@ export class AssetService {
 
   assignees(actor: AuthUser, search = "") {
     assertAssetManager(actor);
-    const companyId = resolveActiveCompanyMembershipContext(this.store, {
-      userId: actor.id, operation: "assets.assignees", requireActiveEmployment: true,
-    }).companyId;
+    const companyId = this.companyId(actor, "assets.assignees");
     const items = this.store.users
       .filter((user) => !user.deleted_at && user.employment_status === "active")
       .filter((user) => this.store.userSessionPreferences.some((preference) => preference.user_id === user.id && preference.company_id === companyId))
@@ -57,10 +57,11 @@ export class AssetService {
     query: { page: number; page_size: number; window_days?: number; include_expired?: boolean }
   ) {
     assertAssetManager(actor);
+    const companyId = this.companyId(actor, "assets.warranty-alerts");
     const windowDays = Math.max(0, Math.min(365, query.window_days ?? this.getWarrantyAlertWindowDays()));
     const includeExpired = query.include_expired ?? true;
     const items = this.repository
-      .list()
+      .list(companyId)
       .map((asset) => {
         const expiry = typeof asset.metadata?.warranty_expiry === "string" ? asset.metadata.warranty_expiry : null;
         if (!expiry) return null;
@@ -100,21 +101,23 @@ export class AssetService {
   }
 
   detail(actor: AuthUser, id: UUID) {
-    return this.presentAsset(this.assertAssetVisible(actor, id));
+    return this.presentAsset(this.assertAssetVisible(actor, id, "assets.detail"));
   }
 
   assign(actor: AuthUser, id: UUID, assignedToUserId: UUID, expectedVersion: number): AssetRecord {
     assertAssetManager(actor);
-    const asset = this.repository.find(id);
+    const companyId = this.companyId(actor, "assets.assign");
+    const asset = this.repository.find(id, companyId);
     if (asset.version !== expectedVersion) throw conflict("Asset was modified by another actor.", { aggregate: "asset", id });
     assertAssetTransition(asset.status, AssetStatuses.Assigned);
-    const updated = this.repository.updateVersioned(id, expectedVersion, (candidate) => {
+    const updated = this.repository.updateVersioned(id, companyId, expectedVersion, (candidate) => {
       candidate.status = AssetStatuses.Assigned;
       candidate.current_assigned_user_id = assignedToUserId;
     });
     const now = nowIso();
     this.store.assetAssignments.push({
       id: randomUUID(),
+      company_id: companyId,
       asset_id: id,
       assigned_to_user_id: assignedToUserId,
       assigned_by_user_id: actor.id,
@@ -126,6 +129,7 @@ export class AssetService {
     });
     this.store.assetStateEvents.push({
       id: randomUUID(),
+      company_id: companyId,
       asset_id: id,
       actor_user_id: actor.id,
       event_type: "asset.assigned",
@@ -136,8 +140,9 @@ export class AssetService {
   }
 
   myRequests(actor: AuthUser, query: { page: number; page_size: number; status?: string; type?: string }) {
+    const companyId = this.companyId(actor, "assets.requests.my");
     const items = this.repository
-      .listRequests({ requesterUserId: actor.id, status: query.status, assetType: query.type })
+      .listRequests({ companyId, requesterUserId: actor.id, status: query.status, assetType: query.type })
       .map((request) => this.presentRequest(request));
     return page(items, query.page, query.page_size);
   }
@@ -154,11 +159,12 @@ export class AssetService {
       preferred_specs?: Record<string, unknown>;
     }
   ) {
+    const companyId = this.companyId(actor, "assets.requests.create");
     if (input.asset_id) {
-      this.repository.find(input.asset_id);
+      this.repository.find(input.asset_id, companyId);
     }
     const duplicate = this.repository
-      .listRequests({ requesterUserId: actor.id })
+      .listRequests({ companyId, requesterUserId: actor.id })
       .find((request) => request.status === "pending" && request.asset_type === input.asset_type);
     if (duplicate) {
       throw conflict("An active asset request already exists for this asset type.", {
@@ -166,7 +172,7 @@ export class AssetService {
         request_code: duplicate.request_code
       });
     }
-    const request = this.repository.createRequest({
+    const request = this.repository.createRequest(companyId, {
       requester_user_id: actor.id,
       request_type: input.request_type,
       asset_type: input.asset_type,
@@ -181,7 +187,7 @@ export class AssetService {
       decision_remarks: null,
       assigned_asset_id: null
     });
-    this.appendAssetEvent(input.asset_id ?? null, actor.id, "asset.request_created", {
+    this.appendAssetEvent(companyId, input.asset_id ?? null, actor.id, "asset.request_created", {
       request_id: request.id,
       request_code: request.request_code,
       asset_type: request.asset_type
@@ -191,7 +197,8 @@ export class AssetService {
 
   requestQueue(actor: AuthUser, query: { page: number; page_size: number; status?: string; type?: string }) {
     assertAssetManager(actor);
-    const all = this.repository.listRequests({ status: query.status, assetType: query.type });
+    const companyId = this.companyId(actor, "assets.requests.queue");
+    const all = this.repository.listRequests({ companyId, status: query.status, assetType: query.type });
     const items = all.map((request) => this.presentRequest(request));
     const queue_counts = {
       pending: all.filter((request) => request.status === "pending").length,
@@ -213,11 +220,12 @@ export class AssetService {
     }
   ) {
     assertAssetManager(actor);
+    const companyId = this.companyId(actor, "assets.requests.decision");
     if ((input.decision === "rejected" || input.decision === "returned") && !input.remarks?.trim()) {
       throw badRequest("Remarks are required for reject or return decisions.");
     }
     let assignedAsset: AssetRecord | null = null;
-    const request = this.repository.updateRequestVersioned(id, input.expected_version, (candidate) => {
+    const request = this.repository.updateRequestVersioned(id, companyId, input.expected_version, (candidate) => {
       if (candidate.status !== "pending" && candidate.status !== "approved") {
         throw conflict("Asset request cannot be decided in its current status.", { id });
       }
@@ -228,9 +236,9 @@ export class AssetService {
       candidate.assigned_asset_id = input.asset_id ?? null;
     });
     if ((input.decision === "approved" || input.decision === "fulfilled") && input.asset_id) {
-      assignedAsset = this.repository.find(input.asset_id);
+      assignedAsset = this.repository.find(input.asset_id, companyId);
     }
-    this.appendAssetEvent(assignedAsset?.id ?? request.asset_id, actor.id, `asset.request_${input.decision}`, {
+    this.appendAssetEvent(companyId, assignedAsset?.id ?? request.asset_id, actor.id, `asset.request_${input.decision}`, {
       request_id: request.id,
       request_code: request.request_code,
       remarks: input.remarks ?? null
@@ -243,11 +251,12 @@ export class AssetService {
   }
 
   cancelRequest(actor: AuthUser, id: UUID, input: { expected_version: number; remarks?: string | null }) {
-    const current = this.repository.findRequest(id);
+    const companyId = this.companyId(actor, "assets.requests.cancel");
+    const current = this.repository.findRequest(id, companyId);
     if (current.requester_user_id !== actor.id) {
       throw notFound("Asset request not found", { id });
     }
-    const request = this.repository.updateRequestVersioned(id, input.expected_version, (candidate) => {
+    const request = this.repository.updateRequestVersioned(id, companyId, input.expected_version, (candidate) => {
       if (candidate.status !== "pending") {
         throw conflict("Only pending asset requests can be cancelled.", { id });
       }
@@ -258,21 +267,22 @@ export class AssetService {
   }
 
   acknowledge(actor: AuthUser, id: UUID, input: { acknowledgement_type: "received" | "returned"; expected_version: number }) {
-    const asset = this.repository.find(id);
+    const companyId = this.companyId(actor, "assets.acknowledge");
+    const asset = this.repository.find(id, companyId);
     if (asset.current_assigned_user_id !== actor.id && !actor.roles.includes(Roles.Admin)) {
       throw forbidden("Only the assigned employee can acknowledge this asset.");
     }
-    const assignment = this.repository.activeAssignment(id);
-    const updated = this.repository.updateVersioned(id, input.expected_version, (candidate) => {
+    const assignment = this.repository.activeAssignment(id, companyId);
+    const updated = this.repository.updateVersioned(id, companyId, input.expected_version, (candidate) => {
       candidate.updated_at = nowIso();
     });
-    const acknowledgement = this.repository.createAcknowledgement({
+    const acknowledgement = this.repository.createAcknowledgement(companyId, {
       asset_id: id,
       employee_user_id: actor.id,
       assignment_id: assignment?.id ?? null,
       acknowledgement_type: input.acknowledgement_type
     });
-    this.appendAssetEvent(id, actor.id, "asset.acknowledged", {
+    this.appendAssetEvent(companyId, id, actor.id, "asset.acknowledged", {
       acknowledgement_id: acknowledgement.id,
       acknowledgement_type: acknowledgement.acknowledgement_type
     });
@@ -284,8 +294,9 @@ export class AssetService {
   }
 
   listMaintenance(actor: AuthUser, id: UUID, query: { page: number; page_size: number; status?: string }) {
-    this.assertAssetVisible(actor, id);
-    const items = this.repository.listMaintenance(id, query.status).map((record) => this.presentMaintenance(record));
+    const companyId = this.companyId(actor, "assets.maintenance.list");
+    this.assertAssetVisible(actor, id, "assets.maintenance.list", companyId);
+    const items = this.repository.listMaintenance(id, companyId, query.status).map((record) => this.presentMaintenance(record));
     return page(items, query.page, query.page_size);
   }
 
@@ -304,10 +315,12 @@ export class AssetService {
     }
   ) {
     assertAssetManager(actor);
-    const asset = this.repository.updateVersioned(id, input.expected_version, (candidate) => {
+    const companyId = this.companyId(actor, "assets.maintenance.create");
+    if (input.vendor_id) this.repository.findVendor(input.vendor_id, companyId);
+    const asset = this.repository.updateVersioned(id, companyId, input.expected_version, (candidate) => {
       candidate.status = input.status === "completed" ? AssetStatuses.InStock : AssetStatuses.InMaintenance;
     });
-    const record = this.repository.createMaintenance({
+    const record = this.repository.createMaintenance(companyId, {
       asset_id: id,
       maintenance_type: input.maintenance_type,
       vendor_id: input.vendor_id ?? null,
@@ -317,7 +330,7 @@ export class AssetService {
       status: input.status ?? "in_progress",
       notes: input.notes ?? null
     });
-    this.appendAssetEvent(id, actor.id, "asset.maintenance_logged", {
+    this.appendAssetEvent(companyId, id, actor.id, "asset.maintenance_logged", {
       maintenance_id: record.id,
       maintenance_type: record.maintenance_type
     });
@@ -330,7 +343,8 @@ export class AssetService {
 
   vendors(actor: AuthUser, query: { page: number; page_size: number; active_only?: boolean; search?: string }) {
     assertAssetManager(actor);
-    return page(this.repository.listVendors({ activeOnly: query.active_only, search: query.search }), query.page, query.page_size);
+    const companyId = this.companyId(actor, "assets.vendors.list");
+    return page(this.repository.listVendors(companyId, { activeOnly: query.active_only, search: query.search }), query.page, query.page_size);
   }
 
   createVendor(
@@ -344,12 +358,13 @@ export class AssetService {
     }
   ) {
     assertAssetManager(actor);
-    const vendor = this.repository.createVendor(input);
+    const companyId = this.companyId(actor, "assets.vendors.create");
+    const vendor = this.repository.createVendor(companyId, input);
     appendOutboxEvent(this.store, {
       aggregateType: "asset_vendor",
       aggregateId: vendor.id,
       eventType: "asset.vendor_created",
-      payload: { name: vendor.name, actor_user_id: actor.id },
+      payload: { company_id: companyId, name: vendor.name, actor_user_id: actor.id },
       idempotencyKey: `asset.vendor_created:${vendor.id}`
     });
     return { vendor, version: vendor.version };
@@ -368,7 +383,8 @@ export class AssetService {
     }
   ) {
     assertAssetManager(actor);
-    const vendor = this.repository.updateVendorVersioned(id, input.expected_version, (candidate) => {
+    const companyId = this.companyId(actor, "assets.vendors.update");
+    const vendor = this.repository.updateVendorVersioned(id, companyId, input.expected_version, (candidate) => {
       candidate.name = input.name?.trim() || candidate.name;
       if ("contact_email" in input) candidate.contact_email = input.contact_email ?? null;
       if ("phone" in input) candidate.phone = input.phone ?? null;
@@ -379,7 +395,7 @@ export class AssetService {
       aggregateType: "asset_vendor",
       aggregateId: vendor.id,
       eventType: "asset.vendor_updated",
-      payload: { name: vendor.name, status: vendor.status, actor_user_id: actor.id },
+      payload: { company_id: companyId, name: vendor.name, status: vendor.status, actor_user_id: actor.id },
       idempotencyKey: `asset.vendor_updated:${vendor.id}:${vendor.version}`
     });
     return { vendor, version: vendor.version };
@@ -389,7 +405,9 @@ export class AssetService {
     if (!actor.roles.includes(Roles.AssetManager) && !actor.roles.includes(Roles.Admin) && !actor.roles.includes(Roles.HRManager)) {
       throw forbidden("Asset, HR, or Admin role required");
     }
+    const companyId = this.companyId(actor, "assets.recovery.queue");
     const tickets = this.store.assetRecoveryTickets
+      .filter((ticket) => ticket.company_id === companyId)
       .filter((ticket) => !query.user_id || ticket.employee_user_id === query.user_id)
       .filter((ticket) => !query.status || ticket.status === query.status)
       .sort((a, b) => b.created_at.localeCompare(a.created_at));
@@ -415,14 +433,15 @@ export class AssetService {
     }
   ) {
     assertAssetManager(actor);
-    const ticket = this.repository.findRecoveryTicket(id);
+    const companyId = this.companyId(actor, "assets.recovery.settle");
+    const ticket = this.repository.findRecoveryTicket(id, companyId);
     if (ticket.version !== input.expected_version) {
       throw conflict("Asset recovery ticket was modified by another actor.", { aggregate: "asset_recovery_ticket", id });
     }
     if (ticket.status === "closed") {
       throw conflict("Asset recovery ticket is already closed.", { id });
     }
-    const asset = this.repository.find(ticket.asset_id);
+    const asset = this.repository.find(ticket.asset_id, companyId);
     const context = this.recoveryTicketContext(ticket);
     if (context.reviewRequired || !context.activeAssignment) {
       throw conflict("Recovery ticket no longer matches the current asset assignment. HR review is required.", { id, asset_id: asset.id });
@@ -444,7 +463,7 @@ export class AssetService {
     ticket.settled_at = now;
     ticket.version += 1;
     ticket.updated_at = now;
-    this.appendAssetEvent(asset.id, actor.id, "asset.recovery_settled", {
+    this.appendAssetEvent(companyId, asset.id, actor.id, "asset.recovery_settled", {
       recovery_ticket_id: ticket.id,
       employee_user_id: ticket.employee_user_id,
       settlement_status: ticket.settlement_status,
@@ -460,16 +479,17 @@ export class AssetService {
 
   returnAsset(actor: AuthUser, id: UUID, expectedVersion: number): AssetRecord {
     assertAssetManager(actor);
-    const asset = this.repository.find(id);
+    const companyId = this.companyId(actor, "assets.return");
+    const asset = this.repository.find(id, companyId);
     if (asset.version !== expectedVersion) throw conflict("Asset was modified by another actor.", { aggregate: "asset", id });
     assertAssetTransition(asset.status, AssetStatuses.Returned);
-    const updated = this.repository.updateVersioned(id, expectedVersion, (candidate) => {
+    const updated = this.repository.updateVersioned(id, companyId, expectedVersion, (candidate) => {
       candidate.status = AssetStatuses.Returned;
       candidate.current_assigned_user_id = null;
     });
     const now = nowIso();
     const assignment = this.store.assetAssignments.find(
-      (candidate) => candidate.asset_id === id && candidate.status === "active"
+      (candidate) => candidate.company_id === companyId && candidate.asset_id === id && candidate.status === "active"
     );
     if (assignment) {
       assignment.status = "returned";
@@ -478,6 +498,7 @@ export class AssetService {
     }
     this.store.assetStateEvents.push({
       id: randomUUID(),
+      company_id: companyId,
       asset_id: id,
       actor_user_id: actor.id,
       event_type: "asset.returned",
@@ -563,29 +584,32 @@ export class AssetService {
     return { status: "revoked" };
   }
 
-  consumeEmployeeTerminated(employeeUserId: UUID): { recovery_tickets_created: number } {
+  consumeEmployeeTerminated(actor: AuthUser, employeeUserId: UUID, lifecycleEventId: UUID): { recovery_tickets_created: number } {
+    const companyId = this.companyId(actor, "assets.employee-terminated");
     appendOutboxEvent(this.store, {
       aggregateType: "employee",
       aggregateId: employeeUserId,
       eventType: "employee.terminated",
-      payload: { employee_user_id: employeeUserId },
-      idempotencyKey: `employee.terminated:${employeeUserId}`
+      payload: { company_id: companyId, employee_user_id: employeeUserId, lifecycle_event_id: lifecycleEventId },
+      idempotencyKey: `employee.terminated:${companyId}:${employeeUserId}:${lifecycleEventId}`
     });
-    return { recovery_tickets_created: createRecoveryTicketsForTerminatedEmployee(this.store, employeeUserId) };
+    return { recovery_tickets_created: createRecoveryTicketsForTerminatedEmployee(this.store, companyId, employeeUserId) };
   }
 
-  private assertAssetVisible(actor: AuthUser, id: UUID): AssetRecord {
-    const asset = this.repository.find(id);
+  private assertAssetVisible(actor: AuthUser, id: UUID, operation: string, resolvedCompanyId?: UUID): AssetRecord {
+    const companyId = resolvedCompanyId ?? this.companyId(actor, operation);
+    const asset = this.repository.find(id, companyId);
     if (asset.current_assigned_user_id === actor.id || actor.roles.includes(Roles.AssetManager) || actor.roles.includes(Roles.Admin)) {
       return asset;
     }
     throw forbidden("Asset is outside actor scope.");
   }
 
-  private appendAssetEvent(assetId: UUID | null, actorId: UUID | null, eventType: string, payload: Record<string, unknown>) {
+  private appendAssetEvent(companyId: UUID, assetId: UUID | null, actorId: UUID | null, eventType: string, payload: Record<string, unknown>) {
     if (!assetId) return;
     this.store.assetStateEvents.push({
       id: randomUUID(),
+      company_id: companyId,
       asset_id: assetId,
       actor_user_id: actorId,
       event_type: eventType,
@@ -607,7 +631,9 @@ export class AssetService {
   }
 
   private presentMaintenance(record: MemoryDataStore["assetMaintenanceRecords"][number]) {
-    const vendor = record.vendor_id ? this.store.assetVendors.find((candidate) => candidate.id === record.vendor_id) : null;
+    const vendor = record.vendor_id ? this.store.assetVendors.find((candidate) =>
+      candidate.id === record.vendor_id && candidate.company_id === record.company_id
+    ) : null;
     return {
       ...record,
       vendor_name: vendor?.name ?? null
@@ -615,11 +641,14 @@ export class AssetService {
   }
 
   private recoveryTicketContext(ticket: MemoryDataStore["assetRecoveryTickets"][number]) {
-    const asset = this.store.assets.find((candidate) => candidate.id === ticket.asset_id && !candidate.deleted_at);
-    const activeAssignment = asset ? this.repository.activeAssignment(asset.id) : null;
+    const asset = this.store.assets.find((candidate) =>
+      candidate.id === ticket.asset_id && candidate.company_id === ticket.company_id && !candidate.deleted_at
+    );
+    const activeAssignment = asset ? this.repository.activeAssignment(asset.id, ticket.company_id) : null;
     const linkedAssignment = ticket.assignment_id
       ? this.store.assetAssignments.find((candidate) =>
           candidate.id === ticket.assignment_id &&
+          candidate.company_id === ticket.company_id &&
           candidate.asset_id === ticket.asset_id &&
           candidate.assigned_to_user_id === ticket.employee_user_id
         )
@@ -651,9 +680,12 @@ export class AssetService {
     const assigned = asset.current_assigned_user_id
       ? this.store.users.find((candidate) => candidate.id === asset.current_assigned_user_id)
       : null;
-    const activeAssignment = this.repository.activeAssignment(asset.id);
+    const activeAssignment = this.repository.activeAssignment(asset.id, asset.company_id);
     const latestAcknowledgement = this.store.assetAcknowledgements
-      .filter((acknowledgement) => acknowledgement.asset_id === asset.id && acknowledgement.assignment_id === activeAssignment?.id)
+      .filter((acknowledgement) =>
+        acknowledgement.company_id === asset.company_id && acknowledgement.asset_id === asset.id &&
+        acknowledgement.assignment_id === activeAssignment?.id
+      )
       .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
     const metadata = asset.metadata ?? {};
     return {
@@ -673,8 +705,16 @@ export class AssetService {
       assigned_on: activeAssignment?.assigned_at ?? null,
       active_assignment_id: activeAssignment?.id ?? null,
       latest_acknowledgement: latestAcknowledgement ?? null,
-      maintenance: this.repository.listMaintenance(asset.id).map((record) => this.presentMaintenance(record))
+      maintenance: this.repository.listMaintenance(asset.id, asset.company_id).map((record) => this.presentMaintenance(record))
     };
+  }
+
+  private companyId(actor: AuthUser, operation: string): UUID {
+    return resolveActiveCompanyMembershipContext(this.store, {
+      userId: actor.id,
+      operation,
+      requireActiveEmployment: true,
+    }).companyId;
   }
 
   private getWarrantyAlertWindowDays(): number {

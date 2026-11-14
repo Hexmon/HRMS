@@ -164,6 +164,7 @@ function isAssetIdentityConflict(error: unknown): boolean {
     "assets_asset_code_key",
     "assets_qr_hash_key",
     "assets_asset_code_uq",
+    "assets_company_asset_code_uq",
     "assets_qr_hash_uq",
   ].includes(constraint);
 }
@@ -595,7 +596,12 @@ class PostgresPersistence {
     }
   }
 
-  async assetReadStore(baseStore?: DataStore): Promise<DataStore> {
+  async assetReadStore(
+    baseStore?: DataStore,
+    companyId?: UUID,
+    actorUserId?: UUID,
+    actionKey = "assets.read",
+  ): Promise<DataStore> {
     const sourceStore = baseStore ?? this.store;
     const client = await this.pool.connect();
     let destroyClient = false;
@@ -603,9 +609,16 @@ class PostgresPersistence {
       // Every asset collection in this request must come from one committed
       // snapshot. A concurrent command may commit between individual SELECTs.
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-      const snapshot = await this.loadAssetSnapshot(client, sourceStore);
+      const currentActor = companyId && actorUserId
+        ? await this.loadCurrentAssetActor(client, { actorUserId, companyId, actionKey }, false)
+        : undefined;
+      const snapshot = await this.loadAssetSnapshot(client, sourceStore, companyId);
       await client.query("COMMIT");
-      return snapshot;
+      if (!currentActor) return snapshot;
+      return {
+        ...snapshot,
+        users: snapshot.users.map((user) => user.id === currentActor.id ? { ...user, ...currentActor } : user),
+      };
     } catch (error) {
       destroyClient = await rollbackAssetTransaction(client);
       throw error;
@@ -684,7 +697,7 @@ class PostgresPersistence {
       // connection can carry this authority into a later request.
       await client.query("SELECT set_config('hrms.asset_writer_v2', 'on', true)");
       const actor = await this.loadCurrentAssetActor(client, input, true);
-      const before = await this.loadAssetSnapshot(client);
+      const before = await this.loadAssetSnapshot(client, this.store, input.companyId);
 
       const previous = await client.query<{
         request_hash: string;
@@ -705,6 +718,39 @@ class PostgresPersistence {
         }
         await client.query("COMMIT");
         return previous.rows[0].response_body;
+      }
+
+      // Transition evidence is checked only after current durable authority and
+      // exact replay semantics. Otherwise a stale privileged token could use
+      // 403/409 differences as an event/assignment oracle, and later lifecycle
+      // changes could make a committed command impossible to replay safely.
+      if (input.lifecycleEventId || input.terminatedEmployeeUserId) {
+        if (!input.lifecycleEventId || !input.terminatedEmployeeUserId) {
+          throw conflict("A complete employee lifecycle event reference is required.");
+        }
+        const lifecycle = await client.query(
+          `SELECT 1
+             FROM core.users u
+             JOIN platform.outbox_events o
+               ON o.event_id = $1
+              AND o.aggregate_type = 'core.user'
+              AND o.aggregate_id = u.id
+              AND o.event_type = 'core.user.terminated'
+            WHERE u.id = $2
+              AND u.employment_status = 'terminated'
+              AND EXISTS (
+                SELECT 1
+                  FROM assets.asset_assignments aa
+                 WHERE aa.company_id = $3
+                   AND aa.assigned_to_user_id = u.id
+                   AND aa.status = 'active'
+              )
+            FOR SHARE OF u, o`,
+          [input.lifecycleEventId, input.terminatedEmployeeUserId, input.companyId],
+        );
+        if (lifecycle.rowCount !== 1) {
+          throw conflict("Employee termination event is not eligible for asset recovery.");
+        }
       }
 
       // A committed assignment remains replayable if its assignee later
@@ -821,17 +867,21 @@ class PostgresPersistence {
     return { ...cached, roles, employment_status: current.employment_status };
   }
 
-  private async loadAssetSnapshot(client: PoolClient, baseStore: DataStore = this.store): Promise<DataStore> {
+  private async loadAssetSnapshot(
+    client: PoolClient,
+    baseStore: DataStore = this.store,
+    companyId?: UUID,
+  ): Promise<DataStore> {
     return {
       ...baseStore,
-      assets: await this.loadAssets(client),
-      assetAssignments: await this.loadAssetAssignments(client),
-      assetStateEvents: await this.loadAssetStateEvents(client),
-      assetRequests: await this.loadAssetRequests(client),
-      assetAcknowledgements: await this.loadAssetAcknowledgements(client),
-      assetMaintenanceRecords: await this.loadAssetMaintenanceRecords(client),
-      assetVendors: await this.loadAssetVendors(client),
-      assetRecoveryTickets: await this.loadAssetRecoveryTickets(client),
+      assets: await this.loadAssets(client, companyId),
+      assetAssignments: await this.loadAssetAssignments(client, companyId),
+      assetStateEvents: await this.loadAssetStateEvents(client, companyId),
+      assetRequests: await this.loadAssetRequests(client, companyId),
+      assetAcknowledgements: await this.loadAssetAcknowledgements(client, companyId),
+      assetMaintenanceRecords: await this.loadAssetMaintenanceRecords(client, companyId),
+      assetVendors: await this.loadAssetVendors(client, companyId),
+      assetRecoveryTickets: await this.loadAssetRecoveryTickets(client, companyId),
       licenseEntitlements: await this.loadLicenseEntitlements(client),
       licenseActivations: await this.loadLicenseActivations(client),
       compromisedKeys: await this.loadCompromisedKeys(client),
@@ -2262,12 +2312,14 @@ class PostgresPersistence {
     };
   }
 
-  private async loadAssets(client: PoolClient): Promise<AssetRecord[]> {
+  private async loadAssets(client: PoolClient, companyId?: UUID): Promise<AssetRecord[]> {
     const { rows } = await client.query(
-      "SELECT * FROM assets.assets ORDER BY created_at, asset_code",
+      `SELECT * FROM assets.assets${companyId ? " WHERE company_id = $1" : ""} ORDER BY created_at, asset_code`,
+      companyId ? [companyId] : [],
     );
     return rows.map((row) => ({
       id: row.id,
+      company_id: row.company_id,
       asset_code: row.asset_code,
       qr_hash: row.qr_hash,
       asset_type: row.asset_type,
@@ -2285,12 +2337,15 @@ class PostgresPersistence {
 
   private async loadAssetAssignments(
     client: PoolClient,
+    companyId?: UUID,
   ): Promise<AssetAssignmentRecord[]> {
     const { rows } = await client.query(
-      "SELECT * FROM assets.asset_assignments ORDER BY created_at, id",
+      `SELECT * FROM assets.asset_assignments${companyId ? " WHERE company_id = $1" : ""} ORDER BY created_at, id`,
+      companyId ? [companyId] : [],
     );
     return rows.map((row) => ({
       id: row.id,
+      company_id: row.company_id,
       asset_id: row.asset_id,
       assigned_to_user_id: row.assigned_to_user_id,
       assigned_by_user_id: row.assigned_by_user_id,
@@ -2304,12 +2359,15 @@ class PostgresPersistence {
 
   private async loadAssetStateEvents(
     client: PoolClient,
+    companyId?: UUID,
   ): Promise<AssetStateEventRecord[]> {
     const { rows } = await client.query(
-      "SELECT * FROM assets.asset_state_events ORDER BY created_at, id",
+      `SELECT * FROM assets.asset_state_events${companyId ? " WHERE company_id = $1" : ""} ORDER BY created_at, id`,
+      companyId ? [companyId] : [],
     );
     return rows.map((row) => ({
       id: row.id,
+      company_id: row.company_id,
       asset_id: row.asset_id,
       actor_user_id: row.actor_user_id,
       event_type: row.event_type,
@@ -2320,12 +2378,15 @@ class PostgresPersistence {
 
   private async loadAssetRequests(
     client: PoolClient,
+    companyId?: UUID,
   ): Promise<DataStore["assetRequests"]> {
     const { rows } = await client.query(
-      "SELECT * FROM assets.asset_requests ORDER BY created_at, id",
+      `SELECT * FROM assets.asset_requests${companyId ? " WHERE company_id = $1" : ""} ORDER BY created_at, id`,
+      companyId ? [companyId] : [],
     );
     return rows.map((row) => ({
       id: row.id,
+      company_id: row.company_id,
       request_code: row.request_code,
       requester_user_id: row.requester_user_id,
       request_type: row.request_type,
@@ -2349,12 +2410,15 @@ class PostgresPersistence {
 
   private async loadAssetAcknowledgements(
     client: PoolClient,
+    companyId?: UUID,
   ): Promise<DataStore["assetAcknowledgements"]> {
     const { rows } = await client.query(
-      "SELECT * FROM assets.asset_acknowledgements ORDER BY created_at, id",
+      `SELECT * FROM assets.asset_acknowledgements${companyId ? " WHERE company_id = $1" : ""} ORDER BY created_at, id`,
+      companyId ? [companyId] : [],
     );
     return rows.map((row) => ({
       id: row.id,
+      company_id: row.company_id,
       asset_id: row.asset_id,
       employee_user_id: row.employee_user_id,
       assignment_id: row.assignment_id,
@@ -2369,12 +2433,15 @@ class PostgresPersistence {
 
   private async loadAssetMaintenanceRecords(
     client: PoolClient,
+    companyId?: UUID,
   ): Promise<DataStore["assetMaintenanceRecords"]> {
     const { rows } = await client.query(
-      "SELECT * FROM assets.asset_maintenance_records ORDER BY created_at, id",
+      `SELECT * FROM assets.asset_maintenance_records${companyId ? " WHERE company_id = $1" : ""} ORDER BY created_at, id`,
+      companyId ? [companyId] : [],
     );
     return rows.map((row) => ({
       id: row.id,
+      company_id: row.company_id,
       asset_id: row.asset_id,
       maintenance_type: row.maintenance_type,
       vendor_id: row.vendor_id,
@@ -2392,12 +2459,15 @@ class PostgresPersistence {
 
   private async loadAssetVendors(
     client: PoolClient,
+    companyId?: UUID,
   ): Promise<DataStore["assetVendors"]> {
     const { rows } = await client.query(
-      "SELECT * FROM assets.software_vendors ORDER BY name, id",
+      `SELECT * FROM assets.software_vendors${companyId ? " WHERE company_id = $1" : ""} ORDER BY name, id`,
+      companyId ? [companyId] : [],
     );
     return rows.map((row) => ({
       id: row.id,
+      company_id: row.company_id,
       name: row.name,
       status: row.status ?? "active",
       contact_email: row.contact_email,
@@ -2412,12 +2482,15 @@ class PostgresPersistence {
 
   private async loadAssetRecoveryTickets(
     client: PoolClient,
+    companyId?: UUID,
   ): Promise<DataStore["assetRecoveryTickets"]> {
     const { rows } = await client.query(
-      "SELECT * FROM assets.asset_recovery_tickets ORDER BY created_at, id",
+      `SELECT * FROM assets.asset_recovery_tickets${companyId ? " WHERE company_id = $1" : ""} ORDER BY created_at, id`,
+      companyId ? [companyId] : [],
     );
     return rows.map((row) => ({
       id: row.id,
+      company_id: row.company_id,
       employee_user_id: row.employee_user_id,
       asset_id: row.asset_id,
       assignment_id: row.assignment_id,
@@ -4321,10 +4394,10 @@ class PostgresPersistence {
     for (const asset of source.assets) {
       await client.query(
         `INSERT INTO assets.assets (
-          id, asset_code, qr_hash, asset_type, name, serial_no, status,
+          id, company_id, asset_code, qr_hash, asset_type, name, serial_no, status,
           current_assigned_user_id, metadata, created_at, updated_at, deleted_at, version
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10, $11, $12, $13)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14)
         ON CONFLICT (id) DO UPDATE
         SET asset_code = EXCLUDED.asset_code, qr_hash = EXCLUDED.qr_hash,
             asset_type = EXCLUDED.asset_type, name = EXCLUDED.name, serial_no = EXCLUDED.serial_no,
@@ -4333,6 +4406,7 @@ class PostgresPersistence {
             deleted_at = EXCLUDED.deleted_at, version = EXCLUDED.version`,
         [
           asset.id,
+          asset.company_id,
           asset.asset_code,
           asset.qr_hash,
           asset.asset_type,
@@ -4351,14 +4425,15 @@ class PostgresPersistence {
     for (const assignment of source.assetAssignments) {
       await client.query(
         `INSERT INTO assets.asset_assignments (
-          id, asset_id, assigned_to_user_id, assigned_by_user_id, assigned_at, returned_at,
+          id, company_id, asset_id, assigned_to_user_id, assigned_by_user_id, assigned_at, returned_at,
           status, created_at, updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
         ON CONFLICT (id) DO UPDATE
         SET returned_at = EXCLUDED.returned_at, status = EXCLUDED.status, updated_at = EXCLUDED.updated_at`,
         [
           assignment.id,
+          assignment.company_id,
           assignment.asset_id,
           assignment.assigned_to_user_id,
           assignment.assigned_by_user_id,
@@ -4372,11 +4447,12 @@ class PostgresPersistence {
     }
     for (const event of source.assetStateEvents) {
       await client.query(
-        `INSERT INTO assets.asset_state_events (id, asset_id, actor_user_id, event_type, payload, created_at)
-         VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+        `INSERT INTO assets.asset_state_events (id, company_id, asset_id, actor_user_id, event_type, payload, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7)
          ON CONFLICT (id) DO NOTHING`,
         [
           event.id,
+          event.company_id,
           event.asset_id,
           event.actor_user_id,
           event.event_type,
@@ -4388,11 +4464,11 @@ class PostgresPersistence {
     for (const request of source.assetRequests) {
       await client.query(
         `INSERT INTO assets.asset_requests (
-          id, request_code, requester_user_id, request_type, asset_type, asset_id, reason, priority,
+          id, company_id, request_code, requester_user_id, request_type, asset_type, asset_id, reason, priority,
           needed_by, preferred_specs, status, decision_by_user_id, decision_at, decision_remarks,
           assigned_asset_id, version, created_at, updated_at, deleted_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13, $14, $15, $16, $17, $18, $19, $20)
         ON CONFLICT (id) DO UPDATE
         SET status = EXCLUDED.status, decision_by_user_id = EXCLUDED.decision_by_user_id,
             decision_at = EXCLUDED.decision_at, decision_remarks = EXCLUDED.decision_remarks,
@@ -4400,6 +4476,7 @@ class PostgresPersistence {
             updated_at = EXCLUDED.updated_at, deleted_at = EXCLUDED.deleted_at`,
         [
           request.id,
+          request.company_id,
           request.request_code,
           request.requester_user_id,
           request.request_type,
@@ -4424,15 +4501,16 @@ class PostgresPersistence {
     for (const acknowledgement of source.assetAcknowledgements) {
       await client.query(
         `INSERT INTO assets.asset_acknowledgements (
-          id, asset_id, employee_user_id, assignment_id, acknowledgement_type, status,
+          id, company_id, asset_id, employee_user_id, assignment_id, acknowledgement_type, status,
           acknowledged_at, version, created_at, updated_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         ON CONFLICT (id) DO UPDATE
         SET status = EXCLUDED.status, acknowledged_at = EXCLUDED.acknowledged_at,
             version = EXCLUDED.version, updated_at = EXCLUDED.updated_at`,
         [
           acknowledgement.id,
+          acknowledgement.company_id,
           acknowledgement.asset_id,
           acknowledgement.employee_user_id,
           acknowledgement.assignment_id,
@@ -4448,15 +4526,16 @@ class PostgresPersistence {
     for (const maintenance of source.assetMaintenanceRecords) {
       await client.query(
         `INSERT INTO assets.asset_maintenance_records (
-          id, asset_id, maintenance_type, vendor_id, cost, started_on, completed_on,
+          id, company_id, asset_id, maintenance_type, vendor_id, cost, started_on, completed_on,
           status, notes, version, created_at, updated_at, deleted_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         ON CONFLICT (id) DO UPDATE
         SET status = EXCLUDED.status, completed_on = EXCLUDED.completed_on, notes = EXCLUDED.notes,
             version = EXCLUDED.version, updated_at = EXCLUDED.updated_at, deleted_at = EXCLUDED.deleted_at`,
         [
           maintenance.id,
+          maintenance.company_id,
           maintenance.asset_id,
           maintenance.maintenance_type,
           maintenance.vendor_id,
@@ -4475,15 +4554,16 @@ class PostgresPersistence {
     for (const vendor of source.assetVendors) {
       await client.query(
         `INSERT INTO assets.software_vendors (
-          id, name, status, contact_email, phone, metadata, version, created_at, updated_at, deleted_at
+          id, company_id, name, status, contact_email, phone, metadata, version, created_at, updated_at, deleted_at
         )
-        VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, $10)
+        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11)
         ON CONFLICT (id) DO UPDATE
         SET name = EXCLUDED.name, status = EXCLUDED.status, contact_email = EXCLUDED.contact_email,
             phone = EXCLUDED.phone, metadata = EXCLUDED.metadata, version = EXCLUDED.version,
             updated_at = EXCLUDED.updated_at, deleted_at = EXCLUDED.deleted_at`,
         [
           vendor.id,
+          vendor.company_id,
           vendor.name,
           vendor.status,
           vendor.contact_email,
@@ -4499,10 +4579,10 @@ class PostgresPersistence {
     for (const ticket of source.assetRecoveryTickets) {
       await client.query(
         `INSERT INTO assets.asset_recovery_tickets (
-          id, employee_user_id, asset_id, assignment_id, status, settlement_status, settlement_amount,
+          id, company_id, employee_user_id, asset_id, assignment_id, status, settlement_status, settlement_amount,
           settlement_remarks, settled_by_user_id, settled_at, version, created_at, updated_at
         )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
          ON CONFLICT (id) DO UPDATE
          SET assignment_id = EXCLUDED.assignment_id,
              status = EXCLUDED.status,
@@ -4515,6 +4595,7 @@ class PostgresPersistence {
              updated_at = EXCLUDED.updated_at`,
         [
           ticket.id,
+          ticket.company_id,
           ticket.employee_user_id,
           ticket.asset_id,
           ticket.assignment_id,

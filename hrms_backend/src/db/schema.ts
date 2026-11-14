@@ -2131,6 +2131,7 @@ export const assetRecords = assets.table(
   "assets",
   {
     id: uuidPk.defaultRandom(),
+    companyId: uuid("company_id").notNull(),
     assetCode: text("asset_code").notNull(),
     qrHash: text("qr_hash").notNull(),
     assetType: text("asset_type").notNull(),
@@ -2145,45 +2146,101 @@ export const assetRecords = assets.table(
     version
   },
   (table) => [
-    uniqueIndex("assets_asset_code_uq").on(table.assetCode),
+    uniqueIndex("assets_company_asset_code_uq").on(table.companyId, table.assetCode),
+    uniqueIndex("assets_company_id_id_uq").on(table.companyId, table.id),
     uniqueIndex("assets_qr_hash_uq").on(table.qrHash),
+    index("assets_company_status_updated_idx")
+      .on(table.companyId, table.status, table.updatedAt.desc())
+      .where(sql`${table.deletedAt} IS NULL`),
     index("assets_assigned_status_idx").on(table.currentAssignedUserId, table.status),
     index("assets_status_updated_idx").on(table.status, table.updatedAt)
   ]
 );
 
-export const assetAssignments = assets.table("asset_assignments", {
-  id: uuidPk.defaultRandom(),
-  assetId: uuid("asset_id").notNull(),
-  assignedToUserId: uuid("assigned_to_user_id").notNull(),
-  assignedByUserId: uuid("assigned_by_user_id").notNull(),
-  assignedAt: timestamp("assigned_at", { withTimezone: true }).notNull().defaultNow(),
-  returnedAt: timestamp("returned_at", { withTimezone: true }),
-  status: text("status").notNull(),
-  createdAt,
-  updatedAt
-});
+export const assetAssignments = assets.table(
+  "asset_assignments",
+  {
+    id: uuidPk.defaultRandom(),
+    companyId: uuid("company_id").notNull(),
+    assetId: uuid("asset_id").notNull(),
+    assignedToUserId: uuid("assigned_to_user_id").notNull(),
+    assignedByUserId: uuid("assigned_by_user_id").notNull(),
+    assignedAt: timestamp("assigned_at", { withTimezone: true }).notNull().defaultNow(),
+    returnedAt: timestamp("returned_at", { withTimezone: true }),
+    status: text("status").notNull(),
+    createdAt,
+    updatedAt
+  },
+  (table) => [
+    uniqueIndex("asset_assignments_company_id_id_uq").on(table.companyId, table.id),
+    index("asset_assignments_company_asset_idx").on(table.companyId, table.assetId, table.status),
+    foreignKey({
+      name: "asset_assignments_company_asset_fkey",
+      columns: [table.companyId, table.assetId],
+      foreignColumns: [assetRecords.companyId, assetRecords.id],
+    }),
+  ]
+);
 
-export const assetRecoveryTickets = assets.table("asset_recovery_tickets", {
-  id: uuidPk.defaultRandom(),
-  employeeUserId: uuid("employee_user_id").notNull(),
-  assetId: uuid("asset_id").notNull(),
-  assignmentId: uuid("assignment_id").references(() => assetAssignments.id),
-  status: text("status").notNull(),
-  settlementStatus: text("settlement_status"),
-  settlementAmount: numeric("settlement_amount", { precision: 12, scale: 2 }),
-  settlementRemarks: text("settlement_remarks"),
-  settledByUserId: uuid("settled_by_user_id"),
-  settledAt: timestamp("settled_at", { withTimezone: true }),
-  version: integer("version").notNull().default(1),
-  createdAt,
-  updatedAt
-});
+export const assetStateEvents = assets.table(
+  "asset_state_events",
+  {
+    id: uuidPk.defaultRandom(),
+    companyId: uuid("company_id").notNull(),
+    assetId: uuid("asset_id").notNull(),
+    actorUserId: uuid("actor_user_id"),
+    eventType: text("event_type").notNull(),
+    payload: jsonb("payload").notNull().default({}),
+    createdAt
+  },
+  (table) => [
+    index("asset_state_events_company_asset_idx").on(table.companyId, table.assetId, table.createdAt),
+    foreignKey({
+      name: "asset_state_events_company_asset_fkey",
+      columns: [table.companyId, table.assetId],
+      foreignColumns: [assetRecords.companyId, assetRecords.id],
+    }),
+  ]
+);
+
+export const assetRecoveryTickets = assets.table(
+  "asset_recovery_tickets",
+  {
+    id: uuidPk.defaultRandom(),
+    companyId: uuid("company_id").notNull(),
+    employeeUserId: uuid("employee_user_id").notNull(),
+    assetId: uuid("asset_id").notNull(),
+    assignmentId: uuid("assignment_id").references(() => assetAssignments.id),
+    status: text("status").notNull(),
+    settlementStatus: text("settlement_status"),
+    settlementAmount: numeric("settlement_amount", { precision: 12, scale: 2 }),
+    settlementRemarks: text("settlement_remarks"),
+    settledByUserId: uuid("settled_by_user_id"),
+    settledAt: timestamp("settled_at", { withTimezone: true }),
+    version: integer("version").notNull().default(1),
+    createdAt,
+    updatedAt,
+  },
+  (table) => [
+    index("asset_recovery_company_status_idx").on(table.companyId, table.status, table.createdAt.desc()),
+    foreignKey({
+      name: "asset_recovery_company_asset_fkey",
+      columns: [table.companyId, table.assetId],
+      foreignColumns: [assetRecords.companyId, assetRecords.id],
+    }),
+    foreignKey({
+      name: "asset_recovery_company_assignment_fkey",
+      columns: [table.companyId, table.assignmentId],
+      foreignColumns: [assetAssignments.companyId, assetAssignments.id],
+    }),
+  ],
+);
 
 export const assetRequests = assets.table(
   "asset_requests",
   {
     id: uuidPk.defaultRandom(),
+    companyId: uuid("company_id").notNull(),
     requestCode: text("request_code").notNull(),
     requesterUserId: uuid("requester_user_id").notNull(),
     requestType: text("request_type").notNull(),
@@ -2204,9 +2261,21 @@ export const assetRequests = assets.table(
     deletedAt
   },
   (table) => [
-    uniqueIndex("asset_requests_request_code_uq").on(table.requestCode),
+    uniqueIndex("asset_requests_company_request_code_uq").on(table.companyId, table.requestCode),
     index("asset_requests_requester_status_idx").on(table.requesterUserId, table.status, table.createdAt),
-    index("asset_requests_status_priority_idx").on(table.status, table.priority, table.createdAt)
+    index("asset_requests_company_status_priority_idx")
+      .on(table.companyId, table.status, table.priority, table.createdAt.desc())
+      .where(sql`${table.deletedAt} IS NULL`),
+    foreignKey({
+      name: "asset_requests_company_asset_fkey",
+      columns: [table.companyId, table.assetId],
+      foreignColumns: [assetRecords.companyId, assetRecords.id],
+    }),
+    foreignKey({
+      name: "asset_requests_company_assigned_asset_fkey",
+      columns: [table.companyId, table.assignedAssetId],
+      foreignColumns: [assetRecords.companyId, assetRecords.id],
+    }),
   ]
 );
 
@@ -2214,6 +2283,7 @@ export const assetAcknowledgements = assets.table(
   "asset_acknowledgements",
   {
     id: uuidPk.defaultRandom(),
+    companyId: uuid("company_id").notNull(),
     assetId: uuid("asset_id").notNull(),
     employeeUserId: uuid("employee_user_id").notNull(),
     assignmentId: uuid("assignment_id"),
@@ -2226,7 +2296,17 @@ export const assetAcknowledgements = assets.table(
   },
   (table) => [
     index("asset_ack_asset_employee_idx").on(table.assetId, table.employeeUserId, table.status),
-    index("asset_ack_assignment_idx").on(table.assignmentId)
+    index("asset_ack_assignment_idx").on(table.assignmentId),
+    foreignKey({
+      name: "asset_acknowledgements_company_asset_fkey",
+      columns: [table.companyId, table.assetId],
+      foreignColumns: [assetRecords.companyId, assetRecords.id],
+    }),
+    foreignKey({
+      name: "asset_acknowledgements_company_assignment_fkey",
+      columns: [table.companyId, table.assignmentId],
+      foreignColumns: [assetAssignments.companyId, assetAssignments.id],
+    }),
   ]
 );
 
@@ -2234,6 +2314,7 @@ export const assetMaintenanceRecords = assets.table(
   "asset_maintenance_records",
   {
     id: uuidPk.defaultRandom(),
+    companyId: uuid("company_id").notNull(),
     assetId: uuid("asset_id").notNull(),
     maintenanceType: text("maintenance_type").notNull(),
     vendorId: uuid("vendor_id"),
@@ -2249,7 +2330,12 @@ export const assetMaintenanceRecords = assets.table(
   },
   (table) => [
     index("asset_maintenance_asset_status_idx").on(table.assetId, table.status, table.startedOn),
-    index("asset_maintenance_vendor_idx").on(table.vendorId)
+    index("asset_maintenance_vendor_idx").on(table.vendorId),
+    foreignKey({
+      name: "asset_maintenance_company_asset_fkey",
+      columns: [table.companyId, table.assetId],
+      foreignColumns: [assetRecords.companyId, assetRecords.id],
+    }),
   ]
 );
 
@@ -2257,6 +2343,7 @@ export const softwareVendors = assets.table(
   "software_vendors",
   {
     id: uuidPk.defaultRandom(),
+    companyId: uuid("company_id").notNull(),
     name: text("name").notNull(),
     status: text("status").notNull().default("active"),
     contactEmail: text("contact_email"),
@@ -2267,7 +2354,12 @@ export const softwareVendors = assets.table(
     updatedAt,
     deletedAt
   },
-  (table) => [uniqueIndex("software_vendors_name_uq").on(table.name)]
+  (table) => [
+    uniqueIndex("software_vendors_company_id_id_uq").on(table.companyId, table.id),
+    uniqueIndex("software_vendors_company_name_uq")
+      .on(table.companyId, sql`lower(${table.name})`)
+      .where(sql`${table.deletedAt} IS NULL`),
+  ]
 );
 
 export const licenseEntitlements = assets.table("license_entitlements", {
@@ -2296,6 +2388,34 @@ export const compromisedKeys = assets.table("compromised_keys", {
   createdAt,
   updatedAt
 });
+
+export const assetTenantOwnershipMap = assets.table(
+  "asset_tenant_ownership_map",
+  {
+    resourceType: text("resource_type").notNull(),
+    resourceId: uuid("resource_id").notNull(),
+    companyId: uuid("company_id").notNull(),
+    verificationNote: text("verification_note").notNull(),
+    verifiedByUserId: uuid("verified_by_user_id"),
+    verifiedAt: timestamp("verified_at", { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    primaryKey({ columns: [table.resourceType, table.resourceId] }),
+    check(
+      "asset_tenant_ownership_map_resource_type_ck",
+      sql`${table.resourceType} IN ('asset', 'request', 'vendor')`
+    ),
+    check(
+      "asset_tenant_ownership_map_note_ck",
+      sql`length(btrim(${table.verificationNote})) BETWEEN 3 AND 1000`
+    ),
+    index("asset_tenant_ownership_map_company_idx").on(
+      table.companyId,
+      table.resourceType,
+      table.resourceId
+    )
+  ]
+);
 
 export const assetCommandResults = assets.table(
   "asset_command_results",
@@ -2859,6 +2979,7 @@ export const schema = {
   docAccessLogs,
   assetRecords,
   assetAssignments,
+  assetStateEvents,
   assetRequests,
   assetAcknowledgements,
   assetMaintenanceRecords,
@@ -2867,6 +2988,7 @@ export const schema = {
   licenseEntitlements,
   licenseActivations,
   compromisedKeys,
+  assetTenantOwnershipMap,
   assetCommandResults,
   workSegments,
   workflowDefinitions,
