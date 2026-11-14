@@ -195,35 +195,34 @@ describe("asset transaction boundary", () => {
     expect(denied.statusCode, denied.body).toBe(403);
   });
 
-  it("uses current SQL roles for core, report, and dashboard reads after a non-selected Admin role is revoked", async () => {
+  it("uses current SQL roles after a cached non-selected Admin role is revoked", async () => {
     await first.store.pgPool!.query(
       `INSERT INTO core.user_roles (id, user_id, role_key, status, effective_from, created_at, updated_at)
        VALUES ($1, $2, $3, 'active', current_date, now(), now())`,
       [randomUUID(), seedIds.employee1, Roles.Admin],
     );
-    second = await buildRealApp({ reset: false });
-    await second.ready();
-    const staleAdmin = await loginAs(second, "E1");
+    first.store.users.find((user) => user.id === seedIds.employee1)!.roles.push(Roles.Admin);
+    const staleAdmin = await loginAs(first, "E1");
     await first.store.pgPool!.query(
       "UPDATE core.user_roles SET status = 'inactive' WHERE user_id = $1 AND role_key = $2",
       [seedIds.employee1, Roles.Admin],
     );
 
-    const profile = await second.inject({
+    const profile = await first.inject({
       method: "GET",
       url: `/api/v1/core/users/${seedIds.employee2}`,
       headers: authHeader(staleAdmin.token),
     });
     expect(profile.statusCode, profile.body).toBe(403);
 
-    const report = await second.inject({
+    const report = await first.inject({
       method: "GET",
       url: "/api/v1/reports/assets/summary?page=1&page_size=10",
       headers: authHeader(staleAdmin.token),
     });
     expect(report.statusCode, report.body).toBe(403);
 
-    const dashboard = await second.inject({
+    const dashboard = await first.inject({
       method: "GET",
       url: "/api/v1/dashboard/summary",
       headers: authHeader(staleAdmin.token),
@@ -234,6 +233,30 @@ describe("asset transaction boundary", () => {
       roles: [Roles.Employee],
       visibility: "self_and_descendants",
     });
+
+    const manager = await loginAs(first, "AST");
+    const inventory = await first.inject({
+      method: "GET",
+      url: "/api/v1/assets?page=1&page_size=10",
+      headers: authHeader(manager.token),
+    });
+    const asset = inventory.json().items[0] as { id: string; version: number };
+    expect((await first.inject({
+      method: "POST",
+      url: `/api/v1/assets/${asset.id}/assign`,
+      headers: { ...authHeader(manager.token), "Idempotency-Key": randomUUID() },
+      payload: { assigned_to_user_id: seedIds.employee2, expected_version: asset.version },
+    })).statusCode).toBe(200);
+    const lifecycleEventId = await recordDurableTermination(first, seedIds.employee2);
+    for (const eventId of [lifecycleEventId, randomUUID()]) {
+      const deniedTermination = await first.inject({
+        method: "POST",
+        url: "/api/v1/assets/events/employee-terminated",
+        headers: { ...authHeader(staleAdmin.token), "Idempotency-Key": randomUUID() },
+        payload: { employee_user_id: seedIds.employee2, lifecycle_event_id: eventId },
+      });
+      expect(deniedTermination.statusCode, deniedTermination.body).toBe(403);
+    }
   });
 
   it("isolates inventory, request, vendor, and mutation APIs by active company", async () => {
@@ -865,8 +888,9 @@ describe("asset transaction boundary", () => {
     });
     expect(mismatched.statusCode, mismatched.body).toBe(409);
     const lifecycleEventId = await recordDurableTermination(first, seedIds.employee1);
-    const event = (app: FastifyInstance, token: string) => app.inject({ method: "POST", url: "/api/v1/assets/events/employee-terminated", headers: { ...authHeader(token), "Idempotency-Key": randomUUID() }, payload: { employee_user_id: seedIds.employee1, lifecycle_event_id: lifecycleEventId } });
-    const firstEvent = await event(first, admin.token);
+    const event = (app: FastifyInstance, token: string, key = randomUUID()) => app.inject({ method: "POST", url: "/api/v1/assets/events/employee-terminated", headers: { ...authHeader(token), "Idempotency-Key": key }, payload: { employee_user_id: seedIds.employee1, lifecycle_event_id: lifecycleEventId } });
+    const firstKey = randomUUID();
+    const firstEvent = await event(first, admin.token, firstKey);
     const secondEvent = await event(second, otherAdmin.token);
     expect(firstEvent.statusCode).toBe(200);
     expect(firstEvent.json().recovery_tickets_created).toBe(1);
@@ -876,6 +900,13 @@ describe("asset transaction boundary", () => {
     expect(tickets.rows[0]?.count).toBe("1");
     const outbox = await first.store.pgPool!.query<{ count: string }>("SELECT count(*)::text AS count FROM platform.outbox_events WHERE idempotency_key = $1", [`employee.terminated:${companyId}:${seedIds.employee1}:${lifecycleEventId}`]);
     expect(outbox.rows[0]?.count).toBe("1");
+    await first.store.pgPool!.query(
+      "UPDATE core.users SET employment_status = 'active', terminated_on = NULL WHERE id = $1",
+      [seedIds.employee1],
+    );
+    const replayAfterLifecycleChange = await event(first, admin.token, firstKey);
+    expect(replayAfterLifecycleChange.statusCode, replayAfterLifecycleChange.body).toBe(200);
+    expect(replayAfterLifecycleChange.json()).toEqual(firstEvent.json());
   });
 
   it("recovers an uncertain COMMIT with the same key and no repeated insert", async () => {

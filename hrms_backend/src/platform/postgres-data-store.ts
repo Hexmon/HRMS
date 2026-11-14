@@ -697,6 +697,33 @@ class PostgresPersistence {
       // connection can carry this authority into a later request.
       await client.query("SELECT set_config('hrms.asset_writer_v2', 'on', true)");
       const actor = await this.loadCurrentAssetActor(client, input, true);
+      const before = await this.loadAssetSnapshot(client, this.store, input.companyId);
+
+      const previous = await client.query<{
+        request_hash: string;
+        response_body: T;
+      }>(
+        `SELECT request_hash, response_body
+         FROM assets.asset_command_results
+         WHERE company_id = $1 AND actor_user_id = $2
+           AND action_key = $3 AND idempotency_key = $4`,
+        [input.companyId, input.actorUserId, input.actionKey, input.idempotencyKey],
+      );
+      // Authorize against current SQL actor state and resource visibility
+      // before either replaying or revealing a key/hash conflict.
+      authorize(before, actor, previous.rows[0]?.response_body);
+      if (previous.rows[0]) {
+        if (previous.rows[0].request_hash !== input.requestHash) {
+          throw conflict("Idempotency-Key was already used for a different asset command.");
+        }
+        await client.query("COMMIT");
+        return previous.rows[0].response_body;
+      }
+
+      // Transition evidence is checked only after current durable authority and
+      // exact replay semantics. Otherwise a stale privileged token could use
+      // 403/409 differences as an event/assignment oracle, and later lifecycle
+      // changes could make a committed command impossible to replay safely.
       if (input.lifecycleEventId || input.terminatedEmployeeUserId) {
         if (!input.lifecycleEventId || !input.terminatedEmployeeUserId) {
           throw conflict("A complete employee lifecycle event reference is required.");
@@ -724,28 +751,6 @@ class PostgresPersistence {
         if (lifecycle.rowCount !== 1) {
           throw conflict("Employee termination event is not eligible for asset recovery.");
         }
-      }
-      const before = await this.loadAssetSnapshot(client, this.store, input.companyId);
-
-      const previous = await client.query<{
-        request_hash: string;
-        response_body: T;
-      }>(
-        `SELECT request_hash, response_body
-         FROM assets.asset_command_results
-         WHERE company_id = $1 AND actor_user_id = $2
-           AND action_key = $3 AND idempotency_key = $4`,
-        [input.companyId, input.actorUserId, input.actionKey, input.idempotencyKey],
-      );
-      // Authorize against current SQL actor state and resource visibility
-      // before either replaying or revealing a key/hash conflict.
-      authorize(before, actor, previous.rows[0]?.response_body);
-      if (previous.rows[0]) {
-        if (previous.rows[0].request_hash !== input.requestHash) {
-          throw conflict("Idempotency-Key was already used for a different asset command.");
-        }
-        await client.query("COMMIT");
-        return previous.rows[0].response_body;
       }
 
       // A committed assignment remains replayable if its assignee later
