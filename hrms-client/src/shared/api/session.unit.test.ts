@@ -65,4 +65,16 @@ describe("API session actor scope", () => {
     session.notifyApiUnauthorized();
     expect(listener).toHaveBeenCalledTimes(1);
   });
+
+  it("fails closed without browser storage during server-side rendering", async () => {
+    vi.stubGlobal("window", undefined);
+    vi.resetModules();
+    const session = await import("./session");
+    expect(session.getApiActorScope()).toBeNull();
+    expect(() => session.setApiActorScope("server-user", "server-company")).not.toThrow();
+    expect(session.getApiActorScope()).toEqual({
+      userId: "server-user",
+      companyId: "server-company",
+    });
+  });
 });

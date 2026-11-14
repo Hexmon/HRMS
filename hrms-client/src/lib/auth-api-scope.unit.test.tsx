@@ -70,6 +70,9 @@ function Harness() {
       <button type="button" onClick={() => void auth.login("employee@example.com", "secret")}>
         Login
       </button>
+      <button type="button" onClick={auth.logout}>
+        Logout
+      </button>
     </div>
   );
 }
@@ -104,7 +107,7 @@ describe("API authentication actor scope", () => {
     state.clearAccessToken.mockReset();
     state.login.mockReset();
     state.getSession.mockReset();
-    state.logout.mockReset();
+    state.logout.mockReset().mockResolvedValue(undefined);
     state.updateSessionPreference.mockReset();
   });
 
@@ -141,5 +144,21 @@ describe("API authentication actor scope", () => {
       expect(state.setActorScope).toHaveBeenCalledWith("user-a", "company-login"),
     );
     expect(state.setAccessToken).toHaveBeenCalledWith("token-a");
+  });
+
+  it("clears company scope on logout and on fallback login without a company", async () => {
+    state.login.mockResolvedValue({
+      user: session().user,
+      access_token: "token-without-company",
+      expires_at: "2026-11-15T00:00:00Z",
+    });
+    state.getSession.mockRejectedValue(new Error("session unavailable"));
+    renderProvider();
+    fireEvent.click(screen.getByRole("button", { name: "Login" }));
+    await waitFor(() => expect(state.clearActorScope).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+    expect(state.clearActorScope).toHaveBeenCalledTimes(2);
+    expect(state.clearAccessToken).toHaveBeenCalled();
   });
 });

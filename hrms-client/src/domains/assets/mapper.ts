@@ -32,8 +32,10 @@ export function mapApiAsset(value: unknown, fallback?: Partial<Asset>): Asset {
   const activeAssignmentId = text(row.active_assignment_id);
   const assignedOn = text(row.assigned_on, fallback?.assignedOn);
   const isAssignedToCurrentUser = row.is_assigned_to_current_user === true;
-  const employeeAssignmentId =
-    isAssignedToCurrentUser && assignedOn ? `${text(row.id, "asset")}:current-assignment` : "";
+  let employeeAssignmentId = "";
+  if (isAssignedToCurrentUser && assignedOn) {
+    employeeAssignmentId = `${text(row.id, "asset")}:current-assignment`;
+  }
   const historyId = activeAssignmentId || employeeAssignmentId;
   const history: Asset["history"] = historyId
     ? [

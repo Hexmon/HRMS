@@ -262,7 +262,8 @@ export class AssetService {
 
   acknowledge(actor: AuthUser, id: UUID, input: { acknowledgement_type: "received"; expected_version: number }) {
     const asset = this.repository.find(id);
-    if (asset.current_assigned_user_id !== actor.id) {
+    const isAssignedEmployee = asset.current_assigned_user_id === actor.id;
+    if (!isAssignedEmployee) {
       throw forbidden("Only the assigned employee can acknowledge this asset.");
     }
     const assignment = this.repository.activeAssignment(id);
