@@ -1024,7 +1024,7 @@ test("frontend contract route discovery excludes test modules without hiding run
       "const errors = [];",
       "const errors = { push() {}, length: 0 };",
     ), "base"),
-    /errors must be one empty local array/,
+    /errors must be one top-level empty const array/,
   );
   assert.throws(
     () => validateSemanticPath(repositoryRoot, path, content.replace(
@@ -1036,6 +1036,48 @@ test("frontend contract route discovery excludes test modules without hiding run
   assert.throws(
     () => validateSemanticPath(repositoryRoot, path, `${content}\nObject.defineProperty(process, "exit", { value() {} });\n`, "base"),
     /must not access Object/,
+  );
+  assert.throws(
+    () => validateSemanticPath(repositoryRoot, path, content.replace(
+      "const routesDir = join(root, \"src/routes\");",
+      "const routesDir = join(root, \"src/routes\");\nprocess.exit(0);",
+    ), "base"),
+    /exactly one final process exit/,
+  );
+  assert.throws(
+    () => validateSemanticPath(repositoryRoot, path, content.replace(
+      "const errors = [];",
+      "if (false) { const errors = []; }",
+    ), "base"),
+    /one authoritative errors/,
+  );
+  assert.throws(
+    () => validateSemanticPath(repositoryRoot, path, content.replace(
+      /const missing = routes\.filter\([\s\S]*?\n\}\);/,
+      "const missing = [];",
+    ), "base"),
+    /missing routes must derive from mapped routes and declared coverage/,
+  );
+  assert.throws(
+    () => validateSemanticPath(repositoryRoot, path, content.replace(
+      "const forbiddenFiles = routes.filter(({ file }) => forbiddenExpenseRoutes.has(file));",
+      "const forbiddenFiles = [];",
+    ), "base"),
+    /legacy route failures must derive from mapped routes and the forbidden route set/,
+  );
+  assert.throws(
+    () => validateSemanticPath(repositoryRoot, path, content.replace(
+      /const forbiddenTerms = activeExpenseFiles\.flatMap\([\s\S]*?\n\}\);/,
+      "const forbiddenTerms = [];",
+    ), "base"),
+    /legacy vocabulary failures must derive from the forbidden term set and active expense sources/,
+  );
+  assert.throws(
+    () => validateSemanticPath(repositoryRoot, path, content.replace(
+      'join(root, "docs/api/frontend-contract/FRONTEND_BACKEND_GAP_AUDIT.md")',
+      'join(root, "docs/api/frontend-contract/ignored.md")',
+    ), "base"),
+    /gap audit path must remain authoritative/,
   );
 });
 

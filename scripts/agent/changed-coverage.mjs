@@ -1606,6 +1606,39 @@ function validateFrontendContractRouteCoverage(path, content) {
   const source = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
   if (source.parseDiagnostics.length) semanticFailure(path, "frontend contract coverage must parse as JavaScript");
 
+  const topLevelDeclarations = source.statements
+    .filter(ts.isVariableStatement)
+    .flatMap((statement) => [...statement.declarationList.declarations]);
+  const initializerFor = (name) => {
+    const matches = topLevelDeclarations.filter((declaration) => ts.isIdentifier(declaration.name) && declaration.name.text === name);
+    if (matches.length !== 1 || !matches[0].initializer) {
+      semanticFailure(path, `frontend contract coverage must declare one authoritative ${name}`);
+    }
+    return matches[0].initializer;
+  };
+  const requireInitializer = (name, pattern, message) => {
+    const initializer = initializerFor(name);
+    if (!pattern.test(initializer.getText(source))) semanticFailure(path, message);
+    return initializer;
+  };
+  requireInitializer("gapAudit", /^join\(root,\s*"docs\/api\/frontend-contract\/FRONTEND_BACKEND_GAP_AUDIT\.md"\)$/, "gap audit path must remain authoritative");
+  requireInitializer("routeFiles", /^walk\(routesDir\)\.filter\([\s\S]*file\.endsWith\("\.tsx"\)[\s\S]*!file\.endsWith\("\.test\.tsx"\)[\s\S]*\)$/, "route files must derive from the runtime route tree");
+  requireInitializer("routes", /^routeFiles[\s\S]*\.map\([\s\S]*routePath\(file\)[\s\S]*\)[\s\S]*\.filter\([\s\S]*item\.route[\s\S]*\)$/, "mapped routes must derive from discovered runtime route files");
+  requireInitializer("missing", /^routes\.filter\([\s\S]*coverage\.filter\([\s\S]*candidates\.some\([\s\S]*route\s*===\s*prefix[\s\S]*route\.startsWith\(`\$\{prefix\}\/[\s\S]*route\s*!==\s*"\/"[\s\S]*\)$/, "missing routes must derive from mapped routes and declared coverage");
+  requireInitializer("forbiddenFiles", /^routes\.filter\([\s\S]*forbiddenExpenseRoutes\.has\(file\)[\s\S]*\)$/, "legacy route failures must derive from mapped routes and the forbidden route set");
+  requireInitializer("activeExpenseFiles", /^routeFiles[\s\S]*\.filter\([\s\S]*startsWith\("src\/routes\/_app\/expenses"\)[\s\S]*\.concat\(\[join\(root,\s*"src\/lib\/expenses-store\.tsx"\)\]\)[\s\S]*\.filter\(existsSync\)$/, "legacy vocabulary inputs must derive from active expense source files");
+  requireInitializer("forbiddenTerms", /^activeExpenseFiles\.flatMap\([\s\S]*readFileSync\(file,\s*"utf8"\)[\s\S]*forbiddenExpenseTerms[\s\S]*\.filter\([\s\S]*text\.includes\(term\)[\s\S]*\.map\([\s\S]*\)$/, "legacy vocabulary failures must derive from the forbidden term set and active expense sources");
+  requireSemanticText(path, initializerFor("forbiddenExpenseRoutes").getText(source), /new\s+Set\(\[[\s\S]*expenses\.director\.tsx[\s\S]*expenses\.mapping\.tsx[\s\S]*\]\)/, "forbidden legacy route definitions are incomplete");
+  for (const term of ["pending_reviewer", "reviewer_returned", "reviewer_rejected", "pending_director", "director_returned", "director_rejected", "Reviewer Queue", "Director Approval", "Reviewer Mapping"]) {
+    requireSemanticText(path, initializerFor("forbiddenExpenseTerms").getText(source), new RegExp(`(["'])${term}\\1`), `forbidden legacy vocabulary is missing ${term}`);
+  }
+  const errorsDeclaration = topLevelDeclarations.find((declaration) => ts.isIdentifier(declaration.name) && declaration.name.text === "errors");
+  const errorsInitializer = initializerFor("errors");
+  if (!ts.isArrayLiteralExpression(errorsInitializer) || errorsInitializer.elements.length ||
+      !errorsDeclaration || !(errorsDeclaration.parent.flags & ts.NodeFlags.Const)) {
+    semanticFailure(path, "frontend contract coverage errors must be one top-level empty const array");
+  }
+
   const expectedImports = new Map([
     ["node:fs", ["existsSync", "readdirSync", "readFileSync", "statSync"]],
     ["node:path", ["join", "relative"]],
@@ -1668,6 +1701,7 @@ function validateFrontendContractRouteCoverage(path, content) {
   }
 
   let errorsDeclarations = 0;
+  const processExitCalls = [];
   const forbiddenGlobals = new Set(["Array", "Function", "Object", "Reflect", "eval", "global", "globalThis", "require"]);
   const visit = (node) => {
     if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === "errors") {
@@ -1697,6 +1731,7 @@ function validateFrontendContractRouteCoverage(path, content) {
           !ts.isCallExpression(property.parent) || property.parent.expression !== property) {
         semanticFailure(path, "frontend contract coverage process access must be a direct cwd or exit call");
       }
+      if (property.name.text === "exit") processExitCalls.push(property.parent);
     }
     if (ts.isIdentifier(node) && node.text === "console") {
       const property = node.parent;
@@ -1718,6 +1753,9 @@ function validateFrontendContractRouteCoverage(path, content) {
   };
   visit(source);
   if (errorsDeclarations !== 1) semanticFailure(path, "frontend contract coverage must declare exactly one error collector");
+  if (processExitCalls.length !== 1 || processExitCalls[0] !== exit) {
+    semanticFailure(path, "frontend contract coverage must have exactly one final process exit");
+  }
 }
 
 function validateQaSeedSafety(path, content) {
