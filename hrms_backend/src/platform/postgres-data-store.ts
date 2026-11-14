@@ -168,6 +168,18 @@ function isAssetIdentityConflict(error: unknown): boolean {
   ].includes(constraint);
 }
 
+async function rollbackAssetTransaction(client: PoolClient): Promise<boolean> {
+  try {
+    await client.query("ROLLBACK");
+    return false;
+  } catch {
+    // A connection whose rollback failed has unknown transaction/session
+    // state. Returning it to the pool could leak locks, snapshots, or the
+    // transaction-local asset writer marker into a later request.
+    return true;
+  }
+}
+
 export interface PostgresObjectStorageOptions {
   cloudName: string;
   apiKey: string;
@@ -549,6 +561,7 @@ class PostgresPersistence {
 
   async flushInitialAssetSeed(): Promise<void> {
     const client = await this.pool.connect();
+    let destroyClient = false;
     try {
       await client.query("BEGIN");
       await client.query("SELECT pg_advisory_xact_lock(hashtext(current_database()), hashtext('hrms_asset_command'))");
@@ -575,16 +588,17 @@ class PostgresPersistence {
       await this.flushAssets(client, this.store);
       await client.query("COMMIT");
     } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
+      destroyClient = await rollbackAssetTransaction(client);
       throw error;
     } finally {
-      client.release();
+      client.release(destroyClient);
     }
   }
 
   async assetReadStore(baseStore?: DataStore): Promise<DataStore> {
     const sourceStore = baseStore ?? this.store;
     const client = await this.pool.connect();
+    let destroyClient = false;
     try {
       // Every asset collection in this request must come from one committed
       // snapshot. A concurrent command may commit between individual SELECTs.
@@ -593,10 +607,10 @@ class PostgresPersistence {
       await client.query("COMMIT");
       return snapshot;
     } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
+      destroyClient = await rollbackAssetTransaction(client);
       throw error;
     } finally {
-      client.release();
+      client.release(destroyClient);
     }
   }
 
@@ -630,6 +644,7 @@ class PostgresPersistence {
 
   async assetAssignees(actorUserId: UUID, companyId: UUID, search = ""): Promise<{ items: Array<{ id: UUID; full_name: string }>; has_more: boolean }> {
     const client = await this.pool.connect();
+    let destroyClient = false;
     const literalSearch = search.replace(/[\\%_]/gu, (character) => `\\${character}`);
     try {
       await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
@@ -647,9 +662,9 @@ class PostgresPersistence {
       await client.query("COMMIT");
       return { items: rows.rows.slice(0, 50), has_more: rows.rows.length > 50 };
     } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
+      destroyClient = await rollbackAssetTransaction(client);
       throw error;
-    } finally { client.release(); }
+    } finally { client.release(destroyClient); }
   }
 
   async assetCommand<T>(
@@ -658,6 +673,7 @@ class PostgresPersistence {
     execute: (store: DataStore, actor: AuthUser) => T,
   ): Promise<T> {
     const client = await this.pool.connect();
+    let destroyClient = false;
     try {
       await client.query("BEGIN");
       await client.query("SET LOCAL lock_timeout = '5s'");
@@ -728,7 +744,7 @@ class PostgresPersistence {
       await client.query("COMMIT");
       return result;
     } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
+      destroyClient = await rollbackAssetTransaction(client);
       if (isSqlLockTimeout(error)) {
         throw conflict("Asset command is busy; retry with the same Idempotency-Key.");
       }
@@ -739,7 +755,7 @@ class PostgresPersistence {
       }
       throw error;
     } finally {
-      client.release();
+      client.release(destroyClient);
     }
   }
 
@@ -1181,6 +1197,7 @@ class PostgresPersistence {
 
   async flush(): Promise<void> {
     const client = await this.pool.connect();
+    let destroyClient = false;
     try {
       await client.query("BEGIN");
       await this.flushCore(client);
@@ -1198,10 +1215,10 @@ class PostgresPersistence {
       await this.flushEms(client);
       await client.query("COMMIT");
     } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
+      destroyClient = await rollbackAssetTransaction(client);
       throw error;
     } finally {
-      client.release();
+      client.release(destroyClient);
     }
   }
 

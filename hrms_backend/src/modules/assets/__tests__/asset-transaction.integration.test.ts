@@ -726,6 +726,9 @@ describe("asset transaction boundary", () => {
 
     const manager = first.store.users.find((user) => user.id === seedIds.assetManager)!;
     const companyId = first.store.userSessionPreferences.find((item) => item.user_id === manager.id)!.company_id!;
+    const durableBefore = await first.store.pgPool!.query<{ id: string }>(
+      "SELECT id FROM assets.assets ORDER BY id",
+    );
     await expect(persistence.assetCommand(
       {
         companyId,
@@ -740,8 +743,10 @@ describe("asset transaction boundary", () => {
         return { removed: true };
       },
     )).rejects.toThrow(/removed a row from assets/u);
-    const durable = await first.store.pgPool!.query<{ count: string }>("SELECT count(*)::text AS count FROM assets.assets");
-    expect(Number(durable.rows[0]?.count)).toBeGreaterThan(0);
+    const durableAfter = await first.store.pgPool!.query<{ id: string }>(
+      "SELECT id FROM assets.assets ORDER BY id",
+    );
+    expect(durableAfter.rows).toEqual(durableBefore.rows);
   });
 
   it("rolls back failed snapshot reads and refuses a second initial asset seed", async () => {
@@ -789,18 +794,23 @@ describe("asset transaction boundary", () => {
     }
     const pool = first.store.pgPool!;
     const originalConnect = pool.connect.bind(pool);
+    let destroyedClients = 0;
 
     const interceptNextClient = (primaryFailure?: (sql: string) => Error | undefined) => {
       const spy = vi.spyOn(pool, "connect").mockImplementationOnce(async () => {
         const client = await originalConnect();
         const originalQuery = client.query.bind(client);
+        const originalRelease = client.release.bind(client);
+        client.release = ((destroy?: Error | boolean) => {
+          if (destroy === true) destroyedClients += 1;
+          originalRelease(destroy);
+        }) as typeof client.release;
         client.query = (async (sql: unknown, ...args: unknown[]) => {
           if (typeof sql === "string") {
             const failure = primaryFailure?.(sql);
             if (failure) throw failure;
             if (sql === "ROLLBACK") {
-              await (originalQuery as (...items: unknown[]) => Promise<unknown>)(sql, ...args);
-              throw new Error("simulated rollback report failure");
+              throw new Error("simulated rollback transport failure");
             }
           }
           return (originalQuery as (...items: unknown[]) => Promise<unknown>)(sql, ...args);
@@ -843,6 +853,17 @@ describe("asset transaction boundary", () => {
     expect(busy.json().message).toMatch(/busy; retry with the same Idempotency-Key/u);
     spy.mockRestore();
 
+    const originalAssetCommand = persistence.assetCommand;
+    persistence.assetCommand = undefined;
+    spy = interceptNextClient();
+    try {
+      await expect(persistence.flush()).rejects.toThrow(/Asset command persistence is required/u);
+    } finally {
+      persistence.assetCommand = originalAssetCommand;
+      spy.mockRestore();
+    }
+
+    expect(destroyedClients).toBe(5);
     expect((await pool.query<{ value: number }>("SELECT 1 AS value")).rows[0]?.value).toBe(1);
   });
 
