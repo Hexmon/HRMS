@@ -20,6 +20,8 @@ The broader TEN-S25-005 durability, settings-default, RBAC identity, audit owner
 - Changed executable line and decision-branch coverage against `origin/release-01`.
 - Exact-head independent senior/security and QA review.
 
+The first trusted full-suite run at `cc368ad6` passed 961/962 tests. Its only failure was an unrelated current-date attendance fixture on Sunday: the test configured `Mon-Sat` and expected a real-time punch to succeed. This branch includes the existing test-only `Mon-Sun` correction already present in PR #118 so the fixed May Saturday assertions remain intact and the real-time assertion is calendar-independent.
+
 ## Recovery
 
 The source change is stateless and requires no migration or configuration. Rollback reverts the service and tests, but would reintroduce the unbounded traversal risk for corrupt stored chains.
