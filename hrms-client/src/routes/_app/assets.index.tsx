@@ -21,7 +21,7 @@ import {
 
 export const Route = createFileRoute("/_app/assets/")({ component: AssetsDashboard });
 
-function AssetsDashboard() {
+export function AssetsDashboard() {
   const { activeRole, user } = useAuth();
   const { assets, requests, loading, error } = useAssets();
 

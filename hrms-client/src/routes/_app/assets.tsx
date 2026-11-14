@@ -22,7 +22,7 @@ const TABS = [
 const ASSET_ADMIN_ROLES = ["main_admin", "asset_admin"];
 const RECOVERY_ROLES = [...ASSET_ADMIN_ROLES, "hr_admin"];
 
-function AssetsLayout() {
+export function AssetsLayout() {
   const { activeRole } = useAuth();
   const isAssetAdmin = !!activeRole && ASSET_ADMIN_ROLES.includes(activeRole);
   const canViewRecovery = !!activeRole && RECOVERY_ROLES.includes(activeRole);

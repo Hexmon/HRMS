@@ -19,7 +19,7 @@ import { toast } from "sonner";
 
 export const Route = createFileRoute("/_app/assets/inventory")({ component: Inventory });
 
-function Inventory() {
+export function Inventory() {
   const { assets, loading, error, isApiBacked } = useAssets();
   const exportMutation = useCreateReportExportMutation();
   const [type, setType] = useState("all");
@@ -290,13 +290,17 @@ function Filter({
   onChange: (v: string) => void;
   options: { v: string; l: string }[];
 }) {
+  const controlId = `asset-filter-${label.toLowerCase().replaceAll(" ", "-")}`;
   return (
     <div className="space-y-1">
-      <label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+      <label
+        htmlFor={controlId}
+        className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground"
+      >
         {label}
       </label>
       <Select value={value} onValueChange={onChange}>
-        <SelectTrigger className="h-9 w-44">
+        <SelectTrigger id={controlId} className="h-9 w-44">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

@@ -33,7 +33,7 @@ import {
 
 export const Route = createFileRoute("/_app/assets/warranty")({ component: WarrantyScreen });
 
-function WarrantyScreen() {
+export function WarrantyScreen() {
   const { assets } = useAssets();
   const apiEnabled = useApiRouteEnabled(["/assets"]);
   const vendorQuery = useAssetVendors({ page_size: 100 }, apiEnabled);
@@ -329,13 +329,21 @@ function VendorDialog({
         </DialogHeader>
         <div className="grid gap-3">
           <div className="space-y-1">
-            <Label>Vendor name</Label>
-            <Input value={name} onChange={(event) => setName(event.target.value)} />
+            <Label htmlFor="asset-vendor-name">Vendor name</Label>
+            <Input
+              id="asset-vendor-name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
-              <Label>Contact email</Label>
-              <Input value={email} onChange={(event) => setEmail(event.target.value)} />
+              <Label htmlFor="asset-vendor-email">Contact email</Label>
+              <Input
+                id="asset-vendor-email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+              />
             </div>
             <div className="space-y-1">
               <Label htmlFor="vendor-phone">Phone</Label>
@@ -343,9 +351,9 @@ function VendorDialog({
             </div>
           </div>
           <div className="space-y-1">
-            <Label>Status</Label>
+            <Label htmlFor="asset-vendor-status">Status</Label>
             <Select value={status} onValueChange={(value) => setStatus(value as typeof status)}>
-              <SelectTrigger>
+              <SelectTrigger id="asset-vendor-status">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

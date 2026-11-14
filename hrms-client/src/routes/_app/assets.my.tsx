@@ -10,7 +10,7 @@ import { toastApiError, userFacingErrorMessage } from "@/shared/api";
 
 export const Route = createFileRoute("/_app/assets/my")({ component: MyAssets });
 
-function MyAssets() {
+export function MyAssets() {
   const { user } = useAuth();
   const { assets, acknowledgeAssignment, loading, error } = useAssets();
   const mine = assets.filter((a) => a.assignedToId === user?.id);
