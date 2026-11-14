@@ -18,6 +18,7 @@ const state = vi.hoisted(() => ({
   toastApiError: vi.fn(),
   dialogOpenChange: null as null | ((open: boolean) => void),
   selectCondition: null as null | ((value: string) => void),
+  confirmAction: null as null | (() => void),
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -118,9 +119,14 @@ vi.mock("@/components/ui/select", () => ({
   SelectItem: ({ children }: { children: ReactNode }) => <span>{children}</span>,
 }));
 vi.mock("@/components/ui/button", () => ({
-  Button: ({ children, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => (
-    <button {...props}>{children}</button>
-  ),
+  Button: ({ children, onClick, ...props }: React.ButtonHTMLAttributes<HTMLButtonElement>) => {
+    if (children === "Confirm" && onClick) state.confirmAction = onClick as () => void;
+    return (
+      <button onClick={onClick} {...props}>
+        {children}
+      </button>
+    );
+  },
 }));
 vi.mock("sonner", () => ({ toast: state.toast }));
 
@@ -167,6 +173,7 @@ describe("asset returns route", () => {
     state.toastApiError.mockReset();
     state.dialogOpenChange = null;
     state.selectCondition = null;
+    state.confirmAction = null;
   });
   afterEach(cleanup);
 
@@ -272,6 +279,22 @@ describe("asset returns route", () => {
     expect(state.toast.success).toHaveBeenCalledWith("asset-a returned");
   });
 
+  it("reports an all-assigned return conflict without false success", async () => {
+    state.apiEnabled = false;
+    state.assets = [assignedAsset()];
+    state.employees = [{ id: "employee-a", name: "Employee A", status: "active" }];
+    state.returnAsset.mockRejectedValueOnce(new Error("assignment changed"));
+    render(<ReturnsScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Confirm" }));
+    await waitFor(() =>
+      expect(state.toastApiError).toHaveBeenCalledWith(
+        expect.any(Error),
+        "Asset could not be returned.",
+      ),
+    );
+    expect(state.toast.success).not.toHaveBeenCalled();
+  });
+
   it("keeps local HR recovery rows read-only", () => {
     state.auth.activeRole = "hr_admin";
     state.apiEnabled = false;
@@ -288,6 +311,7 @@ describe("inline return dialog", () => {
   beforeEach(() => {
     state.dialogOpenChange = null;
     state.selectCondition = null;
+    state.confirmAction = null;
   });
   afterEach(cleanup);
 
@@ -316,7 +340,7 @@ describe("inline return dialog", () => {
     fireEvent.click(confirm);
     expect(confirm).toBeDisabled();
     state.dialogOpenChange?.(false);
-    fireEvent.click(confirm);
+    state.confirmAction?.();
     expect(onConfirm).toHaveBeenCalledTimes(1);
     resolveReturn();
     await waitFor(() => expect(confirm).toBeEnabled());

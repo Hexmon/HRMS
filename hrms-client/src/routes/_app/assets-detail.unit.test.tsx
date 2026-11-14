@@ -16,7 +16,11 @@ const state = vi.hoisted(() => ({
     isLoading: false,
     error: null as Error | null,
   },
-  assignees: { data: { items: [{ id: "employee-a", full_name: "Employee A" }], has_more: false } },
+  assignees: {
+    data: { items: [{ id: "employee-a", full_name: "Employee A" }], has_more: false } as
+      | { items: Array<{ id: string; full_name: string }>; has_more?: boolean }
+      | undefined,
+  },
   assignAsset: vi.fn(),
   returnAsset: vi.fn(),
   setStatus: vi.fn(),
@@ -266,6 +270,13 @@ describe("asset detail boundaries", () => {
     expect(state.getAssignees).toHaveBeenCalledWith("");
   });
 
+  it("renders an empty API assignee result without enabling assignment", () => {
+    state.detail = { data: asset(), isError: false, isLoading: false, error: null };
+    state.assignees = { data: undefined };
+    render(<AssetDetail />);
+    expect(screen.getByRole("button", { name: "Assign" })).toBeDisabled();
+  });
+
   it("reports assignment and return outcomes only after the store boundary resolves", async () => {
     state.detail = { data: asset(), isError: false, isLoading: false, error: null };
     render(<AssetDetail />);
@@ -366,7 +377,10 @@ describe("asset detail boundaries", () => {
 
   it("renders local missing optional evidence without inventing values", () => {
     state.isApiBacked = false;
-    state.employees = [{ id: "employee-a", apiId: "api-employee-a", name: "Employee A" }];
+    state.employees = [
+      { id: "employee-a", apiId: "api-employee-a", name: "Employee A" },
+      { id: "employee-b", name: "Employee B" },
+    ];
     state.assets = [
       asset({
         brand: "—",
