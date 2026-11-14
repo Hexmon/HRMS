@@ -65,10 +65,8 @@ export function AssetDetail() {
     enabled: isApiBacked && isUuid(id),
     staleTime: queryTimings.detailStaleMs,
   });
-  const resolvedAsset = isApiBacked && detailQuery.isError ? undefined : (detailQuery.data ?? listAsset);
-  const asset = resolvedAsset?.apiMissing?.condition
-    ? { ...resolvedAsset, condition: "—" as AssetCondition }
-    : resolvedAsset;
+  const resolvedAsset =
+    isApiBacked && detailQuery.isError ? undefined : (detailQuery.data ?? listAsset);
   const isAdmin = !!activeRole && (ASSET_ADMIN_ROLES as readonly string[]).includes(activeRole);
   const [assigneeSearch, setAssigneeSearch] = useState("");
   const assigneesQuery = useQuery({
@@ -84,7 +82,7 @@ export function AssetDetail() {
       }))
     : employees.map((person) => ({ id: person.apiId ?? person.id, name: person.name }));
 
-  if (!asset) {
+  if (!resolvedAsset) {
     return (
       <div className="rounded-2xl border bg-card p-10 text-center">
         <h2 className="text-lg font-semibold">
@@ -105,10 +103,13 @@ export function AssetDetail() {
     );
   }
 
+  const asset = resolvedAsset.apiMissing?.condition
+    ? { ...resolvedAsset, condition: "—" }
+    : resolvedAsset;
   const days = warrantyDaysLeft(asset.warrantyExpiry);
   const hasWarranty = !!asset.warrantyExpiry;
   const expired = hasWarranty && days < 0;
-  const overview = assetOverviewMetadata(asset, days);
+  const overview = assetOverviewMetadata(resolvedAsset, days);
 
   return (
     <div className="space-y-4">

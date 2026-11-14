@@ -414,6 +414,10 @@ describe("asset detail boundaries", () => {
       }),
     ];
     render(<AssetDetail />);
+    const conditionLabel = screen
+      .getAllByText("Condition")
+      .find((element) => element.tagName === "DT");
+    expect(conditionLabel?.nextElementSibling).toHaveTextContent("—");
     expect(screen.getByRole("heading", { name: "Latitude" })).toBeInTheDocument();
     expect(screen.getByText("No documents uploaded for this asset.")).toBeInTheDocument();
     expect(screen.getByText("Pending")).toBeInTheDocument();

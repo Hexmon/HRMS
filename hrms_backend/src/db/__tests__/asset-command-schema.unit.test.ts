@@ -27,16 +27,12 @@ describe("asset command schema and OpenAPI boundary", () => {
       required: ["idempotency-key"],
     });
     expect(transform(["POST", "OPTIONS"], "/api/v1/assets/").schema.headers).toBeDefined();
+    expect(transform(["OPTIONS", "POST"], "/api/v1/assets/").schema.headers).toBeDefined();
     expect(transform("PATCH", "/api/v1/assets/vendors/:id").schema.headers).toBeDefined();
     expect(transform("GET", "/api/v1/assets/").schema.headers).toBeUndefined();
     expect(transform("POST", "/api/v1/assets/scan/token").schema.headers).toBeUndefined();
     expect(transform("POST", "/api/v1/assets/licenses/validate").schema.headers).toBeUndefined();
     expect(transform("POST", "/api/v1/auth/login").schema.headers).toBeUndefined();
-    expect(swaggerTransform({
-      schema: {},
-      url: "/api/v1/assets/",
-      route: { method: undefined as unknown as string, url: "/api/v1/assets/", handler: async () => undefined },
-      openapiObject: {},
-    }).schema.headers).toBeUndefined();
+    expect(transform([], "/api/v1/assets/").schema.headers).toBeUndefined();
   });
 });

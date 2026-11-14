@@ -13144,17 +13144,19 @@ export const openApiComponents = {
 export const swaggerTransform: NonNullable<
   FastifyDynamicSwaggerOptions["transform"]
 > = ({ schema, url, route }) => {
-  const method = Array.isArray(route.method) ? route.method[0] : route.method;
-  const docs = routeDocs[`${method} ${normaliseRoutePath(url)}`];
-  if (!docs) {
+  const methods = Array.isArray(route.method) ? route.method : [route.method];
+  const normalisedUrl = normaliseRoutePath(url);
+  const method = methods.find((candidate) => routeDocs[`${candidate} ${normalisedUrl}`]);
+  if (!method) {
     return { schema, url };
   }
+  const docs = routeDocs[`${method} ${normalisedUrl}`];
 
   return {
     schema: {
       ...(schema as RouteSchema | undefined),
       ...docs,
-      ...(url.startsWith("/api/v1/assets") && ["POST", "PATCH"].includes(method ?? "") &&
+      ...(url.startsWith("/api/v1/assets") && ["POST", "PATCH"].includes(method) &&
       !url.includes("/scan/") && !url.endsWith("/licenses/validate")
         ? { headers: {
             type: "object", required: ["idempotency-key"],
