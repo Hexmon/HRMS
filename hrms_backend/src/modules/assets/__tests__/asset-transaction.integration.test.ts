@@ -318,6 +318,61 @@ describe("asset transaction boundary", () => {
     expect(durable.rows[0]?.count).toBe("1");
   });
 
+  it("orders authority locks behind a concurrent full flush without a user-role deadlock", async () => {
+    const manager = await loginAs(first, "AST");
+    const pool = first.store.pgPool!;
+    const persistence = first.store.persistence;
+    if (!persistence) throw new Error("Expected PostgreSQL persistence");
+    const originalConnect = pool.connect.bind(pool);
+    let connectionNumber = 0;
+    let fullFlushAtRole!: () => void;
+    let continueFullFlush!: () => void;
+    let assetAtUser!: () => void;
+    const fullFlushAtRolePromise = new Promise<void>((resolve) => { fullFlushAtRole = resolve; });
+    const continueFullFlushPromise = new Promise<void>((resolve) => { continueFullFlush = resolve; });
+    const assetAtUserPromise = new Promise<void>((resolve) => { assetAtUser = resolve; });
+    const spy = vi.spyOn(pool, "connect").mockImplementation((async () => {
+      const client = await originalConnect();
+      connectionNumber += 1;
+      const connection = connectionNumber;
+      const originalQuery = client.query.bind(client);
+      client.query = (async (sql: unknown, ...args: unknown[]) => {
+        if (connection === 1 && typeof sql === "string" && sql.includes("INSERT INTO core.roles")) {
+          fullFlushAtRole();
+          await continueFullFlushPromise;
+        }
+        if (connection === 2 && typeof sql === "string" && sql.includes("FROM core.users u")) {
+          assetAtUser();
+        }
+        return (originalQuery as (...items: unknown[]) => Promise<unknown>)(sql, ...args);
+      }) as typeof client.query;
+      return client;
+    }) as typeof pool.connect);
+
+    const fullFlush = persistence.flush();
+    await fullFlushAtRolePromise;
+    const command = first.inject({
+      method: "POST",
+      url: "/api/v1/assets/",
+      headers: { ...authHeader(manager.token), "Idempotency-Key": randomUUID() },
+      payload: { asset_code: "FULL-LOCK-ORDER-S25", asset_type: "Laptop", name: "Full flush lock order" },
+    });
+    await assetAtUserPromise;
+    continueFullFlush();
+    try {
+      await expect(fullFlush).resolves.toBeUndefined();
+      const result = await command;
+      expect(result.statusCode, result.body).toBe(200);
+    } finally {
+      spy.mockRestore();
+    }
+
+    const durable = await pool.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM assets.assets WHERE asset_code = 'FULL-LOCK-ORDER-S25'",
+    );
+    expect(durable.rows[0]?.count).toBe("1");
+  });
+
   it("allows only one same-version assignment across two API instances", async () => {
     second = await buildRealApp({ reset: false });
     await second.ready();

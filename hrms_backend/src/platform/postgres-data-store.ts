@@ -3184,6 +3184,10 @@ class PostgresPersistence {
 
   private async flushCore(client: PoolClient): Promise<void> {
     await this.flushCoreMasterData(client);
+    // Keep authority writers on one lock order: user -> role definitions ->
+    // user-role assignments. Asset commands use the same order, avoiding a
+    // user/role deadlock with the full persistence fallback.
+    await this.flushCoreUsers(client);
     for (const role of this.store.rbacRoles) {
       await client.query(
         `INSERT INTO core.roles (id, role_key, name, description, status, builtin, deleted_at, version)
@@ -3219,7 +3223,7 @@ class PostgresPersistence {
         ],
       );
     }
-    await this.flushCoreUsersAndCredentials(client);
+    await this.flushCoreUserRolesAndCredentials(client);
   }
 
   private async flushCoreMasterData(client: PoolClient): Promise<void> {
@@ -3286,6 +3290,14 @@ class PostgresPersistence {
     client: PoolClient,
     userIds?: ReadonlySet<string>,
   ): Promise<void> {
+    await this.flushCoreUsers(client, userIds);
+    await this.flushCoreUserRolesAndCredentials(client, userIds);
+  }
+
+  private async flushCoreUsers(
+    client: PoolClient,
+    userIds?: ReadonlySet<string>,
+  ): Promise<void> {
     for (const user of this.store.users) {
       if (userIds && !userIds.has(user.id)) continue;
       await client.query(
@@ -3328,6 +3340,15 @@ class PostgresPersistence {
           user.version,
         ],
       );
+    }
+  }
+
+  private async flushCoreUserRolesAndCredentials(
+    client: PoolClient,
+    userIds?: ReadonlySet<string>,
+  ): Promise<void> {
+    for (const user of this.store.users) {
+      if (userIds && !userIds.has(user.id)) continue;
       await client.query("DELETE FROM core.user_roles WHERE user_id = $1", [
         user.id,
       ]);
