@@ -12,11 +12,32 @@ const state = vi.hoisted(() => ({
   toast: { success: vi.fn() },
   toastApiError: vi.fn(),
   isApiBacked: false,
+  myQuery: {
+    data: undefined as Array<Record<string, unknown>> | undefined,
+    isLoading: false,
+    error: null as Error | null,
+  },
+  queryConfig: null as null | { queryKey: unknown; queryFn: () => Promise<unknown> },
+  myAssetsApi: vi.fn(),
 }));
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (options: unknown) => options,
   Link: ({ children }: { children: ReactNode }) => <a href="#asset">{children}</a>,
+}));
+vi.mock("@tanstack/react-query", () => ({
+  useQuery: (config: { queryKey: unknown; queryFn: () => Promise<unknown> }) => {
+    state.queryConfig = config;
+    return state.myQuery;
+  },
+}));
+vi.mock("@/domains/assets", () => ({
+  assetsApi: { myAssets: state.myAssetsApi },
+  mapApiAssets: (items: Array<Record<string, unknown>>) => items,
+}));
+vi.mock("@/shared/query", () => ({
+  queryKeys: { list: (...parts: unknown[]) => parts },
+  queryTimings: { listStaleMs: 1 },
 }));
 vi.mock("@/lib/auth", () => ({ useAuth: () => ({ user: state.user }) }));
 vi.mock("@/lib/assets-store", () => ({
@@ -103,6 +124,9 @@ describe("employee asset journey", () => {
     state.toast.success.mockReset();
     state.toastApiError.mockReset();
     state.isApiBacked = false;
+    state.myQuery = { data: undefined, isLoading: false, error: null };
+    state.queryConfig = null;
+    state.myAssetsApi.mockReset().mockResolvedValue({ items: [] });
   });
   afterEach(cleanup);
 
@@ -170,12 +194,17 @@ describe("employee asset journey", () => {
     expect(screen.queryByText("Cost")).not.toBeInTheDocument();
   });
 
-  it("trusts the server-scoped my-assets result without requiring an employee identifier", () => {
+  it("uses the server-scoped my-assets query even when the shared Admin inventory contains other assets", async () => {
     state.isApiBacked = true;
-    state.assets = [asset({ assignedToId: "" })];
+    state.assets = [asset({ id: "foreign-admin-inventory", assignedToId: "employee-b" })];
+    state.myQuery = { data: [asset({ assignedToId: "" })], isLoading: false, error: null };
     render(<MyAssets />);
     expect(screen.getByText("Dell Latitude")).toBeInTheDocument();
+    expect(screen.queryByText("foreign-admin-inventory")).not.toBeInTheDocument();
     expect(screen.queryByText("Cost")).not.toBeInTheDocument();
+    expect(JSON.stringify(state.queryConfig?.queryKey)).toContain('"my"');
+    await state.queryConfig?.queryFn();
+    expect(state.myAssetsApi).toHaveBeenCalledWith({ page_size: 100 });
   });
 
   it("renders expiring and absent warranty states", () => {

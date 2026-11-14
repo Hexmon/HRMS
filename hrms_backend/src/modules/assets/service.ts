@@ -260,9 +260,9 @@ export class AssetService {
     return { request: this.presentRequest(request), version: request.version };
   }
 
-  acknowledge(actor: AuthUser, id: UUID, input: { acknowledgement_type: "received" | "returned"; expected_version: number }) {
+  acknowledge(actor: AuthUser, id: UUID, input: { acknowledgement_type: "received"; expected_version: number }) {
     const asset = this.repository.find(id);
-    if (asset.current_assigned_user_id !== actor.id && !actor.roles.includes(Roles.Admin)) {
+    if (asset.current_assigned_user_id !== actor.id) {
       throw forbidden("Only the assigned employee can acknowledge this asset.");
     }
     const assignment = this.repository.activeAssignment(id);
@@ -280,14 +280,20 @@ export class AssetService {
       acknowledgement_type: acknowledgement.acknowledgement_type
     });
     return {
-      asset: this.presentAsset(updated),
-      acknowledgement,
+      asset: this.presentEmployeeAsset(updated),
+      acknowledgement: {
+        id: acknowledgement.id,
+        acknowledgement_type: acknowledgement.acknowledgement_type,
+        status: acknowledgement.status,
+        created_at: acknowledgement.created_at,
+      },
       version: updated.version
     };
   }
 
   listMaintenance(actor: AuthUser, id: UUID, query: { page: number; page_size: number; status?: string }) {
-    this.assertAssetVisible(actor, id);
+    assertAssetManager(actor);
+    this.repository.find(id);
     const items = this.repository.listMaintenance(id, query.status).map((record) => this.presentMaintenance(record));
     return page(items, query.page, query.page_size);
   }
@@ -691,6 +697,7 @@ export class AssetService {
       item.asset_id === asset.id &&
       item.assignment_id === activeAssignment?.id &&
       item.employee_user_id === asset.current_assigned_user_id &&
+      item.acknowledgement_type === "received" &&
       item.status === "acknowledged"
     );
     const metadata = asset.metadata ?? {};

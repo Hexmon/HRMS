@@ -1,6 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/lib/auth";
 import { useAssets, warrantyDaysLeft } from "@/lib/assets-store";
+import { assetsApi, mapApiAssets } from "@/domains/assets";
+import { queryKeys, queryTimings } from "@/shared/query";
 import { DataCard, EmptyState, StatusBadge } from "@/components/ui-kit";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,7 +16,20 @@ export const Route = createFileRoute("/_app/assets/my")({ component: MyAssets })
 export function MyAssets() {
   const { user } = useAuth();
   const { assets, acknowledgeAssignment, loading, error, isApiBacked } = useAssets();
-  const mine = isApiBacked ? assets : assets.filter((a) => a.assignedToId === user?.id);
+  const myAssetsQuery = useQuery({
+    queryKey: queryKeys.list("assets", "my", { page_size: 100, actor_id: user?.id }),
+    queryFn: async () => {
+      const response = await assetsApi.myAssets({ page_size: 100 });
+      return mapApiAssets(response.items, []);
+    },
+    enabled: isApiBacked,
+    staleTime: queryTimings.listStaleMs,
+  });
+  const mine = isApiBacked
+    ? (myAssetsQuery.data ?? [])
+    : assets.filter((a) => a.assignedToId === user?.id);
+  const mineLoading = isApiBacked ? myAssetsQuery.isLoading : loading;
+  const mineError = isApiBacked ? myAssetsQuery.error : error;
 
   return (
     <div className="space-y-4">
@@ -22,16 +38,16 @@ export function MyAssets() {
           <EmptyState
             icon={Laptop}
             title={
-              error
+              mineError
                 ? "Assigned assets unavailable"
-                : loading
+                : mineLoading
                   ? "Loading assigned assets"
                   : "Nothing assigned yet"
             }
             description={
-              error
+              mineError
                 ? userFacingErrorMessage(
-                    error,
+                    mineError,
                     "Assigned asset data could not be loaded from the backend.",
                   )
                 : "When IT hands you a device, it will show up here."

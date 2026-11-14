@@ -12668,7 +12668,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/assets/{id}/acknowledgements": operation(
     "Assets",
     "Acknowledge asset handover",
-    "Marks an assigned asset as received or returned by the assigned employee.",
+    "Marks an assigned asset as received by the assigned employee. Asset return uses the dedicated return workflow.",
     {
       params: idParamSchema,
       body: {
@@ -12677,7 +12677,7 @@ const routeDocs: Record<string, RouteSchema> = {
         properties: {
           acknowledgement_type: {
             type: "string",
-            enum: ["received", "returned"],
+            enum: ["received"],
             example: "received",
           },
           expected_version: { type: "integer", minimum: 1, example: 1 },
@@ -12688,8 +12688,18 @@ const routeDocs: Record<string, RouteSchema> = {
         type: "object",
         required: ["asset", "acknowledgement", "version"],
         properties: {
-          asset: assetSchema,
-          acknowledgement: { type: "object", additionalProperties: true },
+          asset: employeeAssetSchema,
+          acknowledgement: {
+            type: "object",
+            required: ["id", "acknowledgement_type", "status", "created_at"],
+            properties: {
+              id: uuid("Acknowledgement UUID"),
+              acknowledgement_type: { type: "string", enum: ["received"] },
+              status: { type: "string", enum: ["acknowledged"] },
+              created_at: dateTime("Acknowledgement timestamp"),
+            },
+            additionalProperties: false,
+          },
           version: { type: "integer", minimum: 1, example: 2 },
         },
         additionalProperties: false,
@@ -12699,7 +12709,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/assets/{id}/maintenance": operation(
     "Assets",
     "List asset maintenance",
-    "Lists maintenance records for an asset.",
+    "Lists maintenance records, including financial and internal notes, for Asset/Admin actors.",
     {
       params: idParamSchema,
       querystring: paginationQuerySchema,

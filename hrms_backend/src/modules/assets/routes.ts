@@ -73,7 +73,7 @@ function authorizeAcknowledgement(store: DataStore, actor: AuthUser, id: string,
         (actor.roles.includes(Roles.Admin) || originalEmployeeAssignment)) return;
     throw forbidden("Only the original assigned employee or a current Admin can replay this acknowledgement.");
   }
-  if (asset.current_assigned_user_id !== actor.id && !actor.roles.includes(Roles.Admin)) {
+  if (asset.current_assigned_user_id !== actor.id) {
     throw forbidden("Only the assigned employee can acknowledge this asset.");
   }
 }
@@ -111,7 +111,7 @@ const assetRequestCancelSchema = z.object({
   expected_version: z.number().int().positive()
 });
 const acknowledgementSchema = z.object({
-  acknowledgement_type: z.enum(["received", "returned"]),
+  acknowledgement_type: z.literal("received"),
   expected_version: z.number().int().positive()
 });
 const maintenanceQuerySchema = paginationQuerySchema.extend({

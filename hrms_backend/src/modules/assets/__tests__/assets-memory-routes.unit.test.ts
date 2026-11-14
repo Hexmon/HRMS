@@ -162,17 +162,53 @@ describe("asset routes with the memory persistence fallback", () => {
     });
     expect(assigned.statusCode).toBe(200);
 
+    const deniedAdminAcknowledgement = await app.inject({
+      method: "POST",
+      url: `/assets/${asset.id}/acknowledgements`,
+      headers: commandHeaders(seedIds.admin),
+      payload: { acknowledgement_type: "received", expected_version: assigned.json().version },
+    });
+    expect(deniedAdminAcknowledgement.statusCode).toBe(403);
+
+    const invalidReturnedAcknowledgement = await app.inject({
+      method: "POST",
+      url: `/assets/${asset.id}/acknowledgements`,
+      headers: commandHeaders(seedIds.employee1),
+      payload: { acknowledgement_type: "returned", expected_version: assigned.json().version },
+    });
+    expect(invalidReturnedAcknowledgement.statusCode).toBe(400);
+
+    const employeeAcknowledgement = await app.inject({
+      method: "POST",
+      url: `/assets/${asset.id}/acknowledgements`,
+      headers: commandHeaders(seedIds.employee1),
+      payload: { acknowledgement_type: "received", expected_version: assigned.json().version },
+    });
+    expect(employeeAcknowledgement.statusCode).toBe(200);
+    expect(employeeAcknowledgement.json().acknowledgement).toEqual(expect.objectContaining({
+      acknowledgement_type: "received",
+      status: "acknowledged",
+    }));
+    expect(employeeAcknowledgement.json().acknowledgement).not.toHaveProperty("assignment_id");
+    expect(employeeAcknowledgement.json().acknowledgement).not.toHaveProperty("employee_user_id");
+    expect(employeeAcknowledgement.json().asset.assignment_acknowledged).toBe(true);
+    for (const protectedField of ["qr_hash", "metadata", "vendor", "invoice_no", "cost", "maintenance"]) {
+      expect(employeeAcknowledgement.json().asset).not.toHaveProperty(protectedField);
+    }
+
     const employeeHeaders = { [actorHeader]: seedIds.employee1 };
     const mine = await app.inject({ method: "GET", url: "/assets/my", headers: employeeHeaders });
     const detail = await app.inject({ method: "GET", url: `/assets/${asset.id}`, headers: employeeHeaders });
+    const maintenance = await app.inject({ method: "GET", url: `/assets/${asset.id}/maintenance`, headers: employeeHeaders });
     expect(mine.statusCode).toBe(200);
     expect(detail.statusCode).toBe(200);
+    expect(maintenance.statusCode).toBe(403);
     for (const employeeAsset of [mine.json().items[0], detail.json()]) {
       expect(employeeAsset).toMatchObject({
         id: asset.id,
         brand: "Lenovo",
         is_assigned_to_current_user: true,
-        assignment_acknowledged: false,
+        assignment_acknowledged: true,
       });
       for (const protectedField of [
         "qr_hash", "metadata", "purchase_date", "vendor", "invoice_no", "cost", "maintenance",

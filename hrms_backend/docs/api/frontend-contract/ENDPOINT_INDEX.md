@@ -8548,7 +8548,7 @@ Required: yes
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `acknowledgement_type` | string enum("received", "returned") | required | - |
+| `acknowledgement_type` | string enum("received") | required | - |
 | `expected_version` | integer | required | minimum 1 |
 
 **Responses**
