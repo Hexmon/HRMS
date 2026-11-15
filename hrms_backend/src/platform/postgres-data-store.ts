@@ -1152,6 +1152,8 @@ class PostgresPersistence {
       // connection can carry this authority into a later request.
       await client.query("SELECT set_config('hrms.asset_writer_v2', 'on', true)");
       const actor = await this.loadCurrentAssetActor(client, input, true);
+      const loadCommandSnapshot = (replayBody?: T) =>
+        this.loadAssetCommandSnapshot(client, input, replayBody);
       const previous = await client.query<{
         request_hash: string;
         response_body: T;
@@ -1162,7 +1164,7 @@ class PostgresPersistence {
            AND action_key = $3 AND idempotency_key = $4`,
         [input.companyId, input.actorUserId, input.actionKey, input.idempotencyKey],
       );
-      const before = await this.loadAssetCommandSnapshot(client, input, previous.rows[0]?.response_body);
+      const before = await loadCommandSnapshot(previous.rows[0]?.response_body);
       // Authorize against current SQL actor state and resource visibility
       // before either replaying or revealing a key/hash conflict.
       authorize(before, actor, previous.rows[0]?.response_body);
