@@ -5,6 +5,7 @@ import { MemoryObjectStorage } from "../../../platform/object-storage.js";
 import {
   normalizeReportExportType,
   ReportExportTypeValues,
+  type ReportExportType,
 } from "../export-contract.js";
 import { ReportService } from "../service.js";
 
@@ -14,6 +15,61 @@ describe("report export type contract", () => {
       expect(normalizeReportExportType(reportType)).toBe(reportType);
     }
     expect(normalizeReportExportType("  HR/Employees  ")).toBe("hr/employees");
+  });
+
+  it("dispatches every supported report type to its intended report", () => {
+    const store = createMemoryDataStore();
+    const actor = store.users.find((user) => user.id === seedIds.admin)!;
+    const service = new ReportService(store);
+    const expectedDispatch: Record<ReportExportType, string> = {
+      expense: "register",
+      expenses: "register",
+      "expenses/register": "register",
+      "expenses/my": "myExpenses",
+      "expenses/manager-queue": "managerQueue",
+      "expenses/manager-history": "managerHistory",
+      "expenses/finance-dashboard": "financeDashboard",
+      "expenses/finance-history": "financeHistory",
+      hr: "hrEmployees",
+      "hr/employees": "hrEmployees",
+      attendance: "attendanceSummary",
+      "attendance/summary": "attendanceSummary",
+      leave: "leaveWfhSummary",
+      "leave-wfh": "leaveWfhSummary",
+      "leave-wfh/summary": "leaveWfhSummary",
+      projects: "projectsSummary",
+      "projects/summary": "projectsSummary",
+      timesheets: "timesheetsSummary",
+      "timesheets/summary": "timesheetsSummary",
+      assets: "assetsSummary",
+      "assets/summary": "assetsSummary",
+      helpdesk: "helpdeskSummary",
+      "helpdesk/summary": "helpdeskSummary",
+      audit: "auditReport",
+    };
+    const methodNames = new Set(Object.values(expectedDispatch));
+    Object.assign(
+      service,
+      Object.fromEntries(
+        [...methodNames].map((methodName) => [
+          methodName,
+          () => ({ items: [{ dispatch: methodName }] }),
+        ]),
+      ),
+    );
+    const dispatcher = service as unknown as {
+      exportRows: (
+        actor: AuthUser,
+        reportType: ReportExportType,
+        filters: Record<string, unknown>,
+      ) => Array<Record<string, unknown>>;
+    };
+
+    for (const reportType of ReportExportTypeValues) {
+      expect(dispatcher.exportRows(actor, reportType, {})).toEqual([
+        { dispatch: expectedDispatch[reportType] },
+      ]);
+    }
   });
 
   it("rejects unsupported direct service calls without side effects", async () => {

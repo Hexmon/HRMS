@@ -1133,9 +1133,11 @@ export class ReportService {
         case "expense":
         case "expenses":
         case "expenses/register":
-          return this.register(actor, expenseQuery);
         default:
-          throw badRequest("Unsupported report type", { report_type: reportType });
+          if (!["expense", "expenses", "expenses/register"].includes(reportType as string)) {
+            throw badRequest("Unsupported report type", { report_type: reportType });
+          }
+          return this.register(actor, expenseQuery);
       }
     })();
     return Array.isArray(result.items) ? result.items.map((row) => recordRow(row)) : [];
