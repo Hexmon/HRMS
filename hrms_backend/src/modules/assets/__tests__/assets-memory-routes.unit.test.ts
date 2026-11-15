@@ -546,6 +546,21 @@ describe("asset routes with the memory persistence fallback", () => {
     expect(store.assetStateEvents).toEqual(before.events);
   });
 
+  it("records a null lifecycle reference for the legacy direct recovery path", async () => {
+    const asset = store.assets[0]!;
+    const assigned = await app.inject({
+      method: "POST",
+      url: `/assets/${asset.id}/assign`,
+      headers: commandHeaders(seedIds.assetManager),
+      payload: { assigned_to_user_id: seedIds.employee1, expected_version: asset.version },
+    });
+    expect(assigned.statusCode, assigned.body).toBe(200);
+    const companyId = store.userSessionPreferences.find((item) => item.user_id === seedIds.employee1)!.company_id!;
+
+    expect(createRecoveryTicketsForTerminatedEmployee(store, companyId, seedIds.employee1)).toBe(1);
+    expect(store.assetRecoveryTickets.at(-1)?.lifecycle_event_id).toBeNull();
+  });
+
   it("covers fallback request allocation, vendor uniqueness, and historical identity validation", () => {
     const companyId = store.userSessionPreferences.find((item) => item.user_id === seedIds.employee1)!.company_id!;
     store.assetCommandMetadata = undefined;
@@ -616,6 +631,20 @@ describe("asset routes with the memory persistence fallback", () => {
     });
     expect(second.statusCode, second.body).toBe(200);
     expect(store.assetReadMetadata.assetMaintenanceTotals?.[asset.id]).toBe(2);
+
+    store.assetReadMetadata = undefined;
+    const withoutReadProjection = await app.inject({
+      method: "POST",
+      url: `/assets/${asset.id}/maintenance`,
+      headers: commandHeaders(seedIds.assetManager),
+      payload: {
+        maintenance_type: "inspection",
+        started_on: "2026-11-17",
+        expected_version: asset.version,
+      },
+    });
+    expect(withoutReadProjection.statusCode, withoutReadProjection.body).toBe(200);
+    expect(store.assetReadMetadata).toBeUndefined();
   });
 
   it("covers every changed protected route's own actor guard", async () => {
