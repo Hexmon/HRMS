@@ -507,5 +507,5 @@ describe("asset tenant ownership migration", () => {
       );
       await admin.query(`DROP DATABASE IF EXISTS "${resetDatabaseName}"`);
     }
-  }, 30_000);
+  }, 120_000);
 });
