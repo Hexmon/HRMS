@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { AuthUser } from "#shared";
 import { createMemoryDataStore, seedIds } from "../../../platform/data-store.js";
 import { MemoryObjectStorage } from "../../../platform/object-storage.js";
 import {
@@ -38,5 +39,30 @@ describe("report export type contract", () => {
     expect(store.documents).toEqual(documentsBefore);
     expect(store.documentVersions).toEqual(versionsBefore);
     expect(store.outbox).toEqual(outboxBefore);
+  });
+
+  it("fails closed if malformed runtime input bypasses the public export validator", () => {
+    const store = createMemoryDataStore();
+    const actor = store.users.find((user) => user.id === seedIds.admin)!;
+    const service = new ReportService(store) as unknown as {
+      exportRows: (
+        actor: AuthUser,
+        reportType: string,
+        filters: Record<string, unknown>,
+      ) => Array<Record<string, unknown>>;
+    };
+
+    let thrown: unknown;
+    try {
+      service.exportRows(actor, "unknown-report", {});
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toMatchObject({
+      code: "BAD_REQUEST",
+      statusCode: 400,
+      details: { report_type: "unknown-report" },
+    });
   });
 });
