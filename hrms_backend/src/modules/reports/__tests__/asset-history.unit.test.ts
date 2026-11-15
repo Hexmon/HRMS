@@ -32,6 +32,13 @@ describe("asset report historical identity", () => {
       created_at: createdAt,
       updated_at: createdAt,
     });
+    store.assetMaintenanceRecords.push({
+      id: randomUUID(), company_id: asset.company_id, asset_id: asset.id,
+      maintenance_type: "inspection", vendor_id: null, cost: "100.00",
+      started_on: "2026-11-14", completed_on: null, status: "in_progress",
+      notes: "Historical inspection", version: 1, created_at: createdAt,
+      updated_at: createdAt, deleted_at: null,
+    });
 
     employee.full_name = "Foreign Company Profile";
     employee.email = "foreign-profile@example.test";
@@ -46,5 +53,9 @@ describe("asset report historical identity", () => {
     ]);
     expect(report.recovery_rows[0]).not.toHaveProperty("email");
     expect(report.recovery_rows[0]).not.toHaveProperty("roles");
+    expect(report.maintenance_total).toBe(1);
+    expect(report.maintenance_rows).toEqual([
+      expect.objectContaining({ asset_id: asset.id, asset_code: asset.asset_code, type: "inspection" }),
+    ]);
   });
 });

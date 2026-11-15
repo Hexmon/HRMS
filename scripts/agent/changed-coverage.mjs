@@ -1605,6 +1605,33 @@ function validateAssetTenantOwnershipMigration(path, content) {
   forbidText(path, content, /REFERENCES\s+platform\.company_profiles/i, "asset migration must not create unsupported cross-schema foreign keys");
 }
 
+function validateAssetTenantOwnershipFinalizationMigration(path, content) {
+  content = stripSqlComments(content);
+  requireSemanticText(path, content, /SET\s+LOCAL\s+hrms\.asset_writer_v2\s*=\s*'on'/i, "recovery identity backfill must use only the transaction-local writer marker");
+  requireSemanticText(path, content, /ALTER\s+TABLE\s+assets\.asset_recovery_tickets[\s\S]*ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+employee_full_name_snapshot\s+text[\s\S]*employee_code_snapshot\s+text/i, "historical recovery identity columns are missing");
+  requireSemanticText(path, content, /UPDATE\s+assets\.asset_recovery_tickets\s+ticket[\s\S]*employee_full_name_snapshot\s*=\s*employee\.full_name[\s\S]*employee_code_snapshot\s*=\s*employee\.employee_code[\s\S]*FROM\s+core\.users\s+employee[\s\S]*employee\.id\s*=\s*ticket\.employee_user_id/i, "recovery identity must backfill from the referenced employee");
+  requireSemanticText(path, content, /verified_by_user_id\s+IS\s+NULL[\s\S]*ERRCODE\s*=\s*'23502'/i, "unattributed ownership mappings must fail closed");
+  requireSemanticText(path, content, /NOT\s+EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+core\.users\s+verifier[\s\S]*ERRCODE\s*=\s*'23503'/i, "unknown ownership verifiers must fail closed");
+  for (const [resourceType, table] of [["asset", "assets"], ["request", "asset_requests"], ["vendor", "software_vendors"]]) {
+    requireSemanticText(path, content, new RegExp(`WHEN\\s+'${resourceType}'\\s+THEN\\s+NOT\\s+EXISTS\\s*\\(\\s*SELECT\\s+1\\s+FROM\\s+assets\\.${table}\\s+root\\s+WHERE\\s+root\\.id\\s*=\\s*ownership\\.resource_id`, "i"), `orphan detection is missing for ${resourceType} roots`);
+    requireSemanticText(path, content, new RegExp(`WHEN\\s+'${resourceType}'\\s+THEN\\s+EXISTS\\s*\\([\\s\\S]*?FROM\\s+assets\\.${table}\\s+root[\\s\\S]*?root\\.company_id\\s*<>\\s*ownership\\.company_id`, "i"), `owner mismatch detection is missing for ${resourceType} roots`);
+  }
+  requireSemanticText(path, content, /mismatch_count\s*>\s*0[\s\S]*ERRCODE\s*=\s*'23514'/i, "ownership mismatch must fail with a stable check violation");
+  requireSemanticText(path, content, /employee_full_name_snapshot\s+IS\s+NULL\s+OR\s+employee_code_snapshot\s+IS\s+NULL[\s\S]*ERRCODE\s*=\s*'23502'/i, "missing historical recovery identity must fail closed");
+  requireSemanticText(path, content, /ALTER\s+TABLE\s+assets\.asset_tenant_ownership_map[\s\S]*verified_by_user_id\s+SET\s+NOT\s+NULL/i, "ownership verifier attribution must be required after finalization");
+  requireSemanticText(path, content, /ALTER\s+TABLE\s+assets\.asset_recovery_tickets[\s\S]*employee_full_name_snapshot\s+SET\s+NOT\s+NULL[\s\S]*employee_code_snapshot\s+SET\s+NOT\s+NULL/i, "historical recovery identity must be required after finalization");
+  requireSemanticText(path, content, /CREATE\s+TRIGGER\s+asset_tenant_ownership_map_finalized_trg[\s\S]*BEFORE\s+INSERT\s+OR\s+UPDATE\s+OR\s+DELETE\s+ON\s+assets\.asset_tenant_ownership_map/i, "finalized ownership evidence must reject every map mutation");
+  requireSemanticText(path, content, /TG_OP\s*=\s*'DELETE'\s+OR\s+NEW\.id\s+IS\s+DISTINCT\s+FROM\s+OLD\.id/i, "mapped roots must reject deletion and identity replacement");
+  for (const [trigger, table] of [["finalized_asset_root_identity_trg", "assets"], ["finalized_asset_request_root_identity_trg", "asset_requests"], ["finalized_asset_vendor_root_identity_trg", "software_vendors"]]) {
+    requireSemanticText(path, content, new RegExp(`CREATE\\s+TRIGGER\\s+${trigger}[\\s\\S]*?BEFORE\\s+UPDATE\\s+OR\\s+DELETE\\s+ON\\s+assets\\.${table}`, "i"), `finalized root protection is missing for assets.${table}`);
+  }
+  for (const column of ["company_id", "employee_user_id", "employee_full_name_snapshot", "employee_code_snapshot", "asset_id", "assignment_id"]) {
+    requireSemanticText(path, content, new RegExp(`NEW\\.${column}\\s+IS\\s+DISTINCT\\s+FROM\\s+OLD\\.${column}`, "i"), `recovery identity immutability is missing ${column}`);
+  }
+  requireSemanticText(path, content, /CREATE\s+TRIGGER\s+asset_recovery_identity_immutable_trg[\s\S]*BEFORE\s+UPDATE\s+ON\s+assets\.asset_recovery_tickets/i, "recovery identity immutability trigger is missing");
+  requireSemanticText(path, content, /REVOKE\s+INSERT\s*,\s*UPDATE\s*,\s*DELETE\s*,\s*TRUNCATE[\s\S]*ON\s+assets\.asset_tenant_ownership_map\s+FROM\s+PUBLIC/i, "PUBLIC ownership-map mutation privileges must be revoked");
+}
+
 function validateFrontendContractRouteCoverage(path, content) {
   requireSemanticText(
     path,
@@ -1665,6 +1692,7 @@ export function validateSemanticPath(root, path, content, base) {
     case "hrms_backend/src/db/migrations/0067_asset_recovery_assignment_identity.sql": validateAssetRecoveryAssignmentMigration(path, content); break;
     case "hrms_backend/src/db/migrations/0068_asset_tenant_ownership_map.sql": validateAssetTenantOwnershipMapMigration(path, content); break;
     case "hrms_backend/src/db/migrations/0069_asset_tenant_ownership.sql": validateAssetTenantOwnershipMigration(path, content); break;
+    case "hrms_backend/src/db/migrations/0070_asset_tenant_ownership_finalization.sql": validateAssetTenantOwnershipFinalizationMigration(path, content); break;
     case "hrms_backend/scripts/qa-seed-safety.ts": validateQaSeedSafety(path, content); break;
     case "hrms_backend/scripts/seed-qa.ts": validateQaSeedEntrypoint(path, content); break;
     case "hrms_backend/scripts/seed-qa-data.ts":
@@ -1692,6 +1720,7 @@ export const semanticCoveragePaths = new Set([
   "hrms_backend/src/db/migrations/0067_asset_recovery_assignment_identity.sql",
   "hrms_backend/src/db/migrations/0068_asset_tenant_ownership_map.sql",
   "hrms_backend/src/db/migrations/0069_asset_tenant_ownership.sql",
+  "hrms_backend/src/db/migrations/0070_asset_tenant_ownership_finalization.sql",
   "hrms_backend/scripts/qa-seed-safety.ts",
   "hrms_backend/scripts/seed-qa.ts",
   "hrms_backend/scripts/seed-qa-data.ts",

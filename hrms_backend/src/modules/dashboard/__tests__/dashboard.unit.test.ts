@@ -57,8 +57,26 @@ describe("dashboard summary scoping", () => {
     expect(summary.cards.find((card) => card.key === "active_employees")?.value).toBe(1);
     expect(summary.cards.find((card) => card.key === "attendance_exceptions")?.value).toBe(0);
     expect(summary.operations.assets_total).toBe(0);
+    expect(summary.operations.assets_recovery_pending).toBe(0);
     expect(summary.operations.notifications_pending).toBe(0);
     expect(summary.operations.outbox_pending).toBe(0);
+  });
+
+  it("derives pending recovery work from visible historical tickets without SQL metadata", () => {
+    const store = createMemoryDataStore();
+    const admin = store.users.find((user) => user.id === seedIds.admin)!;
+    const companyId = store.userSessionPreferences.find((item) => item.user_id === admin.id)!.company_id!;
+    const asset = store.assets[0]!;
+    store.assetRecoveryTickets.push({
+      id: randomUUID(), company_id: companyId, employee_user_id: seedIds.employee1,
+      employee_full_name_snapshot: "Employee E1", employee_code_snapshot: "E1",
+      asset_id: asset.id, assignment_id: null, status: "open", settlement_status: null,
+      settlement_amount: null, settlement_remarks: null, settled_by_user_id: null,
+      settled_at: null, version: 1, created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    });
+
+    const summary = new DashboardService(store).summary(admin);
+    expect(summary.operations.assets_recovery_pending).toBe(1);
   });
 
   it("uses reporting projection semantics for attendance evidence and source counts", () => {

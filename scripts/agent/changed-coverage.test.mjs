@@ -991,6 +991,32 @@ test("asset tenant ownership migrations use explicit fail-closed semantic contra
   assert.throws(() => validateSemanticPath(repositoryRoot, ownershipPath, `${ownership}\nALTER TABLE assets.assets ADD FOREIGN KEY (company_id) REFERENCES platform.company_profiles(id);`, "base"), /cross-schema foreign keys/);
 });
 
+test("asset tenant ownership finalization has an explicit immutable-evidence semantic contract", () => {
+  const repositoryRoot = process.cwd();
+  const path = "hrms_backend/src/db/migrations/0070_asset_tenant_ownership_finalization.sql";
+  const migration = readFileSync(join(repositoryRoot, path), "utf8");
+
+  assert.match(validateSemanticPath(repositoryRoot, path, migration, "base"), /semantic contract passed/);
+  for (const [needle, replacement, expected] of [
+    ["SET LOCAL hrms.asset_writer_v2", "SET hrms.asset_writer_v2", /transaction-local writer marker/],
+    ["verified_by_user_id IS NULL", "FALSE", /unattributed ownership mappings/],
+    ["FROM core.users verifier", "FROM core.users_missing verifier", /unknown ownership verifiers/],
+    ["FROM assets.asset_requests root WHERE root.id = ownership.resource_id", "FROM assets.asset_requests root WHERE false", /orphan detection is missing for request/],
+    ["FROM assets.software_vendors root\n        WHERE root.id = ownership.resource_id AND root.company_id <> ownership.company_id", "FROM assets.software_vendors root\n        WHERE false", /owner mismatch detection is missing for vendor/],
+    ["BEFORE INSERT OR UPDATE OR DELETE ON assets.asset_tenant_ownership_map", "BEFORE INSERT OR UPDATE ON assets.asset_tenant_ownership_map", /every map mutation/],
+    ["NEW.id IS DISTINCT FROM OLD.id", "FALSE", /deletion and identity replacement/],
+    ["CREATE TRIGGER finalized_asset_vendor_root_identity_trg", "CREATE TRIGGER finalized_asset_vendor_root_identity_missing_trg", /software_vendors/],
+    ["NEW.employee_full_name_snapshot IS DISTINCT FROM OLD.employee_full_name_snapshot", "FALSE", /employee_full_name_snapshot/],
+    ["REVOKE INSERT, UPDATE, DELETE, TRUNCATE", "REVOKE SELECT", /PUBLIC ownership-map mutation privileges/],
+  ]) {
+    assert.throws(
+      () => validateSemanticPath(repositoryRoot, path, migration.replace(needle, replacement), "base"),
+      expected,
+      needle,
+    );
+  }
+});
+
 test("frontend contract route discovery excludes test modules without hiding runtime routes", () => {
   const repositoryRoot = process.cwd();
   const path = "hrms-client/scripts/frontend-contract-route-coverage.mjs";

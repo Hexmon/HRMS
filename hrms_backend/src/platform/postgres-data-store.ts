@@ -671,7 +671,10 @@ class PostgresPersistence {
         `SELECT id ${tableAndWhere} ORDER BY ${orderBy} LIMIT $${parameters.length + 1} OFFSET $${parameters.length + 2}`,
         [...parameters, pageSize, offset],
       );
-      return { ids: rows.rows.map((row) => row.id), total: Number(total.rows[0]?.total ?? 0) };
+      // PostgreSQL aggregate queries without GROUP BY always return exactly one
+      // row, including for an empty relation. Treat absence as a broken query
+      // contract instead of silently reporting a misleading zero.
+      return { ids: rows.rows.map((row) => row.id), total: Number(total.rows[0]!.total) };
     };
     const withAssetGraph = async (snapshot: DataStore, assetIds: UUID[]): Promise<DataStore> => {
       const maintenanceCounts = assetIds.length === 0
@@ -766,9 +769,9 @@ class PostgresPersistence {
         operation,
         total: selected.total,
         alertCounts: {
-          expired: Number(counts.rows[0]?.expired ?? 0),
-          critical: Number(counts.rows[0]?.critical ?? 0),
-          warning: Number(counts.rows[0]?.warning ?? 0),
+          expired: Number(counts.rows[0]!.expired),
+          critical: Number(counts.rows[0]!.critical),
+          warning: Number(counts.rows[0]!.warning),
         },
       };
       return snapshot;
@@ -868,7 +871,7 @@ class PostgresPersistence {
       );
       const snapshot = empty();
       snapshot.assets = await this.loadAssets(client, companyId, assetIds);
-      snapshot.assetAssignments = await this.loadAssetAssignments(client, companyId, undefined, assignmentIds);
+      snapshot.assetAssignments = await this.loadAssetAssignments(client, companyId, undefined, assignmentIds, false);
       snapshot.assetRecoveryTickets = tickets;
       snapshot.assetReadMetadata = {
         ...snapshot.assetReadMetadata,
@@ -892,8 +895,8 @@ class PostgresPersistence {
         ...snapshot.assetReadMetadata,
         operation,
         coreUser: {
-          assignedAssets: Number(counts.rows[0]?.assigned ?? 0),
-          recoveryPending: Number(counts.rows[0]?.recovery ?? 0),
+          assignedAssets: Number(counts.rows[0]!.assigned),
+          recoveryPending: Number(counts.rows[0]!.recovery),
         },
       };
       return snapshot;
@@ -903,7 +906,7 @@ class PostgresPersistence {
       const systemWideRoles = new Set<RoleKey>([Roles.Admin, Roles.Auditor, Roles.HRManager, Roles.AssetManager]);
       const systemWide = actor.roles.some((role) => systemWideRoles.has(role));
       const actorRow = await client.query<{ hierarchy_path: string }>("SELECT hierarchy_path::text FROM core.users WHERE id = $1", [actor.id]);
-      const hierarchyPath = actorRow.rows[0]?.hierarchy_path ?? "";
+      const hierarchyPath = actorRow.rows[0]!.hierarchy_path;
       const visibility = systemWide
         ? "TRUE"
         : `current_assigned_user_id IN (
@@ -932,9 +935,9 @@ class PostgresPersistence {
       snapshot.assetReadMetadata = {
         operation,
         dashboard: {
-          assetsTotal: Number(counts.rows[0]?.total ?? 0),
-          assetsAssigned: Number(counts.rows[0]?.assigned ?? 0),
-          recoveryPending: Number(counts.rows[0]?.recovery ?? 0),
+          assetsTotal: Number(counts.rows[0]!.total),
+          assetsAssigned: Number(counts.rows[0]!.assigned),
+          recoveryPending: Number(counts.rows[0]!.recovery),
         },
       };
       return snapshot;
@@ -1016,8 +1019,8 @@ class PostgresPersistence {
             ...row,
             created_at: asIso(row.created_at),
           })),
-          maintenanceTotal: Number(maintenanceCount.rows[0]?.total ?? 0),
-          recoveryTotal: Number(recoveryCount.rows[0]?.total ?? 0),
+          maintenanceTotal: Number(maintenanceCount.rows[0]!.total),
+          recoveryTotal: Number(recoveryCount.rows[0]!.total),
         },
       };
       return snapshot;
@@ -1290,10 +1293,10 @@ class PostgresPersistence {
     return {
       ...sourceStore,
       assets: await this.loadAssets(client, companyId),
-      assetAssignments: await this.loadAssetAssignments(client, companyId),
+      assetAssignments: await this.loadAssetAssignments(client, companyId, undefined, undefined, false),
       assetStateEvents: await this.loadAssetStateEvents(client, companyId),
       assetRequests: await this.loadAssetRequests(client, companyId),
-      assetAcknowledgements: await this.loadAssetAcknowledgements(client, companyId),
+      assetAcknowledgements: await this.loadAssetAcknowledgements(client, companyId, undefined, false),
       assetMaintenanceRecords: await this.loadAssetMaintenanceRecords(client, companyId),
       assetVendors: await this.loadAssetVendors(client, companyId),
       assetRecoveryTickets: await this.loadAssetRecoveryTickets(client, companyId),
@@ -1603,11 +1606,11 @@ class PostgresPersistence {
       loaded.emailEvents = await this.loadEmailEvents(client);
       loaded.outbox = await this.loadOutbox(client);
       loaded.assets = await this.loadAssets(client);
-      loaded.assetAssignments = await this.loadAssetAssignments(client);
+      loaded.assetAssignments = await this.loadAssetAssignments(client, undefined, undefined, undefined, false);
       loaded.assetStateEvents = await this.loadAssetStateEvents(client);
       loaded.assetRequests = await this.loadAssetRequests(client);
       loaded.assetAcknowledgements =
-        await this.loadAssetAcknowledgements(client);
+        await this.loadAssetAcknowledgements(client, undefined, undefined, false);
       loaded.assetMaintenanceRecords =
         await this.loadAssetMaintenanceRecords(client);
       loaded.assetVendors = await this.loadAssetVendors(client);
@@ -2731,7 +2734,7 @@ class PostgresPersistence {
     if (ids?.length === 0) return [];
     const conditions = [
       ...(companyId ? ["company_id = $1"] : []),
-      ...(ids ? [`id = ANY($${companyId ? 2 : 1}::uuid[])`] : []),
+      ...(ids ? ["id = ANY($2::uuid[])"] : []),
     ];
     const parameters = [...(companyId ? [companyId] : []), ...(ids ? [[...ids]] : [])];
     const { rows } = await client.query(
@@ -2758,17 +2761,17 @@ class PostgresPersistence {
 
   private async loadAssetAssignments(
     client: PoolClient,
-    companyId?: UUID,
-    assetIds?: readonly UUID[],
-    assignmentIds?: readonly UUID[],
-    activeOnly = false,
+    companyId: UUID | undefined,
+    assetIds: readonly UUID[] | undefined,
+    assignmentIds: readonly UUID[] | undefined,
+    activeOnly: boolean,
   ): Promise<AssetAssignmentRecord[]> {
     if (assetIds?.length === 0 || assignmentIds?.length === 0) return [];
-    const parameterIndex = () => 1 + Number(Boolean(companyId)) + Number(Boolean(assetIds));
+    const assignmentIdParameter = assetIds ? 3 : 2;
     const conditions = [
       ...(companyId ? ["company_id = $1"] : []),
-      ...(assetIds ? [`asset_id = ANY($${companyId ? 2 : 1}::uuid[])`] : []),
-      ...(assignmentIds ? [`id = ANY($${parameterIndex()}::uuid[])`] : []),
+      ...(assetIds ? ["asset_id = ANY($2::uuid[])"] : []),
+      ...(assignmentIds ? [`id = ANY($${assignmentIdParameter}::uuid[])`] : []),
       ...(activeOnly ? ["status = 'active'"] : []),
     ];
     const parameters = [
@@ -2821,7 +2824,7 @@ class PostgresPersistence {
     if (ids?.length === 0) return [];
     const conditions = [
       ...(companyId ? ["company_id = $1"] : []),
-      ...(ids ? [`id = ANY($${companyId ? 2 : 1}::uuid[])`] : []),
+      ...(ids ? ["id = ANY($2::uuid[])"] : []),
     ];
     const parameters = [...(companyId ? [companyId] : []), ...(ids ? [[...ids]] : [])];
     const { rows } = await client.query(
@@ -2854,14 +2857,14 @@ class PostgresPersistence {
 
   private async loadAssetAcknowledgements(
     client: PoolClient,
-    companyId?: UUID,
-    assetIds?: readonly UUID[],
-    latestOnly = false,
+    companyId: UUID | undefined,
+    assetIds: readonly UUID[] | undefined,
+    latestOnly: boolean,
   ): Promise<DataStore["assetAcknowledgements"]> {
     if (assetIds?.length === 0) return [];
     const conditions = [
       ...(companyId ? ["company_id = $1"] : []),
-      ...(assetIds ? [`asset_id = ANY($${companyId ? 2 : 1}::uuid[])`] : []),
+      ...(assetIds ? ["asset_id = ANY($2::uuid[])"] : []),
     ];
     const parameters = [...(companyId ? [companyId] : []), ...(assetIds ? [[...assetIds]] : [])];
     const { rows } = await client.query(
@@ -2891,7 +2894,7 @@ class PostgresPersistence {
     if (ids?.length === 0) return [];
     const conditions = [
       ...(companyId ? ["company_id = $1"] : []),
-      ...(ids ? [`id = ANY($${companyId ? 2 : 1}::uuid[])`] : []),
+      ...(ids ? ["id = ANY($2::uuid[])"] : []),
     ];
     const parameters = [...(companyId ? [companyId] : []), ...(ids ? [[...ids]] : [])];
     const { rows } = await client.query(
@@ -2924,7 +2927,7 @@ class PostgresPersistence {
     if (ids?.length === 0) return [];
     const conditions = [
       ...(companyId ? ["company_id = $1"] : []),
-      ...(ids ? [`id = ANY($${companyId ? 2 : 1}::uuid[])`] : []),
+      ...(ids ? ["id = ANY($2::uuid[])"] : []),
     ];
     const parameters = [...(companyId ? [companyId] : []), ...(ids ? [[...ids]] : [])];
     const { rows } = await client.query(
@@ -2954,7 +2957,7 @@ class PostgresPersistence {
     if (ids?.length === 0) return [];
     const conditions = [
       ...(companyId ? ["company_id = $1"] : []),
-      ...(ids ? [`id = ANY($${companyId ? 2 : 1}::uuid[])`] : []),
+      ...(ids ? ["id = ANY($2::uuid[])"] : []),
     ];
     const parameters = [...(companyId ? [companyId] : []), ...(ids ? [[...ids]] : [])];
     const { rows } = await client.query(

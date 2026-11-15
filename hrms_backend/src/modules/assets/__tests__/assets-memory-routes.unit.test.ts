@@ -530,6 +530,21 @@ describe("asset routes with the memory persistence fallback", () => {
       .toThrow(/no unique active assignment/u);
   });
 
+  it("fails closed without mutating memory state when the terminated employee does not exist", () => {
+    const companyId = store.userSessionPreferences.find((item) => item.user_id === seedIds.employee1)!.company_id!;
+    const before = {
+      assets: structuredClone(store.assets),
+      tickets: structuredClone(store.assetRecoveryTickets),
+      events: structuredClone(store.assetStateEvents),
+    };
+
+    expect(() => createRecoveryTicketsForTerminatedEmployee(store, companyId, randomUUID()))
+      .toThrow(/terminated employee record is required/u);
+    expect(store.assets).toEqual(before.assets);
+    expect(store.assetRecoveryTickets).toEqual(before.tickets);
+    expect(store.assetStateEvents).toEqual(before.events);
+  });
+
   it("covers every changed protected route's own actor guard", async () => {
     const id = randomUUID();
     const anonymousRequests = [
@@ -602,5 +617,60 @@ describe("asset routes with the memory persistence fallback", () => {
     });
     expect(alerts.statusCode).toBe(200);
     expect(alerts.json().items).toEqual([]);
+  });
+
+  it("derives complete warranty severity counts when bounded SQL metadata is unavailable", async () => {
+    const base = store.assets[0]!;
+    const dateFromToday = (days: number) => {
+      const value = new Date();
+      value.setUTCDate(value.getUTCDate() + days);
+      return value.toISOString().slice(0, 10);
+    };
+    store.assets = [-1, 7, 30].map((days, index) => ({
+      ...structuredClone(base),
+      id: randomUUID(),
+      asset_code: `MEM-WARRANTY-${index}`,
+      metadata: { ...base.metadata, warranty_expiry: dateFromToday(days) },
+    }));
+
+    const alerts = await app.inject({
+      method: "GET",
+      url: "/assets/warranty-alerts?page=1&page_size=10&window_days=60&include_expired=true",
+      headers: { [actorHeader]: seedIds.assetManager },
+    });
+    expect(alerts.statusCode).toBe(200);
+    expect(alerts.json().counts).toEqual({ expired: 1, critical: 1, warning: 1 });
+  });
+
+  it("uses empty bounded aggregate metadata instead of mixing it with memory-wide totals", async () => {
+    store.assetReadMetadata = { operation: "assets.requests.queue", total: 0 };
+    const requests = await app.inject({
+      method: "GET",
+      url: "/assets/requests/queue?page=1&page_size=10",
+      headers: { [actorHeader]: seedIds.assetManager },
+    });
+    expect(requests.statusCode).toBe(200);
+    expect(requests.json().queue_counts).toEqual({});
+
+    store.assetReadMetadata = undefined;
+    const fallbackRequests = await app.inject({
+      method: "GET",
+      url: "/assets/requests/queue?page=1&page_size=10",
+      headers: { [actorHeader]: seedIds.assetManager },
+    });
+    expect(fallbackRequests.statusCode).toBe(200);
+    expect(fallbackRequests.json().queue_counts).toEqual(expect.objectContaining({
+      pending: expect.any(Number), approved: expect.any(Number),
+      rejected: expect.any(Number), fulfilled: expect.any(Number),
+    }));
+
+    store.assetReadMetadata = { operation: "assets.recovery.queue", total: 0 };
+    const recovery = await app.inject({
+      method: "GET",
+      url: "/assets/recovery-queue?page=1&page_size=10",
+      headers: { [actorHeader]: seedIds.assetManager },
+    });
+    expect(recovery.statusCode).toBe(200);
+    expect(recovery.json().totals).toEqual({});
   });
 });

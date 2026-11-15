@@ -997,6 +997,81 @@ describe("asset transaction boundary", () => {
     }
   });
 
+  it("executes every bounded SQL projection with tenant filters and empty-result behavior", async () => {
+    const manager = await loginAs(first, "AST");
+    await loginAs(first, "E1");
+    const persistence = first.store.persistence;
+    if (!persistence?.assetReadStore) throw new Error("Expected PostgreSQL asset read persistence");
+    const context = await first.store.pgPool!.query<{ company_id: string; asset_id: string; asset_type: string }>(
+      `SELECT p.company_id, a.id AS asset_id, a.asset_type
+         FROM platform.user_session_preferences p
+         JOIN assets.assets a ON a.company_id = p.company_id AND a.deleted_at IS NULL
+        WHERE p.user_id = $1
+        ORDER BY a.created_at, a.id
+        LIMIT 1`,
+      [seedIds.assetManager],
+    );
+    const { company_id: companyId, asset_id: assetId, asset_type: assetType } = context.rows[0]!;
+    const client = await first.store.pgPool!.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SET LOCAL hrms.asset_writer_v2 = 'on'");
+      await client.query(
+        `INSERT INTO assets.asset_maintenance_records
+           (id, company_id, asset_id, maintenance_type, started_on, status, notes)
+         VALUES (gen_random_uuid(), $1, $2, 'inspection', current_date, 'completed', 'projection-coverage')`,
+        [companyId, assetId],
+      );
+      await client.query(
+        `INSERT INTO assets.asset_recovery_tickets
+           (id, company_id, employee_user_id, employee_full_name_snapshot,
+            employee_code_snapshot, asset_id, assignment_id, status)
+         SELECT gen_random_uuid(), $1, u.id, u.full_name, u.employee_code, $2, NULL, 'open'
+           FROM core.users u WHERE u.id = $3`,
+        [companyId, assetId, seedIds.employee1],
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    const read = (operation: string, query?: Parameters<NonNullable<typeof persistence.assetReadStore>>[4], actorId = seedIds.assetManager) =>
+      persistence.assetReadStore!(first.store, companyId, actorId, operation, query);
+
+    const missingId = randomUUID();
+    expect((await read("assets.detail")).assetReadMetadata?.total).toBe(0);
+    expect((await read("assets.warranty-alerts", { windowDays: 60, includeExpired: true })).assetReadMetadata?.alertCounts)
+      .toEqual({ expired: expect.any(Number), critical: expect.any(Number), warning: expect.any(Number) });
+    await read("assets.warranty-alerts", { windowDays: 14, includeExpired: false });
+    expect((await read("assets.requests.my", { status: "rejected", type: "NoSuchType" })).assetRequests).toEqual([]);
+    expect((await read("assets.requests.queue", { status: "rejected", type: "NoSuchType" })).assetReadMetadata?.queueCounts).toEqual({});
+    expect((await read("assets.maintenance.list", { resourceId: assetId, status: "completed" })).assetMaintenanceRecords)
+      .toContainEqual(expect.objectContaining({ asset_id: assetId, status: "completed" }));
+    expect((await read("assets.maintenance.list")).assetMaintenanceRecords).toEqual([]);
+    expect((await read("assets.vendors.list", { activeOnly: true, search: "%_\\" })).assetVendors).toEqual([]);
+    await read("assets.vendors.list", { activeOnly: false });
+    const recovery = await read("assets.recovery.queue", { userId: seedIds.employee1, status: "open" });
+    expect(recovery.assetRecoveryTickets).toContainEqual(expect.objectContaining({ assignment_id: null }));
+    expect((await read("core.users.detail", { resourceId: seedIds.employee1 })).assetReadMetadata?.coreUser)
+      .toEqual(expect.objectContaining({ recoveryPending: expect.any(Number) }));
+    await read("core.users.detail");
+    expect((await read("dashboard.summary", undefined, seedIds.employee1)).assetReadMetadata?.dashboard)
+      .toEqual(expect.objectContaining({ assetsTotal: expect.any(Number) }));
+    const filteredReport = await read("reports.assets.summary", {
+      status: "Assigned", type: assetType, assignedToUserId: missingId,
+    });
+    expect(filteredReport.assetReadMetadata?.total).toBe(0);
+    const report = await read("reports.assets.summary");
+    expect(report.assetReadMetadata?.report?.maintenanceRows)
+      .toContainEqual(expect.objectContaining({ asset_id: assetId, date: expect.any(String) }));
+    expect(report.assetReadMetadata?.report?.recoveryRows)
+      .toContainEqual(expect.objectContaining({ asset_id: assetId, created_at: expect.any(String) }));
+    await expect(read("assets.unsupported")).rejects.toThrow(/Unsupported bounded asset read operation/u);
+  });
+
   it("returns original-company recovery identity after an employee transfers to another company", async () => {
     const manager = await loginAs(first, "AST");
     const admin = await loginAs(first, "ADM");
