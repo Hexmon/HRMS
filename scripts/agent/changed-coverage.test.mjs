@@ -35,6 +35,7 @@ import {
   selectPrepareCoverageServices,
   stampExternalReport,
   stampReport,
+  validateDeletionSemanticContract,
   validateTrustedExecutable,
   validateSemanticPath,
   verify,
@@ -75,6 +76,29 @@ test("semantic contracts validate supported non-line coverage paths and reject p
   const workflow = `name: test\non:\n  pull_request: {}\njobs:\n  changed-coverage:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: node scripts/agent/changed-coverage.mjs --run-full-suite --confirm-disposable-services --base "$COVERAGE_BASE" --head HEAD\n  deploy-backend:\n    needs: [changed-coverage]\n    runs-on: ubuntu-latest\n`;
   assert.match(validateSemanticPath(root, ".github/workflows/branch-ci-cd.yml", workflow, "base"), /semantic contract passed/);
   assert.throws(() => validateSemanticPath(root, ".github/workflows/branch-ci-cd.yml", workflow.replace("--head HEAD", "--head HEAD\n        continue-on-error: true"), "base"), /continue-on-error/);
+});
+
+test("generic user lifecycle deletions require the dedicated lifecycle semantic contract", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-lifecycle-deletion-"));
+  roots.push(root);
+  git(root, "init");
+  write(root, "hrms_backend/src/modules/core/routes.ts", `const updateUserSchema = expectedVersionSchema.extend({\n  employment_status: employmentStatusSchema.optional(),\n});\nconst statusBodySchema = {};\n`);
+  write(root, "hrms_backend/src/modules/core/service.ts", `export interface UserUpdateInput {\n  employment_status?: CoreUser["employment_status"];\n}\n`);
+  write(root, "hrms_backend/src/platform/openapi.ts", `const coreUserUpdateBodySchema = {\n  employment_status: { type: "string", enum: ["active", "inactive", "terminated", "suspended"], example: "active" },\n};\n`);
+  git(root, "add", ".");
+  git(root, "commit", "-m", "base");
+  const base = git(root, "rev-parse", "HEAD");
+
+  write(root, "hrms_backend/src/modules/core/routes.ts", `const updateUserSchema = expectedVersionSchema.extend({ expected_version: z.number() }).strict();\nconst statusBodySchema = {};\nfastify.post("/users/:id/activate", handler);\nfastify.post("/users/:id/deactivate", handler);\n`);
+  write(root, "hrms_backend/src/modules/core/service.ts", `export interface UserUpdateInput { expected_version: number; }\nclass CoreService {\n  updateUser(actor, id, input) { return input.expected_version; }\n  async uploadProfilePhoto() {}\n  deactivateUser(actor, id, input) { credential.status = "revoked"; event_type = "core.user.terminated"; }\n}\n`);
+  write(root, "hrms_backend/src/platform/openapi.ts", `const coreUserUpdateBodySchema = { properties: { expected_version: { type: "integer" } }, additionalProperties: false };\nconst coreProfilePhotoPolicySchema = {};\n`);
+  write(root, "hrms_backend/src/modules/core/__tests__/core.integration.test.ts", `payload = { employment_status: "terminated", terminated_on: "2026-11-15" };\nexpect(result).toBe(400);\nexpect(user).toMatchObject({ employment_status: "active" });\nexpect(event.event_type === "core.user.terminated").toBe(false);\n`);
+
+  const item = "hrms_backend/src/modules/core/routes.ts:@@ -2 +2,0 @@";
+  assert.match(validateDeletionSemanticContract(root, item, base), /semantic deletion contract passed/);
+  assert.equal(validateDeletionSemanticContract(root, "hrms_backend/src/modules/core/routes.ts:@@ -1 +1,0 @@", base), null);
+  write(root, "hrms_backend/src/modules/core/routes.ts", `const updateUserSchema = expectedVersionSchema.extend({ employment_status: z.string() }).strict();\nconst statusBodySchema = {};\nfastify.post("/users/:id/activate", handler);\nfastify.post("/users/:id/deactivate", handler);\n`);
+  assert.throws(() => validateDeletionSemanticContract(root, item, base), /still accepts lifecycle fields/);
 });
 
 test("semantic contracts fail closed for each workflow, manifest, lock, runner and shell invariant", () => {

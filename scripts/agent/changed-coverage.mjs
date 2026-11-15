@@ -1710,6 +1710,61 @@ function validateQaSeedPhase(path, content) {
   requireSemanticText(path, content, /client\.end\(\)/, "QA seed phase must close its database client");
 }
 
+const coreLifecycleDeletionSnippets = new Map([
+  ["hrms_backend/src/modules/core/routes.ts", new Set([
+    "employment_status: employmentStatusSchema.optional(),",
+  ])],
+  ["hrms_backend/src/modules/core/service.ts", new Set([
+    'employment_status?: CoreUser["employment_status"];',
+    "terminated_on?: string | null;",
+    "if (input.employment_status !== undefined && input.employment_status !== EmploymentStatuses.Active) { this.requireOrgAdminRecoveryPath(user, { employmentStatus: input.employment_status }); }",
+    "if (input.employment_status !== undefined) { user.employment_status = input.employment_status; if (input.employment_status !== EmploymentStatuses.Terminated) { user.terminated_on = input.terminated_on ?? null; } }",
+    "if (input.terminated_on !== undefined) { user.terminated_on = input.terminated_on; }",
+  ])],
+  ["hrms_backend/src/platform/openapi.ts", new Set([
+    'employment_status: { type: "string", enum: ["active", "inactive", "terminated", "suspended"], example: "active", },',
+    'terminated_on: { ...date("Termination date"), nullable: true },',
+  ])],
+]);
+
+function normalizeSemanticSnippet(content) {
+  return content.replace(/\s+/gu, " ").trim();
+}
+
+export function validateDeletionSemanticContract(root, item, base, dependencies = {}) {
+  const match = /^(.*):@@ -(\d+)(?:,(\d+))? \+\d+(?:,\d+)? @@/.exec(item);
+  if (!match) return null;
+  const [, path, oldStartText, oldCountText] = match;
+  const allowed = coreLifecycleDeletionSnippets.get(path);
+  if (!allowed) return null;
+  const oldStart = Number(oldStartText);
+  const oldCount = oldCountText === undefined ? 1 : Number(oldCountText);
+  const gitCommand = dependencies.gitCommand ?? git;
+  const readCurrent = dependencies.readCurrent ?? ((candidatePath) => readFileSync(join(root, candidatePath), "utf8"));
+  const baseContent = gitCommand(root, "show", `${base}:${path}`);
+  const deleted = normalizeSemanticSnippet(baseContent.split("\n").slice(oldStart - 1, oldStart - 1 + oldCount).join("\n"));
+  if (!allowed.has(deleted)) return null;
+
+  const routes = readCurrent("hrms_backend/src/modules/core/routes.ts");
+  const service = readCurrent("hrms_backend/src/modules/core/service.ts");
+  const openapi = readCurrent("hrms_backend/src/platform/openapi.ts");
+  const regression = readCurrent("hrms_backend/src/modules/core/__tests__/core.integration.test.ts");
+  const updateSchema = /const updateUserSchema[\s\S]*?(?=const statusBodySchema)/u.exec(routes)?.[0] ?? "";
+  const updateInput = /export interface UserUpdateInput[\s\S]*?\n\}/u.exec(service)?.[0] ?? "";
+  const updateMethod = /\n  updateUser\([\s\S]*?(?=\n  async uploadProfilePhoto\()/u.exec(service)?.[0] ?? "";
+  const updateOpenapi = /const coreUserUpdateBodySchema[\s\S]*?(?=const coreProfilePhotoPolicySchema)/u.exec(openapi)?.[0] ?? "";
+
+  requireSemanticText(path, updateSchema, /\.strict\(\)/u, "generic user update schema must reject undocumented lifecycle fields");
+  forbidText(path, updateSchema, /employment_status|terminated_on/u, "generic user update schema still accepts lifecycle fields");
+  requireSemanticText(path, routes, /fastify\.post\("\/users\/:id\/activate"[\s\S]*fastify\.post\("\/users\/:id\/deactivate"/u, "dedicated lifecycle routes are missing");
+  forbidText(path, updateInput, /employment_status|terminated_on/u, "generic user update input still exposes lifecycle fields");
+  forbidText(path, updateMethod, /input\.(?:employment_status|terminated_on)/u, "generic user update still mutates lifecycle state");
+  requireSemanticText(path, service, /deactivateUser\([\s\S]*credential\.status\s*=\s*"revoked"[\s\S]*core\.user\.terminated/u, "dedicated lifecycle path must revoke credentials and emit termination evidence");
+  forbidText(path, updateOpenapi, /employment_status|terminated_on/u, "generic user update OpenAPI still advertises lifecycle fields");
+  requireSemanticText(path, regression, /employment_status:\s*"terminated"[\s\S]*terminated_on:\s*"2026-11-15"[\s\S]*toBe\(400\)[\s\S]*employment_status:\s*"active"[\s\S]*event_type\s*===\s*"core\.user\.terminated"[\s\S]*toBe\(false\)/u, "generic lifecycle bypass regression is incomplete");
+  return `${item}: semantic deletion contract passed`;
+}
+
 export function validateSemanticPath(root, path, content, base) {
   switch (path) {
     case ".github/workflows/branch-ci-cd.yml": validateWorkflow(path, content, false); break;
@@ -1780,15 +1835,21 @@ export function verify(root, base, head, suitePaths = fullSuitePaths(coverageOut
   const totals = { executable: 0, nonExecutable: 0, branches: 0, uncovered: [] };
   let uncoveredLines = 0;
   let uncoveredBranches = 0;
-  let unmeasuredCount = deletionOnly.length + removedRuntime.length;
+  let unmeasuredCount = removedRuntime.length;
   const semanticLines = [];
   const lines = [`Coverage diff ${mergeBase}..${resolvedHead}`];
   for (const path of testSource) lines.push(`TEST SOURCE ${path}: excluded from product line denominator; independent assertion-quality review required`);
   for (const risk of importRisks) lines.push(`IMPORT GRAPH ${risk}: changed in-source test files require review`);
   for (const path of excludedGenerated) lines.push(`EXCLUDED TYPE/GENERATED ${path}: no product line denominator; typecheck/build regeneration evidence required`);
   for (const item of deletionOnly) {
-    const message = `deletion-only ${item}: behavior requires explicit regression evidence`;
-    totals.uncovered.push(message);
+    const semantic = validateDeletionSemanticContract(root, item, mergeBase);
+    if (semantic) {
+      semanticLines.push(semantic);
+    } else {
+      const message = `deletion-only ${item}: behavior requires explicit regression evidence`;
+      totals.uncovered.push(message);
+      unmeasuredCount += 1;
+    }
   }
   for (const item of removedRuntime) totals.uncovered.push(`removed runtime ${item}: replacement has no executable coverage target`);
   for (const path of outside) {
