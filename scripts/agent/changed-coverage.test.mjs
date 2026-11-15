@@ -1097,7 +1097,12 @@ test("asset recovery evidence staging and runtime termination snapshots have sem
   assert.match(validateSemanticPath(repositoryRoot, runtimePath, runtime, "base"), /semantic contract passed/);
   assert.throws(() => validateSemanticPath(repositoryRoot, prepPath, prep.replace("ticket_id uuid PRIMARY KEY", "ticket_id uuid"), "base"), /staging schema/);
   assert.throws(() => validateSemanticPath(repositoryRoot, prepPath, prep.replace("lifecycle_event_id uuid PRIMARY KEY", "lifecycle_event_id uuid"), "base"), /termination evidence staging schema/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, prepPath, prep.replace("approved_by_user_id uuid NOT NULL", "approved_by_user_id uuid"), "base"), /termination evidence staging schema/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, prepPath, prep.replace("REVOKE SELECT, INSERT, UPDATE, DELETE, TRUNCATE", "REVOKE INSERT, UPDATE, DELETE, TRUNCATE"), "base"), /read and mutation privileges/);
   assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replaceAll("u.version = payload_employee_version", "TRUE"), "base"), /exact durable employee version/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("IN SHARE ROW EXCLUSIVE MODE", "IN ACCESS SHARE MODE"), "base"), /writers must be locked/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("event.payload->>'user_id' IS DISTINCT FROM event.aggregate_id::text", "FALSE"), "base"), /durable user/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("approver.id <> evidence.verified_by_user_id", "TRUE"), "base"), /two distinct authorized/);
   assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("invalid_legacy_evidence_count > 0", "FALSE"), "base"), /historical termination evidence/);
   assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("unresolved_legacy_termination_count > 0", "FALSE"), "base"), /every unresolved replayable/);
   assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("BEFORE INSERT OR UPDATE OR DELETE ON core.user_termination_identity_evidence", "BEFORE UPDATE ON core.user_termination_identity_evidence"), "base"), /evidence must be frozen/);

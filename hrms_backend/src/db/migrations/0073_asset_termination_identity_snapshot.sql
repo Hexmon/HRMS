@@ -22,6 +22,12 @@ CREATE INDEX IF NOT EXISTS asset_requests_company_numeric_code_idx
   )
   WHERE request_code ~ '^REQ-[0-9]+$';
 
+-- Freeze the complete historical input set before validation and keep
+-- ordinary outbox/evidence writers excluded until finalization triggers are
+-- installed in this same transaction.
+LOCK TABLE platform.outbox_events, core.user_termination_identity_evidence
+  IN SHARE ROW EXCLUSIVE MODE;
+
 DO $$
 DECLARE
   invalid_legacy_evidence_count bigint;
@@ -35,6 +41,21 @@ BEGIN
    WHERE event.event_id IS NULL
       OR evidence.lifecycle_event_id IS NULL
       OR evidence.employee_user_id <> event.aggregate_id
+      OR event.payload->>'user_id' IS DISTINCT FROM event.aggregate_id::text
+      OR event.payload->>'employee_code' IS NULL
+      OR btrim(event.payload->>'employee_code') = ''
+      OR evidence.employee_code_snapshot IS DISTINCT FROM event.payload->>'employee_code'
+      OR event.idempotency_key IS DISTINCT FROM (
+        'core.user.deactivated:' || event.aggregate_id::text || ':' || evidence.employee_version::text
+      )
+      OR (
+        event.payload ? 'company_id'
+        AND event.payload->>'company_id' IS DISTINCT FROM evidence.company_id::text
+      )
+      OR (
+        event.payload ? 'employee_version'
+        AND event.payload->>'employee_version' IS DISTINCT FROM evidence.employee_version::text
+      )
       OR btrim(evidence.employee_full_name_snapshot) = ''
       OR btrim(evidence.employee_code_snapshot) = ''
       OR btrim(evidence.source_reference) = ''
@@ -47,8 +68,51 @@ BEGIN
          WHERE employee.id = evidence.employee_user_id
       )
       OR NOT EXISTS (
-        SELECT 1 FROM core.users verifier
+        SELECT 1
+          FROM core.users verifier
+          JOIN platform.user_session_preferences preference
+            ON preference.user_id = verifier.id
+           AND preference.company_id = evidence.company_id
          WHERE verifier.id = evidence.verified_by_user_id
+           AND verifier.deleted_at IS NULL
+           AND verifier.employment_status = 'active'
+           AND preference.active_role IN ('Admin', 'HR Manager')
+      )
+      OR NOT EXISTS (
+        SELECT 1
+          FROM core.users approver
+          JOIN platform.user_session_preferences preference
+            ON preference.user_id = approver.id
+           AND preference.company_id = evidence.company_id
+         WHERE approver.id = evidence.approved_by_user_id
+           AND approver.id <> evidence.verified_by_user_id
+           AND approver.deleted_at IS NULL
+           AND approver.employment_status = 'active'
+           AND preference.active_role IN ('Admin', 'HR Manager')
+      )
+      OR EXISTS (
+        SELECT 1
+          FROM (
+            SELECT assignment.company_id
+              FROM assets.asset_assignments assignment
+             WHERE assignment.assigned_to_user_id = evidence.employee_user_id
+               AND (
+                 assignment.status = 'active'
+                 OR (
+                   assignment.assigned_at <= event.created_at
+                   AND (assignment.returned_at IS NULL OR assignment.returned_at > event.created_at)
+                 )
+               )
+            UNION
+            SELECT ticket.company_id
+              FROM assets.asset_recovery_tickets ticket
+             WHERE ticket.employee_user_id = evidence.employee_user_id
+          ) ownership_source
+        HAVING count(*) > 0
+           AND (
+             count(DISTINCT ownership_source.company_id) <> 1
+             OR min(ownership_source.company_id::text) <> evidence.company_id::text
+           )
       );
   IF invalid_legacy_evidence_count > 0 THEN
     RAISE EXCEPTION USING
@@ -211,5 +275,5 @@ CREATE TRIGGER asset_recovery_identity_immutable_trg
 
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE
   ON core.user_termination_identity_snapshots FROM PUBLIC;
-REVOKE INSERT, UPDATE, DELETE, TRUNCATE
+REVOKE SELECT, INSERT, UPDATE, DELETE, TRUNCATE
   ON core.user_termination_identity_evidence FROM PUBLIC;

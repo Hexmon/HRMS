@@ -61,6 +61,7 @@ describe("asset tenant ownership migration", () => {
   const vendorId = randomUUID();
   const recoveryEmployeeId = randomUUID();
   const verifierUserId = randomUUID();
+  const approverUserId = randomUUID();
   const runtimeRole = `hrms_asset_runtime_${randomUUID().replaceAll("-", "")}`;
 
   beforeAll(async () => {
@@ -83,18 +84,21 @@ describe("asset tenant ownership migration", () => {
          id, employee_code, email, full_name, hierarchy_path, employment_status, terminated_on
        ) VALUES
          ($1, 'RECOVERY-001', $2, 'Original Company Employee', 'recovery_001', 'terminated', current_date),
-         ($3, 'VERIFY-001', $4, 'Ownership Verifier', 'verify_001', 'active', NULL)`,
+         ($3, 'VERIFY-001', $4, 'Ownership Verifier', 'verify_001', 'active', NULL),
+         ($5, 'APPROVE-001', $6, 'Ownership Approver', 'approve_001', 'active', NULL)`,
       [
         recoveryEmployeeId,
         `recovery-${recoveryEmployeeId}@example.test`,
         verifierUserId,
         `verifier-${verifierUserId}@example.test`,
+        approverUserId,
+        `approver-${approverUserId}@example.test`,
       ],
     );
     await client.query(
       `INSERT INTO platform.user_session_preferences (user_id, active_role, company_id)
-       VALUES ($1, 'Employee', $2), ($3, 'Admin', $2)`,
-      [recoveryEmployeeId, companyA, verifierUserId],
+       VALUES ($1, 'Employee', $2), ($3, 'Admin', $2), ($4, 'HR Manager', $2)`,
+      [recoveryEmployeeId, companyA, verifierUserId, approverUserId],
     );
     await client.query(
       `INSERT INTO assets.assets (id, asset_code, qr_hash, asset_type, name, status)
@@ -272,20 +276,61 @@ describe("asset tenant ownership migration", () => {
     await client.query("DELETE FROM assets.asset_recovery_identity_evidence WHERE ticket_id <> $1", [recoveryTicket.rows[0]!.id]);
     await client.query("UPDATE platform.company_profiles SET status = 'inactive' WHERE id = $1", [companyA]);
     await applyMigration(client, "0072_asset_tenant_ownership_finalization.sql");
-    const preSnapshotEvents = ["pending", "retry", "published", "dead_letter"].map((status) => ({
+    const runtimeMigrationSql = readFileSync(
+      "src/db/migrations/0073_asset_termination_identity_snapshot.sql",
+      "utf8",
+    );
+    const validationOffset = runtimeMigrationSql.indexOf("DO $$");
+    expect(validationOffset).toBeGreaterThan(0);
+    const contender = new Client({ connectionString: databaseUrl.toString() });
+    await contender.connect();
+    await client.query("BEGIN");
+    try {
+      await client.query(runtimeMigrationSql.slice(0, validationOffset));
+      await contender.query("SET lock_timeout = '100ms'");
+      const blockedEventId = randomUUID();
+      await expect(contender.query(
+        `INSERT INTO platform.outbox_events (
+           event_id, aggregate_type, aggregate_id, event_type, payload,
+           idempotency_key, status, retry_count, available_at
+         ) VALUES ($1, 'core.user', $2, 'core.user.terminated', $3::jsonb,
+           $4, 'pending', 0, now())`,
+        [blockedEventId, recoveryEmployeeId, JSON.stringify({
+          user_id: recoveryEmployeeId, employee_code: "RECOVERY-001",
+        }), `core.user.deactivated:${recoveryEmployeeId}:1`],
+      )).rejects.toMatchObject({ code: "55P03" });
+      await expect(contender.query(
+        `INSERT INTO core.user_termination_identity_evidence (
+           lifecycle_event_id, company_id, employee_user_id,
+           employee_full_name_snapshot, employee_code_snapshot, employee_version,
+           source_reference, verified_by_user_id, approved_by_user_id
+         ) VALUES ($1, $2, $3, 'blocked', 'RECOVERY-001', 1, 'blocked', $4, $5)`,
+        [blockedEventId, companyA, recoveryEmployeeId, verifierUserId, approverUserId],
+      )).rejects.toMatchObject({ code: "55P03" });
+    } finally {
+      await client.query("ROLLBACK");
+      await contender.end();
+    }
+
+    const preSnapshotEvents = ["pending", "retry", "published", "dead_letter"].map((status, index) => ({
       eventId: randomUUID(),
       status,
+      version: index + 1,
     }));
     for (const event of preSnapshotEvents) {
+      const payload = {
+        user_id: recoveryEmployeeId,
+        employee_code: "RECOVERY-001",
+        ...(event.version > 2 ? { company_id: companyA, employee_version: event.version } : {}),
+      };
       await client.query(
         `INSERT INTO platform.outbox_events (
            event_id, aggregate_type, aggregate_id, event_type, payload,
            idempotency_key, status, retry_count, available_at
          ) VALUES ($1, 'core.user', $2, 'core.user.terminated', $3::jsonb,
            $4, $5, 0, now())`,
-        [event.eventId, recoveryEmployeeId, JSON.stringify({
-          user_id: recoveryEmployeeId, company_id: companyA, employee_version: 1,
-        }), `pre-snapshot-${event.eventId}`, event.status],
+        [event.eventId, recoveryEmployeeId, JSON.stringify(payload),
+          `core.user.deactivated:${recoveryEmployeeId}:${event.version}`, event.status],
       );
     }
     await expect(applyMigration(client, "0073_asset_termination_identity_snapshot.sql"))
@@ -295,11 +340,129 @@ describe("asset tenant ownership migration", () => {
         `INSERT INTO core.user_termination_identity_evidence (
            lifecycle_event_id, company_id, employee_user_id,
            employee_full_name_snapshot, employee_code_snapshot, employee_version,
-           source_reference, verified_by_user_id
-         ) VALUES ($1, $2, $3, 'Verified Historical Employee', 'RECOVERY-001', 1, $4, $5)`,
-        [event.eventId, companyA, recoveryEmployeeId, `reviewed-event-${event.eventId}`, verifierUserId],
+           source_reference, verified_by_user_id, approved_by_user_id
+         ) VALUES ($1, $2, $3, 'Verified Historical Employee', 'RECOVERY-001', $4, $5, $6, $7)`,
+        [event.eventId, companyA, recoveryEmployeeId, event.version,
+          `reviewed-event-${event.eventId}`, verifierUserId, approverUserId],
       );
     }
+    const firstHistoricalEvent = preSnapshotEvents[0]!;
+    const enrichedHistoricalEvent = preSnapshotEvents[2]!;
+    const expectLegacyEvidenceRejection = () => expect(
+      applyMigration(client, "0073_asset_termination_identity_snapshot.sql"),
+    ).rejects.toMatchObject({ code: "23514" });
+
+    await client.query(
+      "UPDATE core.user_termination_identity_evidence SET company_id = $1 WHERE lifecycle_event_id = $2",
+      [companyB, firstHistoricalEvent.eventId],
+    );
+    await client.query(
+      "UPDATE platform.user_session_preferences SET company_id = $1 WHERE user_id = ANY($2::uuid[])",
+      [companyB, [verifierUserId, approverUserId]],
+    );
+    await expectLegacyEvidenceRejection();
+    await client.query(
+      "UPDATE core.user_termination_identity_evidence SET company_id = $1 WHERE lifecycle_event_id = $2",
+      [companyA, firstHistoricalEvent.eventId],
+    );
+    await client.query(
+      "UPDATE platform.user_session_preferences SET company_id = $1 WHERE user_id = ANY($2::uuid[])",
+      [companyA, [verifierUserId, approverUserId]],
+    );
+    await client.query(
+      "UPDATE core.user_termination_identity_evidence SET employee_version = 99 WHERE lifecycle_event_id = $1",
+      [firstHistoricalEvent.eventId],
+    );
+    await expectLegacyEvidenceRejection();
+    await client.query(
+      "UPDATE core.user_termination_identity_evidence SET employee_version = $1 WHERE lifecycle_event_id = $2",
+      [firstHistoricalEvent.version, firstHistoricalEvent.eventId],
+    );
+    await client.query(
+      `UPDATE platform.outbox_events
+          SET payload = jsonb_set(payload, '{user_id}', to_jsonb($1::text))
+        WHERE event_id = $2`,
+      [randomUUID(), enrichedHistoricalEvent.eventId],
+    );
+    await expectLegacyEvidenceRejection();
+    await client.query(
+      `UPDATE platform.outbox_events
+          SET payload = jsonb_set(payload, '{user_id}', to_jsonb($1::text))
+        WHERE event_id = $2`,
+      [recoveryEmployeeId, enrichedHistoricalEvent.eventId],
+    );
+    await client.query(
+      "UPDATE platform.outbox_events SET payload = payload - 'user_id' WHERE event_id = $1",
+      [firstHistoricalEvent.eventId],
+    );
+    await expectLegacyEvidenceRejection();
+    await client.query(
+      `UPDATE platform.outbox_events
+          SET payload = jsonb_set(payload, '{user_id}', to_jsonb($1::text))
+        WHERE event_id = $2`,
+      [recoveryEmployeeId, firstHistoricalEvent.eventId],
+    );
+    await client.query(
+      "UPDATE platform.outbox_events SET idempotency_key = $1 WHERE event_id = $2",
+      [`core.user.deactivated:${randomUUID()}:${firstHistoricalEvent.version}`, firstHistoricalEvent.eventId],
+    );
+    await expectLegacyEvidenceRejection();
+    await client.query(
+      "UPDATE platform.outbox_events SET idempotency_key = $1 WHERE event_id = $2",
+      [`core.user.deactivated:${recoveryEmployeeId}:${firstHistoricalEvent.version}`, firstHistoricalEvent.eventId],
+    );
+    await client.query(
+      "UPDATE core.user_termination_identity_evidence SET employee_code_snapshot = 'WRONG' WHERE lifecycle_event_id = $1",
+      [firstHistoricalEvent.eventId],
+    );
+    await expectLegacyEvidenceRejection();
+    await client.query(
+      "UPDATE core.user_termination_identity_evidence SET employee_code_snapshot = 'RECOVERY-001' WHERE lifecycle_event_id = $1",
+      [firstHistoricalEvent.eventId],
+    );
+    await client.query(
+      "UPDATE core.user_termination_identity_evidence SET source_reference = '' WHERE lifecycle_event_id = $1",
+      [firstHistoricalEvent.eventId],
+    );
+    await expectLegacyEvidenceRejection();
+    await client.query(
+      "UPDATE core.user_termination_identity_evidence SET source_reference = $1 WHERE lifecycle_event_id = $2",
+      [`reviewed-event-${firstHistoricalEvent.eventId}`, firstHistoricalEvent.eventId],
+    );
+    await client.query(
+      "UPDATE core.user_termination_identity_evidence SET verified_by_user_id = $1 WHERE lifecycle_event_id = $2",
+      [randomUUID(), firstHistoricalEvent.eventId],
+    );
+    await expectLegacyEvidenceRejection();
+    await client.query(
+      "UPDATE core.user_termination_identity_evidence SET verified_by_user_id = $1 WHERE lifecycle_event_id = $2",
+      [verifierUserId, firstHistoricalEvent.eventId],
+    );
+    await client.query(
+      "UPDATE core.user_termination_identity_evidence SET approved_by_user_id = $1 WHERE lifecycle_event_id = $2",
+      [randomUUID(), firstHistoricalEvent.eventId],
+    );
+    await expectLegacyEvidenceRejection();
+    await client.query(
+      "UPDATE core.user_termination_identity_evidence SET approved_by_user_id = $1 WHERE lifecycle_event_id = $2",
+      [approverUserId, firstHistoricalEvent.eventId],
+    );
+    await expect(client.query(
+      "UPDATE core.user_termination_identity_evidence SET approved_by_user_id = verified_by_user_id WHERE lifecycle_event_id = $1",
+      [firstHistoricalEvent.eventId],
+    )).rejects.toMatchObject({ code: "23514" });
+    await client.query(
+      `INSERT INTO core.user_termination_identity_evidence (
+         lifecycle_event_id, company_id, employee_user_id,
+         employee_full_name_snapshot, employee_code_snapshot, employee_version,
+         source_reference, verified_by_user_id, approved_by_user_id
+       ) VALUES ($1, $2, $3, 'extra', 'RECOVERY-001', 1, 'extra', $4, $5)`,
+      [randomUUID(), companyA, recoveryEmployeeId, verifierUserId, approverUserId],
+    );
+    await expectLegacyEvidenceRejection();
+    await client.query(
+      "DELETE FROM core.user_termination_identity_evidence WHERE lifecycle_event_id NOT IN (SELECT event_id FROM platform.outbox_events)",
+    );
     await applyMigration(client, "0073_asset_termination_identity_snapshot.sql");
     const migratedSnapshots = await client.query<{ lifecycle_event_id: string }>(
       `SELECT lifecycle_event_id
@@ -406,9 +569,12 @@ describe("asset tenant ownership migration", () => {
         `INSERT INTO core.user_termination_identity_evidence (
            lifecycle_event_id, company_id, employee_user_id,
            employee_full_name_snapshot, employee_code_snapshot, employee_version,
-           source_reference, verified_by_user_id
-         ) VALUES ($1, $2, $3, 'forged', 'forged', 1, 'forged', $4)`,
-        [randomUUID(), companyA, recoveryEmployeeId, verifierUserId],
+           source_reference, verified_by_user_id, approved_by_user_id
+         ) VALUES ($1, $2, $3, 'forged', 'forged', 1, 'forged', $4, $5)`,
+        [randomUUID(), companyA, recoveryEmployeeId, verifierUserId, approverUserId],
+      )).rejects.toMatchObject({ code: "42501" });
+      await expect(client.query(
+        "SELECT source_reference FROM core.user_termination_identity_evidence LIMIT 1",
       )).rejects.toMatchObject({ code: "42501" });
     } finally {
       await client.query("RESET ROLE");

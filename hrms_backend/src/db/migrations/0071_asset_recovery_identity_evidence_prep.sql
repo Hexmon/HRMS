@@ -25,10 +25,12 @@ CREATE TABLE IF NOT EXISTS core.user_termination_identity_evidence (
   employee_version integer NOT NULL CHECK (employee_version > 0),
   source_reference text NOT NULL,
   verified_by_user_id uuid NOT NULL,
+  approved_by_user_id uuid NOT NULL,
+  CHECK (approved_by_user_id <> verified_by_user_id),
   verified_at timestamptz NOT NULL DEFAULT now()
 );
 
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE
   ON assets.asset_recovery_identity_evidence FROM PUBLIC;
-REVOKE INSERT, UPDATE, DELETE, TRUNCATE
+REVOKE SELECT, INSERT, UPDATE, DELETE, TRUNCATE
   ON core.user_termination_identity_evidence FROM PUBLIC;

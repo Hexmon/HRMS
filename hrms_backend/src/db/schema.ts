@@ -143,6 +143,7 @@ export const userTerminationIdentityEvidence = core.table("user_termination_iden
   employeeVersion: integer("employee_version").notNull(),
   sourceReference: text("source_reference").notNull(),
   verifiedByUserId: uuid("verified_by_user_id").notNull(),
+  approvedByUserId: uuid("approved_by_user_id").notNull(),
   verifiedAt: timestamp("verified_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
