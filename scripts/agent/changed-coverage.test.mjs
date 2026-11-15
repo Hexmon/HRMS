@@ -1096,8 +1096,11 @@ test("asset recovery evidence staging and runtime termination snapshots have sem
   assert.match(validateSemanticPath(repositoryRoot, prepPath, prep, "base"), /semantic contract passed/);
   assert.match(validateSemanticPath(repositoryRoot, runtimePath, runtime, "base"), /semantic contract passed/);
   assert.throws(() => validateSemanticPath(repositoryRoot, prepPath, prep.replace("ticket_id uuid PRIMARY KEY", "ticket_id uuid"), "base"), /staging schema/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, prepPath, prep.replace("lifecycle_event_id uuid PRIMARY KEY", "lifecycle_event_id uuid"), "base"), /termination evidence staging schema/);
   assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replaceAll("u.version = payload_employee_version", "TRUE"), "base"), /exact durable employee version/);
-  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("pending_legacy_termination_count > 0", "FALSE"), "base"), /pre-snapshot pending termination events/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("invalid_legacy_evidence_count > 0", "FALSE"), "base"), /historical termination evidence/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("unresolved_legacy_termination_count > 0", "FALSE"), "base"), /every unresolved replayable/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("BEFORE INSERT OR UPDATE OR DELETE ON core.user_termination_identity_evidence", "BEFORE UPDATE ON core.user_termination_identity_evidence"), "base"), /evidence must be frozen/);
   assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("SECURITY DEFINER", "SECURITY INVOKER"), "base"), /security-definer boundary/);
   assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("u.employment_status = 'terminated'", "TRUE"), "base"), /committed terminated employee state/);
   assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("BEFORE UPDATE OR DELETE ON assets.asset_recovery_tickets", "BEFORE UPDATE ON assets.asset_recovery_tickets"), "base"), /history deletion/);

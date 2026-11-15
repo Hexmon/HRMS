@@ -311,6 +311,7 @@ const resetTables = [
   "platform.user_credentials",
   "platform.finance_governance_config",
   "core.user_termination_identity_snapshots",
+  "core.user_termination_identity_evidence",
   "core.user_roles",
   "core.role_permissions",
   "core.roles",

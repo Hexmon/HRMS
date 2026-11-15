@@ -272,21 +272,51 @@ describe("asset tenant ownership migration", () => {
     await client.query("DELETE FROM assets.asset_recovery_identity_evidence WHERE ticket_id <> $1", [recoveryTicket.rows[0]!.id]);
     await client.query("UPDATE platform.company_profiles SET status = 'inactive' WHERE id = $1", [companyA]);
     await applyMigration(client, "0072_asset_tenant_ownership_finalization.sql");
-    const preSnapshotEventId = randomUUID();
-    await client.query(
-      `INSERT INTO platform.outbox_events (
-         event_id, aggregate_type, aggregate_id, event_type, payload,
-         idempotency_key, status, retry_count, available_at
-       ) VALUES ($1, 'core.user', $2, 'core.user.terminated', $3::jsonb,
-         $4, 'pending', 0, now())`,
-      [preSnapshotEventId, recoveryEmployeeId, JSON.stringify({
-        user_id: recoveryEmployeeId, company_id: companyA, employee_version: 1,
-      }), `pre-snapshot-${preSnapshotEventId}`],
-    );
+    const preSnapshotEvents = ["pending", "retry", "published", "dead_letter"].map((status) => ({
+      eventId: randomUUID(),
+      status,
+    }));
+    for (const event of preSnapshotEvents) {
+      await client.query(
+        `INSERT INTO platform.outbox_events (
+           event_id, aggregate_type, aggregate_id, event_type, payload,
+           idempotency_key, status, retry_count, available_at
+         ) VALUES ($1, 'core.user', $2, 'core.user.terminated', $3::jsonb,
+           $4, $5, 0, now())`,
+        [event.eventId, recoveryEmployeeId, JSON.stringify({
+          user_id: recoveryEmployeeId, company_id: companyA, employee_version: 1,
+        }), `pre-snapshot-${event.eventId}`, event.status],
+      );
+    }
     await expect(applyMigration(client, "0073_asset_termination_identity_snapshot.sql"))
-      .rejects.toMatchObject({ code: "23514", message: expect.stringMatching(/pre-snapshot termination/u) });
-    await client.query("DELETE FROM platform.outbox_events WHERE event_id = $1", [preSnapshotEventId]);
+      .rejects.toMatchObject({ code: "23514", message: expect.stringMatching(/pre-snapshot termination evidence/iu) });
+    for (const event of preSnapshotEvents) {
+      await client.query(
+        `INSERT INTO core.user_termination_identity_evidence (
+           lifecycle_event_id, company_id, employee_user_id,
+           employee_full_name_snapshot, employee_code_snapshot, employee_version,
+           source_reference, verified_by_user_id
+         ) VALUES ($1, $2, $3, 'Verified Historical Employee', 'RECOVERY-001', 1, $4, $5)`,
+        [event.eventId, companyA, recoveryEmployeeId, `reviewed-event-${event.eventId}`, verifierUserId],
+      );
+    }
     await applyMigration(client, "0073_asset_termination_identity_snapshot.sql");
+    const migratedSnapshots = await client.query<{ lifecycle_event_id: string }>(
+      `SELECT lifecycle_event_id
+         FROM core.user_termination_identity_snapshots
+        WHERE lifecycle_event_id = ANY($1::uuid[])
+        ORDER BY lifecycle_event_id`,
+      [preSnapshotEvents.map((event) => event.eventId)],
+    );
+    expect(migratedSnapshots.rows.map((row) => row.lifecycle_event_id)).toEqual(
+      preSnapshotEvents.map((event) => event.eventId).sort(),
+    );
+    await expect(client.query(
+      `UPDATE core.user_termination_identity_evidence
+          SET source_reference = source_reference
+        WHERE lifecycle_event_id = $1`,
+      [preSnapshotEvents[0]!.eventId],
+    )).rejects.toMatchObject({ code: "55000" });
 
     const lifecycleEventId = randomUUID();
     await expect(client.query(
@@ -371,6 +401,14 @@ describe("asset tenant ownership migration", () => {
            employee_full_name_snapshot, employee_code_snapshot, employee_version
          ) VALUES ($1, $2, $3, 'forged', 'forged', 1)`,
         [randomUUID(), companyA, recoveryEmployeeId],
+      )).rejects.toMatchObject({ code: "42501" });
+      await expect(client.query(
+        `INSERT INTO core.user_termination_identity_evidence (
+           lifecycle_event_id, company_id, employee_user_id,
+           employee_full_name_snapshot, employee_code_snapshot, employee_version,
+           source_reference, verified_by_user_id
+         ) VALUES ($1, $2, $3, 'forged', 'forged', 1, 'forged', $4)`,
+        [randomUUID(), companyA, recoveryEmployeeId, verifierUserId],
       )).rejects.toMatchObject({ code: "42501" });
     } finally {
       await client.query("RESET ROLE");
@@ -584,13 +622,14 @@ describe("asset tenant ownership migration", () => {
       const resetClient = new Client({ connectionString: resetUrl.toString() });
       await resetClient.connect();
       try {
-        const result = await resetClient.query<{ recovery_tickets: string; evidence: string; snapshots: string }>(
+        const result = await resetClient.query<{ recovery_tickets: string; evidence: string; termination_evidence: string; snapshots: string }>(
           `SELECT
              (SELECT count(*)::text FROM assets.asset_recovery_tickets) AS recovery_tickets,
              (SELECT count(*)::text FROM assets.asset_recovery_identity_evidence) AS evidence,
+             (SELECT count(*)::text FROM core.user_termination_identity_evidence) AS termination_evidence,
              (SELECT count(*)::text FROM core.user_termination_identity_snapshots) AS snapshots`,
         );
-        expect(result.rows).toEqual([{ recovery_tickets: "0", evidence: "0", snapshots: "0" }]);
+        expect(result.rows).toEqual([{ recovery_tickets: "0", evidence: "0", termination_evidence: "0", snapshots: "0" }]);
       } finally {
         await resetClient.end();
       }

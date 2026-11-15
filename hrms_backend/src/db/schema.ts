@@ -134,6 +134,18 @@ export const userTerminationIdentitySnapshots = core.table(
   (table) => [index("user_termination_identity_company_employee_idx").on(table.companyId, table.employeeUserId, table.capturedAt.desc())],
 );
 
+export const userTerminationIdentityEvidence = core.table("user_termination_identity_evidence", {
+  lifecycleEventId: uuid("lifecycle_event_id").primaryKey(),
+  companyId: uuid("company_id").notNull(),
+  employeeUserId: uuid("employee_user_id").notNull(),
+  employeeFullNameSnapshot: text("employee_full_name_snapshot").notNull(),
+  employeeCodeSnapshot: text("employee_code_snapshot").notNull(),
+  employeeVersion: integer("employee_version").notNull(),
+  sourceReference: text("source_reference").notNull(),
+  verifiedByUserId: uuid("verified_by_user_id").notNull(),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const roles = core.table("roles", {
   id: uuidPk.defaultRandom(),
   roleKey: text("role_key").notNull(),
@@ -2944,6 +2956,7 @@ export const schema = {
   designations,
   users,
   userTerminationIdentitySnapshots,
+  userTerminationIdentityEvidence,
   roles,
   rolePermissions,
   userRoles,

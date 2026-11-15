@@ -24,18 +24,74 @@ CREATE INDEX IF NOT EXISTS asset_requests_company_numeric_code_idx
 
 DO $$
 DECLARE
-  pending_legacy_termination_count bigint;
+  invalid_legacy_evidence_count bigint;
 BEGIN
-  SELECT count(*) INTO pending_legacy_termination_count
-    FROM platform.outbox_events
-   WHERE aggregate_type = 'core.user'
-     AND event_type = 'core.user.terminated'
-     AND status IN ('pending', 'retry');
-  IF pending_legacy_termination_count > 0 THEN
+  SELECT count(*) INTO invalid_legacy_evidence_count
+    FROM core.user_termination_identity_evidence evidence
+    FULL JOIN platform.outbox_events event
+      ON event.event_id = evidence.lifecycle_event_id
+     AND event.aggregate_type = 'core.user'
+     AND event.event_type = 'core.user.terminated'
+   WHERE event.event_id IS NULL
+      OR evidence.lifecycle_event_id IS NULL
+      OR evidence.employee_user_id <> event.aggregate_id
+      OR btrim(evidence.employee_full_name_snapshot) = ''
+      OR btrim(evidence.employee_code_snapshot) = ''
+      OR btrim(evidence.source_reference) = ''
+      OR NOT EXISTS (
+        SELECT 1 FROM platform.company_profiles company
+         WHERE company.id = evidence.company_id
+      )
+      OR NOT EXISTS (
+        SELECT 1 FROM core.users employee
+         WHERE employee.id = evidence.employee_user_id
+      )
+      OR NOT EXISTS (
+        SELECT 1 FROM core.users verifier
+         WHERE verifier.id = evidence.verified_by_user_id
+      );
+  IF invalid_legacy_evidence_count > 0 THEN
     RAISE EXCEPTION USING
       ERRCODE = '23514',
-      MESSAGE = 'Pending pre-snapshot termination events require reviewed reconciliation.',
-      HINT = 'Resolve each pending or retry termination event under its original company before applying migration 0073.';
+      MESSAGE = 'Pre-snapshot termination evidence is missing, extra, blank, mismatched or unverified.',
+      HINT = 'Stage exactly one independently verified original-company identity row for every historical termination event.';
+  END IF;
+END $$;
+
+INSERT INTO core.user_termination_identity_snapshots (
+  lifecycle_event_id, company_id, employee_user_id,
+  employee_full_name_snapshot, employee_code_snapshot, employee_version,
+  captured_at
+)
+SELECT evidence.lifecycle_event_id, evidence.company_id, evidence.employee_user_id,
+       evidence.employee_full_name_snapshot, evidence.employee_code_snapshot,
+       evidence.employee_version, evidence.verified_at
+  FROM core.user_termination_identity_evidence evidence
+  JOIN platform.outbox_events event
+    ON event.event_id = evidence.lifecycle_event_id
+   AND event.aggregate_type = 'core.user'
+   AND event.event_type = 'core.user.terminated'
+   AND event.aggregate_id = evidence.employee_user_id;
+
+DO $$
+DECLARE
+  unresolved_legacy_termination_count bigint;
+BEGIN
+  SELECT count(*) INTO unresolved_legacy_termination_count
+    FROM platform.outbox_events event
+   WHERE event.aggregate_type = 'core.user'
+     AND event.event_type = 'core.user.terminated'
+     AND NOT EXISTS (
+       SELECT 1
+         FROM core.user_termination_identity_snapshots snapshot
+        WHERE snapshot.lifecycle_event_id = event.event_id
+          AND snapshot.employee_user_id = event.aggregate_id
+     );
+  IF unresolved_legacy_termination_count > 0 THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '23514',
+      MESSAGE = 'Replayable pre-snapshot termination events require reviewed reconciliation.',
+      HINT = 'Stage verified identity evidence for every historical termination event, including published and dead-letter rows, before applying migration 0073.';
   END IF;
 END $$;
 
@@ -116,6 +172,12 @@ CREATE TRIGGER user_termination_identity_snapshot_immutable_trg
   BEFORE UPDATE OR DELETE ON core.user_termination_identity_snapshots
   FOR EACH ROW EXECUTE FUNCTION core.reject_user_termination_identity_snapshot_mutation();
 
+DROP TRIGGER IF EXISTS user_termination_identity_evidence_finalized_trg
+  ON core.user_termination_identity_evidence;
+CREATE TRIGGER user_termination_identity_evidence_finalized_trg
+  BEFORE INSERT OR UPDATE OR DELETE ON core.user_termination_identity_evidence
+  FOR EACH ROW EXECUTE FUNCTION core.reject_user_termination_identity_snapshot_mutation();
+
 ALTER TABLE assets.asset_recovery_tickets
   ADD COLUMN IF NOT EXISTS lifecycle_event_id uuid;
 
@@ -149,3 +211,5 @@ CREATE TRIGGER asset_recovery_identity_immutable_trg
 
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE
   ON core.user_termination_identity_snapshots FROM PUBLIC;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE
+  ON core.user_termination_identity_evidence FROM PUBLIC;

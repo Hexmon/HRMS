@@ -1652,13 +1652,17 @@ function validateAssetTenantOwnershipFinalizationMigration(path, content) {
 function validateAssetRecoveryEvidencePrepMigration(path, content) {
   content = stripSqlComments(content);
   requireSemanticText(path, content, /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+assets\.asset_recovery_identity_evidence[\s\S]*ticket_id\s+uuid\s+PRIMARY\s+KEY[\s\S]*company_id\s+uuid\s+NOT\s+NULL[\s\S]*employee_user_id\s+uuid\s+NOT\s+NULL[\s\S]*source_reference\s+text\s+NOT\s+NULL[\s\S]*verified_by_user_id\s+uuid\s+NOT\s+NULL/i, "recovery evidence staging schema is incomplete");
+  requireSemanticText(path, content, /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+core\.user_termination_identity_evidence[\s\S]*lifecycle_event_id\s+uuid\s+PRIMARY\s+KEY[\s\S]*company_id\s+uuid\s+NOT\s+NULL[\s\S]*employee_user_id\s+uuid\s+NOT\s+NULL[\s\S]*employee_version\s+integer\s+NOT\s+NULL[\s\S]*source_reference\s+text\s+NOT\s+NULL[\s\S]*verified_by_user_id\s+uuid\s+NOT\s+NULL/i, "termination evidence staging schema is incomplete");
   requireSemanticText(path, content, /REVOKE\s+INSERT\s*,\s*UPDATE\s*,\s*DELETE\s*,\s*TRUNCATE[\s\S]*asset_recovery_identity_evidence\s+FROM\s+PUBLIC/i, "PUBLIC recovery evidence mutation privileges must be revoked");
+  requireSemanticText(path, content, /REVOKE\s+INSERT\s*,\s*UPDATE\s*,\s*DELETE\s*,\s*TRUNCATE[\s\S]*user_termination_identity_evidence\s+FROM\s+PUBLIC/i, "PUBLIC termination evidence mutation privileges must be revoked");
 }
 
 function validateAssetTerminationSnapshotMigration(path, content) {
   content = stripSqlComments(content);
   requireSemanticText(path, content, /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+core\.user_termination_identity_snapshots[\s\S]*lifecycle_event_id\s+uuid\s+PRIMARY\s+KEY[\s\S]*employee_version\s+integer\s+NOT\s+NULL/i, "termination identity snapshot schema is incomplete");
-  requireSemanticText(path, content, /event_type\s*=\s*'core\.user\.terminated'[\s\S]*status\s+IN\s*\(\s*'pending'\s*,\s*'retry'\s*\)[\s\S]*pending_legacy_termination_count\s*>\s*0[\s\S]*ERRCODE\s*=\s*'23514'/i, "migration must fail closed for pre-snapshot pending termination events");
+  requireSemanticText(path, content, /FULL\s+JOIN\s+platform\.outbox_events[\s\S]*event\.event_type\s*=\s*'core\.user\.terminated'[\s\S]*evidence\.employee_user_id\s*<>\s*event\.aggregate_id[\s\S]*verified_by_user_id[\s\S]*invalid_legacy_evidence_count\s*>\s*0[\s\S]*ERRCODE\s*=\s*'23514'/i, "historical termination evidence must be exact, complete and independently verified");
+  requireSemanticText(path, content, /INSERT\s+INTO\s+core\.user_termination_identity_snapshots[\s\S]*FROM\s+core\.user_termination_identity_evidence[\s\S]*event\.aggregate_id\s*=\s*evidence\.employee_user_id/i, "verified historical termination evidence must be copied into immutable snapshots");
+  requireSemanticText(path, content, /event_type\s*=\s*'core\.user\.terminated'[\s\S]*NOT\s+EXISTS\s*\([\s\S]*core\.user_termination_identity_snapshots[\s\S]*snapshot\.lifecycle_event_id\s*=\s*event\.event_id[\s\S]*unresolved_legacy_termination_count\s*>\s*0[\s\S]*ERRCODE\s*=\s*'23514'/i, "migration must fail closed for every unresolved replayable pre-snapshot termination event");
   requireSemanticText(path, content, /FUNCTION\s+core\.capture_user_termination_identity_snapshot\s*\(\s*\)[\s\S]*SECURITY\s+DEFINER[\s\S]*SET\s+search_path\s*=\s*pg_catalog\s*,\s*core\s*,\s*platform[\s\S]*REVOKE\s+ALL\s+ON\s+FUNCTION\s+core\.capture_user_termination_identity_snapshot\s*\(\s*\)\s+FROM\s+PUBLIC/i, "termination capture must use a fixed-search-path, non-public security-definer boundary");
   requireSemanticText(path, content, /AFTER\s+INSERT\s+ON\s+platform\.outbox_events[\s\S]*EXECUTE\s+FUNCTION\s+core\.capture_user_termination_identity_snapshot\s*\(\s*\)/i, "termination snapshot trigger must bind the capture function");
   requireSemanticText(path, content, /event_type\s*<>\s*'core\.user\.terminated'[\s\S]*payload_employee_version[\s\S]*u\.version\s*=\s*payload_employee_version/i, "termination capture must bind the exact durable employee version");
@@ -1667,6 +1671,7 @@ function validateAssetTerminationSnapshotMigration(path, content) {
   requireSemanticText(path, content, /NEW\.lifecycle_event_id\s+IS\s+DISTINCT\s+FROM\s+OLD\.lifecycle_event_id/i, "recovery lifecycle event identity must be immutable");
   requireSemanticText(path, content, /TG_OP\s*=\s*'DELETE'[\s\S]*ERRCODE\s*=\s*'55000'[\s\S]*BEFORE\s+UPDATE\s+OR\s+DELETE\s+ON\s+assets\.asset_recovery_tickets/i, "recovery history deletion must be rejected by the finalized trigger");
   requireSemanticText(path, content, /BEFORE\s+UPDATE\s+OR\s+DELETE\s+ON\s+core\.user_termination_identity_snapshots[\s\S]*EXECUTE\s+FUNCTION\s+core\.reject_user_termination_identity_snapshot_mutation\s*\(\s*\)/i, "termination snapshots must be immutable");
+  requireSemanticText(path, content, /BEFORE\s+INSERT\s+OR\s+UPDATE\s+OR\s+DELETE\s+ON\s+core\.user_termination_identity_evidence[\s\S]*EXECUTE\s+FUNCTION\s+core\.reject_user_termination_identity_snapshot_mutation\s*\(\s*\)/i, "historical termination evidence must be frozen after finalization");
 }
 
 function validateFrontendContractRouteCoverage(path, content) {
