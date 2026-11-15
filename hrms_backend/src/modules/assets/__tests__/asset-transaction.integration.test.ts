@@ -1135,24 +1135,45 @@ describe("asset transaction boundary", () => {
       [seedIds.assetManager],
     );
     const { company_id: companyId, asset_id: assetId, asset_type: assetType } = context.rows[0]!;
+    let unlinkedRecoveryId: string | undefined;
+    let unlinkedAcknowledgementId: string | undefined;
     const client = await first.store.pgPool!.connect();
     try {
       await client.query("BEGIN");
       await client.query("SET LOCAL hrms.asset_writer_v2 = 'on'");
       await client.query(
         `INSERT INTO assets.asset_maintenance_records
-           (id, company_id, asset_id, maintenance_type, started_on, status, notes)
-         VALUES (gen_random_uuid(), $1, $2, 'inspection', current_date, 'completed', 'projection-coverage')`,
-        [companyId, assetId],
+           (id, company_id, asset_id, maintenance_type, vendor_id, started_on, status, notes)
+         VALUES (gen_random_uuid(), $1, $2, 'inspection', $3, current_date, 'completed', 'projection-coverage')`,
+        [companyId, assetId, first.store.assetVendors[0]!.id],
       );
       await client.query(
+        `INSERT INTO assets.asset_requests
+           (id, company_id, request_code, requester_user_id, request_type, asset_type,
+            reason, priority, preferred_specs, status)
+         VALUES (gen_random_uuid(), $1, $2, $3, 'new', $4,
+                 'projection coverage', 'medium', '{}'::jsonb, 'pending')`,
+        [companyId, `REQ-COVERAGE-${randomUUID()}`, seedIds.assetManager, assetType],
+      );
+      const recovery = await client.query<{ id: string }>(
         `INSERT INTO assets.asset_recovery_tickets
            (id, company_id, employee_user_id, employee_full_name_snapshot,
             employee_code_snapshot, asset_id, assignment_id, status)
          SELECT gen_random_uuid(), $1, u.id, u.full_name, u.employee_code, $2, NULL, 'open'
-           FROM core.users u WHERE u.id = $3`,
+           FROM core.users u WHERE u.id = $3
+         RETURNING id`,
         [companyId, assetId, seedIds.employee1],
       );
+      unlinkedRecoveryId = recovery.rows[0]!.id;
+      const acknowledgement = await client.query<{ id: string }>(
+        `INSERT INTO assets.asset_acknowledgements
+           (id, company_id, asset_id, employee_user_id, assignment_id,
+            acknowledgement_type, status)
+         VALUES (gen_random_uuid(), $1, $2, $3, NULL, 'received', 'pending')
+         RETURNING id`,
+        [companyId, assetId, seedIds.employee1],
+      );
+      unlinkedAcknowledgementId = acknowledgement.rows[0]!.id;
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
@@ -1209,6 +1230,20 @@ describe("asset transaction boundary", () => {
     );
     await runProjection("assets.requests.create", { requestAssetType: assetType });
     await runProjection("assets.projection.related-asset", { relatedAssetId: assetId });
+    await runProjection(`assets.maintenance.create:${assetId}`, { resourceId: assetId });
+    await runProjection(`assets.recovery.settle:${unlinkedRecoveryId!}`, { resourceId: unlinkedRecoveryId });
+    await persistence.assetCommand!(
+      {
+        companyId,
+        actorUserId: seedIds.assetManager,
+        actionKey: `assets.acknowledge:${assetId}`,
+        idempotencyKey: randomUUID(),
+        requestHash: randomUUID().replaceAll("-", "").padEnd(64, "0"),
+        resourceId: assetId,
+      },
+      () => undefined,
+      () => ({ acknowledgement: { id: unlinkedAcknowledgementId } }),
+    );
     const vendorName = first.store.assetVendors[0]?.name;
     if (vendorName) await runProjection("assets.vendors.create", { vendorName });
   });

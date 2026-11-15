@@ -603,6 +603,19 @@ describe("asset routes with the memory persistence fallback", () => {
     });
     expect(response.statusCode, response.body).toBe(200);
     expect(store.assetReadMetadata.assetMaintenanceTotals?.[asset.id]).toBe(1);
+
+    const second = await app.inject({
+      method: "POST",
+      url: `/assets/${asset.id}/maintenance`,
+      headers: commandHeaders(seedIds.assetManager),
+      payload: {
+        maintenance_type: "inspection",
+        started_on: "2026-11-16",
+        expected_version: asset.version,
+      },
+    });
+    expect(second.statusCode, second.body).toBe(200);
+    expect(store.assetReadMetadata.assetMaintenanceTotals?.[asset.id]).toBe(2);
   });
 
   it("covers every changed protected route's own actor guard", async () => {

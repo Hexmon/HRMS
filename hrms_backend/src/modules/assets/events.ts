@@ -8,7 +8,7 @@ export function createRecoveryTicketsForTerminatedEmployee(
   store: MemoryDataStore,
   companyId: UUID,
   employeeUserId: UUID,
-  lifecycleEventId: UUID | null = null,
+  lifecycleEventId?: UUID | null,
   historicalIdentity?: { employeeUserId: UUID; fullName: string; employeeCode: string },
 ): number {
   const employee = store.users.find((user) => user.id === employeeUserId);
@@ -39,7 +39,7 @@ export function createRecoveryTicketsForTerminatedEmployee(
       employee_user_id: employeeUserId,
       employee_full_name_snapshot: historicalIdentity?.fullName ?? employee!.full_name,
       employee_code_snapshot: historicalIdentity?.employeeCode ?? employee!.employee_code,
-      lifecycle_event_id: lifecycleEventId,
+      lifecycle_event_id: lifecycleEventId ?? null,
       asset_id: asset.id,
       assignment_id: activeAssignments[0]!.id,
       status: "open",
