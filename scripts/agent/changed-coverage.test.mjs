@@ -1010,6 +1010,7 @@ test("asset tenant ownership finalization has an explicit immutable-evidence sem
     ["CREATE TRIGGER finalized_asset_vendor_root_identity_trg", "CREATE TRIGGER finalized_asset_vendor_root_identity_missing_trg", /software_vendors/],
     ["EXECUTE FUNCTION assets.prevent_finalized_asset_root_orphaning()", "EXECUTE FUNCTION assets.reject_finalized_asset_ownership_map_mutation()", /misbound/],
     ["NEW.employee_full_name_snapshot IS DISTINCT FROM OLD.employee_full_name_snapshot", "FALSE", /employee_full_name_snapshot/],
+    ["BEFORE UPDATE OR DELETE ON assets.asset_recovery_tickets", "BEFORE UPDATE ON assets.asset_recovery_tickets", /permits deletion/],
     ["REVOKE INSERT, UPDATE, DELETE, TRUNCATE", "REVOKE SELECT", /PUBLIC ownership-map mutation privileges/],
   ]) {
     assert.throws(
@@ -1034,6 +1035,10 @@ test("asset recovery evidence staging and runtime termination snapshots have sem
   assert.match(validateSemanticPath(repositoryRoot, runtimePath, runtime, "base"), /semantic contract passed/);
   assert.throws(() => validateSemanticPath(repositoryRoot, prepPath, prep.replace("ticket_id uuid PRIMARY KEY", "ticket_id uuid"), "base"), /staging schema/);
   assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replaceAll("u.version = payload_employee_version", "TRUE"), "base"), /exact durable employee version/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("pending_legacy_termination_count > 0", "FALSE"), "base"), /pre-snapshot pending termination events/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("SECURITY DEFINER", "SECURITY INVOKER"), "base"), /security-definer boundary/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("u.employment_status = 'terminated'", "TRUE"), "base"), /committed terminated employee state/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("BEFORE UPDATE OR DELETE ON assets.asset_recovery_tickets", "BEFORE UPDATE ON assets.asset_recovery_tickets"), "base"), /history deletion/);
   assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("NEW.lifecycle_event_id IS DISTINCT FROM OLD.lifecycle_event_id", "FALSE"), "base"), /lifecycle event identity/);
 });
 

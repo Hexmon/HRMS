@@ -14305,16 +14305,6 @@
                     "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
                     "nullable": true
                   },
-                  "employment_status": {
-                    "type": "string",
-                    "enum": [
-                      "active",
-                      "inactive",
-                      "terminated",
-                      "suspended"
-                    ],
-                    "example": "active"
-                  },
                   "timezone": {
                     "type": "string",
                     "nullable": true,
@@ -14324,13 +14314,6 @@
                     "type": "string",
                     "format": "date",
                     "description": "Joining date",
-                    "example": "2026-05-04",
-                    "nullable": true
-                  },
-                  "terminated_on": {
-                    "type": "string",
-                    "format": "date",
-                    "description": "Termination date",
                     "example": "2026-05-04",
                     "nullable": true
                   }

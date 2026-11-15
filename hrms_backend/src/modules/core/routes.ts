@@ -64,11 +64,9 @@ const updateUserSchema = expectedVersionSchema.extend({
   department_id: z.uuid().optional(),
   designation_id: z.uuid().optional(),
   manager_user_id: z.uuid().nullable().optional(),
-  employment_status: employmentStatusSchema.optional(),
   timezone: z.string().min(1).max(80).nullable().optional(),
-  joined_on: dateSchema.nullable().optional(),
-  terminated_on: dateSchema.nullable().optional()
-});
+  joined_on: dateSchema.nullable().optional()
+}).strict();
 
 const statusBodySchema = expectedVersionSchema.extend({
   effective_date: dateSchema.optional(),

@@ -138,7 +138,18 @@ SELECT count(*) AS orphan_or_mismatch
 2. Apply `0071_asset_recovery_identity_evidence_prep.sql` only. Pause before 0072. Populate one `assets.asset_recovery_identity_evidence` row per legacy recovery ticket from an approved original-company source, recording the ticket/company/user, historical name/code, source reference, accountable verifier and verification time. Grant the named migration operator only the temporary DML needed for this staging step; the runtime role must never receive it. Reconcile exact one-to-one counts and independently review blank, extra and mismatched rows.
    The normal migration runner enforces this pause: without approval it applies 0071, refuses 0072 and exits non-zero. This first non-approved failure is expected and must be handled by deployment orchestration as a paused, incomplete rollout—not a successful deployment and not an automatic retry loop. After evidence review, run the finalization once with `HRMS_MIGRATION_APPROVAL=0072_asset_tenant_ownership_finalization.sql pnpm db:migrate` (or the production command), then remove that environment variable immediately. A wrong, absent, or prematurely supplied value cannot cross the barrier.
 3. Apply `0072_asset_tenant_ownership_finalization.sql`. It must fail closed with SQLSTATE `23502` for unattributed mappings or missing recovery evidence, `23503` for an unknown verifier/orphan root, and `23514` for an owner/evidence mismatch. It replaces any legacy mutable-profile snapshot with ticket-bound verified evidence, freezes both evidence maps and does not read current employee profiles. The migration does not require an historical company to remain active.
-4. Apply `0073_asset_termination_identity_snapshot.sql`. Confirm new `core.user.terminated` outbox inserts atomically create an immutable version-bound snapshot and that malformed legacy payloads fail closed. Revoke any temporary evidence-staging grant before starting the API.
+4. Before applying `0073_asset_termination_identity_snapshot.sql`, the following query must return zero. The migration refuses pending/retry termination events created before snapshot capture existed because reconstructing their historical company/name from mutable current profiles would be unsafe. Reconcile each row under its verified original company through an independently reviewed procedure; do not mark it published, delete it, or fabricate a snapshot merely to cross the gate.
+
+```sql
+SELECT event_id, aggregate_id, status, created_at
+  FROM platform.outbox_events
+ WHERE aggregate_type = 'core.user'
+   AND event_type = 'core.user.terminated'
+   AND status IN ('pending', 'retry')
+ ORDER BY created_at, event_id;
+```
+
+   Apply `0073_asset_termination_identity_snapshot.sql` only after that review is complete. Confirm new `core.user.terminated` inserts succeed only when the exact company/version employee row is already terminated with a termination date, atomically create an immutable snapshot, and reject malformed or active-employee events with SQLSTATE `23514`. Revoke any temporary evidence-staging grant before starting the API.
 5. Confirm the map and recovery identity triggers are enabled and the map is no longer writable:
 
 ```sql
@@ -166,9 +177,9 @@ UPDATE assets.asset_tenant_ownership_map
 ROLLBACK;
 ```
 
-The trigger check must return all five enabled triggers. Validate a real map row and a mapped-root delete/re-key inside rollback-only transactions using the approved migration role and expect SQLSTATE `55000`; the `WHERE false` smoke query only confirms syntax and privileges.
+The trigger check must return all five enabled triggers. Validate a real map row, a mapped-root delete/re-key, and both legacy and lifecycle-linked recovery-ticket deletes inside rollback-only transactions using the approved migration role and expect SQLSTATE `55000`; the `WHERE false` smoke query only confirms syntax and privileges.
 
-6. Use a distinct non-owner runtime database role. Explicitly revoke ownership-map DML from that role in the environment's managed grants, then verify all four results are false before starting the API:
+6. Use a distinct non-owner runtime database role. Explicitly revoke ownership-map and termination-snapshot DML from that role in the environment's managed grants. Migration 0073's fixed-search-path security-definer trigger captures a valid snapshot when that role inserts the outbox event; the role must not insert a snapshot directly. Verify all results are false before starting the API:
 
 ```sql
 SELECT
@@ -176,6 +187,12 @@ SELECT
   has_table_privilege('<runtime-role>', 'assets.asset_tenant_ownership_map', 'UPDATE') AS can_update,
   has_table_privilege('<runtime-role>', 'assets.asset_tenant_ownership_map', 'DELETE') AS can_delete,
   has_table_privilege('<runtime-role>', 'assets.asset_tenant_ownership_map', 'TRUNCATE') AS can_truncate;
+
+SELECT
+  has_table_privilege('<runtime-role>', 'core.user_termination_identity_snapshots', 'INSERT') AS can_insert,
+  has_table_privilege('<runtime-role>', 'core.user_termination_identity_snapshots', 'UPDATE') AS can_update,
+  has_table_privilege('<runtime-role>', 'core.user_termination_identity_snapshots', 'DELETE') AS can_delete,
+  has_table_privilege('<runtime-role>', 'core.user_termination_identity_snapshots', 'TRUNCATE') AS can_truncate;
 ```
 
 Do not run the API as the table owner or a superuser. Do not grant runtime code direct map DML after cutover. `REVOKE ... FROM PUBLIC` in 0070 is a floor, not proof that an environment-specific runtime role is least-privileged.

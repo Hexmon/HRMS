@@ -987,7 +987,7 @@ describe("asset transaction boundary", () => {
           `INSERT INTO assets.asset_maintenance_records (
              id, company_id, asset_id, maintenance_type, started_on, status, notes
            )
-           SELECT gen_random_uuid(), $1, $2, 'inspection', current_date, 'completed',
+           SELECT gen_random_uuid(), $1, $2, 'inspection', current_date - (item % 5), 'completed',
                   'bounded-read-' || item::text
              FROM generate_series(1, 105) AS item`,
           [asset.company_id, asset.id],
@@ -1042,6 +1042,16 @@ describe("asset transaction boundary", () => {
       });
       expect(detail.statusCode, detail.body).toBe(200);
       expect(detail.json().maintenance).toHaveLength(100);
+      const expectedDetailMaintenance = await first.store.pgPool!.query<{ id: string }>(
+        `SELECT id
+           FROM assets.asset_maintenance_records
+          WHERE company_id = $1 AND asset_id = $2 AND deleted_at IS NULL
+          ORDER BY started_on DESC, created_at DESC, id DESC
+          LIMIT 100`,
+        [asset.company_id, asset.id],
+      );
+      expect(detail.json().maintenance.map((record: { id: string }) => record.id))
+        .toEqual(expectedDetailMaintenance.rows.map((record) => record.id));
       expect(detail.json()).toMatchObject({
         maintenance_total: expect.any(Number),
         maintenance_has_more: true,
@@ -1216,6 +1226,17 @@ describe("asset transaction boundary", () => {
     await expect(read("assets.unsupported")).rejects.toThrow(/Unsupported bounded asset read operation/u);
 
     if (!persistence.assetCommand) throw new Error("Expected PostgreSQL asset command persistence");
+    const projections = new Map<string, {
+      assets: string[];
+      requests: string[];
+      vendors: string[];
+      recoveries: string[];
+      acknowledgements: string[];
+      assignments: string[];
+      maintenance: string[];
+      entitlements: number;
+      activations: number;
+    }>();
     const runProjection = (actionKey: string, extra: Record<string, unknown>) => persistence.assetCommand!(
       {
         companyId,
@@ -1225,7 +1246,17 @@ describe("asset transaction boundary", () => {
         requestHash: randomUUID().replaceAll("-", "").padEnd(64, "0"),
         ...extra,
       },
-      () => undefined,
+      (store) => projections.set(actionKey, {
+        assets: store.assets.map((item) => item.id),
+        requests: store.assetRequests.map((item) => item.id),
+        vendors: store.assetVendors.map((item) => item.id),
+        recoveries: store.assetRecoveryTickets.map((item) => item.id),
+        acknowledgements: store.assetAcknowledgements.map((item) => item.id),
+        assignments: store.assetAssignments.map((item) => item.id),
+        maintenance: store.assetMaintenanceRecords.map((item) => item.id),
+        entitlements: store.licenseEntitlements.length,
+        activations: store.licenseActivations.length,
+      }),
       () => ({ ok: true }),
     );
     await runProjection("assets.requests.create", { requestAssetType: assetType });
@@ -1241,11 +1272,45 @@ describe("asset transaction boundary", () => {
         requestHash: randomUUID().replaceAll("-", "").padEnd(64, "0"),
         resourceId: assetId,
       },
-      () => undefined,
+      (store) => projections.set(`assets.acknowledge:${assetId}`, {
+        assets: store.assets.map((item) => item.id),
+        requests: store.assetRequests.map((item) => item.id),
+        vendors: store.assetVendors.map((item) => item.id),
+        recoveries: store.assetRecoveryTickets.map((item) => item.id),
+        acknowledgements: store.assetAcknowledgements.map((item) => item.id),
+        assignments: store.assetAssignments.map((item) => item.id),
+        maintenance: store.assetMaintenanceRecords.map((item) => item.id),
+        entitlements: store.licenseEntitlements.length,
+        activations: store.licenseActivations.length,
+      }),
       () => ({ acknowledgement: { id: unlinkedAcknowledgementId } }),
     );
     const vendorName = first.store.assetVendors[0]?.name;
     if (vendorName) await runProjection("assets.vendors.create", { vendorName });
+
+    expect(projections.get("assets.requests.create")).toMatchObject({
+      assets: [], requests: [expect.any(String)], entitlements: 0, activations: 0,
+    });
+    expect(projections.get("assets.projection.related-asset")).toMatchObject({
+      assets: [assetId], requests: [], entitlements: 0, activations: 0,
+    });
+    expect(projections.get(`assets.maintenance.create:${assetId}`)).toMatchObject({
+      assets: [assetId], requests: [], maintenance: [expect.any(String)],
+      vendors: [first.store.assetVendors[0]!.id], entitlements: 0, activations: 0,
+    });
+    expect(projections.get(`assets.recovery.settle:${unlinkedRecoveryId!}`)).toMatchObject({
+      assets: [assetId], recoveries: [unlinkedRecoveryId], assignments: [],
+      entitlements: 0, activations: 0,
+    });
+    expect(projections.get(`assets.acknowledge:${assetId}`)).toMatchObject({
+      assets: [assetId], acknowledgements: [unlinkedAcknowledgementId], assignments: [],
+      entitlements: 0, activations: 0,
+    });
+    if (vendorName) {
+      expect(projections.get("assets.vendors.create")).toMatchObject({
+        assets: [], vendors: [first.store.assetVendors[0]!.id], entitlements: 0, activations: 0,
+      });
+    }
   });
 
   it("returns original-company recovery identity after an employee transfers to another company", async () => {
@@ -1265,6 +1330,7 @@ describe("asset transaction boundary", () => {
     });
     expect(assigned.statusCode, assigned.body).toBe(200);
     const lifecycleEventId = await recordDurableTermination(first, seedIds.employee1);
+    await first.store.pgPool!.query("DELETE FROM platform.outbox_events WHERE event_id = $1", [lifecycleEventId]);
     const companyBId = randomUUID();
     await first.store.pgPool!.query(
       "INSERT INTO platform.company_profiles (id, company_name, company_slug, status) VALUES ($1, 'Transferred Employer', $2, 'active')",
@@ -1358,7 +1424,7 @@ describe("asset transaction boundary", () => {
     }
   });
 
-  it("allocates a request code beyond imported gaps", async () => {
+  it("allocates a request code beyond imported and soft-deleted history", async () => {
     const employee = await loginAs(first, "E1");
     const create = (assetType: string) => first.inject({ method: "POST", url: "/api/v1/assets/requests", headers: { ...authHeader(employee.token), "Idempotency-Key": randomUUID() }, payload: { request_type: "new", asset_type: assetType, reason: "Work device needed" } });
     const firstRequest = await create("Laptop");
@@ -1367,7 +1433,10 @@ describe("asset transaction boundary", () => {
     try {
       await client.query("BEGIN");
       await client.query("SELECT set_config('hrms.asset_writer_v2', 'on', true)");
-      await client.query("UPDATE assets.asset_requests SET request_code = 'REQ-999' WHERE id = $1", [firstRequest.json().request.id]);
+      await client.query(
+        "UPDATE assets.asset_requests SET request_code = 'REQ-999', deleted_at = now() WHERE id = $1",
+        [firstRequest.json().request.id],
+      );
       await client.query("COMMIT");
     } finally { client.release(); }
     const next = await create("Monitor");

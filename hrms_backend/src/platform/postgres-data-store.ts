@@ -725,7 +725,10 @@ class PostgresPersistence {
         : (await client.query<{ id: UUID }>(
             `SELECT id FROM (
                SELECT id, asset_id,
-                      row_number() OVER (PARTITION BY asset_id ORDER BY created_at DESC, id DESC) AS row_number
+                      row_number() OVER (
+                        PARTITION BY asset_id
+                        ORDER BY started_on DESC, created_at DESC, id DESC
+                      ) AS row_number
                  FROM assets.asset_maintenance_records
                 WHERE company_id = $1 AND asset_id = ANY($2::uuid[]) AND deleted_at IS NULL
              ) ranked
@@ -1187,25 +1190,17 @@ class PostgresPersistence {
         }>(
           `SELECT identity.employee_user_id, identity.employee_full_name_snapshot,
                   identity.employee_code_snapshot, identity.employee_version
-             FROM platform.outbox_events event
-             JOIN core.user_termination_identity_snapshots identity
-               ON identity.lifecycle_event_id = event.event_id
+             FROM core.user_termination_identity_snapshots identity
+            WHERE identity.lifecycle_event_id = $1
               AND identity.company_id = $3
               AND identity.employee_user_id = $2
-            WHERE event.event_id = $1
-              AND event.aggregate_type = 'core.user'
-              AND event.aggregate_id = $2
-              AND event.event_type = 'core.user.terminated'
-              AND event.payload->>'company_id' = $3::text
-              AND event.payload->>'user_id' = $2::text
-              AND event.payload->>'employee_version' = identity.employee_version::text
               AND EXISTS (
                 SELECT 1 FROM assets.asset_assignments assignment
                  WHERE assignment.company_id = $3
                    AND assignment.assigned_to_user_id = $2
                    AND assignment.status = 'active'
               )
-            FOR SHARE OF event, identity`,
+            FOR SHARE OF identity`,
           [input.lifecycleEventId, input.terminatedEmployeeUserId, input.companyId],
         );
         if (lifecycle.rowCount !== 1) {
@@ -1400,8 +1395,13 @@ class PostgresPersistence {
       );
       snapshot.assetRequests = await this.loadAssetRequests(client, input.companyId, rows.rows.map((row) => row.id));
       const allocation = await client.query<{ next_number: number }>(
-        `SELECT GREATEST(401, COALESCE(max((regexp_match(request_code, '^REQ-([0-9]+)$'))[1]::integer), 400) + 1)::integer AS next_number
-           FROM assets.asset_requests WHERE company_id = $1`,
+        `SELECT GREATEST(401::numeric, COALESCE((
+           SELECT (substring(request_code FROM '^REQ-([0-9]+)$'))::numeric + 1
+             FROM assets.asset_requests
+            WHERE company_id = $1 AND request_code ~ '^REQ-[0-9]+$'
+            ORDER BY (substring(request_code FROM '^REQ-([0-9]+)$'))::numeric DESC
+            LIMIT 1
+         ), 401::numeric))::integer AS next_number`,
         [input.companyId],
       );
       snapshot.assetCommandMetadata = { nextRequestNumber: allocation.rows[0]!.next_number };

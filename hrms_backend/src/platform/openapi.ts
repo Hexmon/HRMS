@@ -2410,14 +2410,8 @@ const coreUserUpdateBodySchema = {
     department_id: uuid("Department UUID"),
     designation_id: uuid("Designation UUID"),
     manager_user_id: { ...uuid("Reporting manager user UUID"), nullable: true },
-    employment_status: {
-      type: "string",
-      enum: ["active", "inactive", "terminated", "suspended"],
-      example: "active",
-    },
     timezone: { type: "string", nullable: true, example: "Asia/Kolkata" },
     joined_on: { ...date("Joining date"), nullable: true },
-    terminated_on: { ...date("Termination date"), nullable: true },
   },
   additionalProperties: false,
 };

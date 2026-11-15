@@ -1383,10 +1383,8 @@ Required: yes
 | `department_id` | string<uuid> | optional | Department UUID |
 | `designation_id` | string<uuid> | optional | Designation UUID |
 | `manager_user_id` | string<uuid> | optional, nullable | Reporting manager user UUID |
-| `employment_status` | string enum("active", "inactive", "terminated", "suspended") | optional | - |
 | `timezone` | string | optional, nullable | - |
 | `joined_on` | string<date> | optional, nullable | Joining date |
-| `terminated_on` | string<date> | optional, nullable | Termination date |
 
 **Responses**
 | Status | Meaning |

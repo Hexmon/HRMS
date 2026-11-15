@@ -215,6 +215,11 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
+  IF TG_OP = 'DELETE' THEN
+    RAISE EXCEPTION USING
+      ERRCODE = '55000',
+      MESSAGE = 'Asset recovery history is immutable.';
+  END IF;
   IF NEW.company_id IS DISTINCT FROM OLD.company_id
      OR NEW.employee_user_id IS DISTINCT FROM OLD.employee_user_id
      OR NEW.employee_full_name_snapshot IS DISTINCT FROM OLD.employee_full_name_snapshot
@@ -231,7 +236,7 @@ END $$;
 DROP TRIGGER IF EXISTS asset_recovery_identity_immutable_trg
   ON assets.asset_recovery_tickets;
 CREATE TRIGGER asset_recovery_identity_immutable_trg
-  BEFORE UPDATE ON assets.asset_recovery_tickets
+  BEFORE UPDATE OR DELETE ON assets.asset_recovery_tickets
   FOR EACH ROW EXECUTE FUNCTION assets.reject_asset_recovery_identity_mutation();
 
 REVOKE INSERT, UPDATE, DELETE, TRUNCATE

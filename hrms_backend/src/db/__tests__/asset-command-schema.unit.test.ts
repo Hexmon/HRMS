@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getTableConfig } from "drizzle-orm/pg-core";
-import { assetRecoveryTickets, attendancePunchEvents } from "../schema.js";
+import { assetRecoveryTickets, assetRequests, attendancePunchEvents } from "../schema.js";
 import { swaggerTransform } from "../../platform/openapi.js";
 
 describe("asset command schema and OpenAPI boundary", () => {
@@ -25,6 +25,17 @@ describe("asset command schema and OpenAPI boundary", () => {
     ]));
     expect(attendanceColumns).not.toContain("employee_full_name_snapshot");
     expect(attendanceColumns).not.toContain("employee_code_snapshot");
+  });
+
+  it("indexes tenant-local numeric request-code allocation", () => {
+    const config = getTableConfig(assetRequests);
+    const allocationIndex = config.indexes.find(
+      (candidate) => candidate.config.name === "asset_requests_company_numeric_code_idx",
+    );
+
+    expect(allocationIndex).toBeDefined();
+    expect(allocationIndex?.config.columns).toHaveLength(2);
+    expect(allocationIndex?.config.where).toBeDefined();
   });
 
   it("documents idempotency only for private asset mutations", () => {

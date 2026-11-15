@@ -2279,6 +2279,9 @@ export const assetRequests = assets.table(
   },
   (table) => [
     uniqueIndex("asset_requests_company_request_code_uq").on(table.companyId, table.requestCode),
+    index("asset_requests_company_numeric_code_idx")
+      .on(table.companyId, sql`((substring(${table.requestCode} FROM '^REQ-([0-9]+)$'))::numeric) DESC`)
+      .where(sql`${table.requestCode} ~ '^REQ-[0-9]+$'`),
     index("asset_requests_requester_status_idx").on(table.requesterUserId, table.status, table.createdAt),
     index("asset_requests_company_status_priority_idx")
       .on(table.companyId, table.status, table.priority, table.createdAt.desc())

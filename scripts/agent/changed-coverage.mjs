@@ -1645,7 +1645,7 @@ function validateAssetTenantOwnershipFinalizationMigration(path, content) {
   for (const column of ["company_id", "employee_user_id", "employee_full_name_snapshot", "employee_code_snapshot", "asset_id", "assignment_id"]) {
     requireSemanticText(path, content, new RegExp(`NEW\\.${column}\\s+IS\\s+DISTINCT\\s+FROM\\s+OLD\\.${column}`, "i"), `recovery identity immutability is missing ${column}`);
   }
-  requireSemanticText(path, content, /CREATE\s+TRIGGER\s+asset_recovery_identity_immutable_trg[\s\S]*BEFORE\s+UPDATE\s+ON\s+assets\.asset_recovery_tickets[\s\S]*EXECUTE\s+FUNCTION\s+assets\.reject_asset_recovery_identity_mutation\s*\(\s*\)/i, "recovery identity immutability trigger is missing or misbound");
+  requireSemanticText(path, content, /TG_OP\s*=\s*'DELETE'[\s\S]*ERRCODE\s*=\s*'55000'[\s\S]*CREATE\s+TRIGGER\s+asset_recovery_identity_immutable_trg[\s\S]*BEFORE\s+UPDATE\s+OR\s+DELETE\s+ON\s+assets\.asset_recovery_tickets[\s\S]*EXECUTE\s+FUNCTION\s+assets\.reject_asset_recovery_identity_mutation\s*\(\s*\)/i, "recovery identity immutability trigger is missing, misbound, or permits deletion");
   requireSemanticText(path, content, /REVOKE\s+INSERT\s*,\s*UPDATE\s*,\s*DELETE\s*,\s*TRUNCATE[\s\S]*ON\s+assets\.asset_tenant_ownership_map\s+FROM\s+PUBLIC/i, "PUBLIC ownership-map mutation privileges must be revoked");
 }
 
@@ -1658,10 +1658,14 @@ function validateAssetRecoveryEvidencePrepMigration(path, content) {
 function validateAssetTerminationSnapshotMigration(path, content) {
   content = stripSqlComments(content);
   requireSemanticText(path, content, /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+core\.user_termination_identity_snapshots[\s\S]*lifecycle_event_id\s+uuid\s+PRIMARY\s+KEY[\s\S]*employee_version\s+integer\s+NOT\s+NULL/i, "termination identity snapshot schema is incomplete");
+  requireSemanticText(path, content, /event_type\s*=\s*'core\.user\.terminated'[\s\S]*status\s+IN\s*\(\s*'pending'\s*,\s*'retry'\s*\)[\s\S]*pending_legacy_termination_count\s*>\s*0[\s\S]*ERRCODE\s*=\s*'23514'/i, "migration must fail closed for pre-snapshot pending termination events");
+  requireSemanticText(path, content, /FUNCTION\s+core\.capture_user_termination_identity_snapshot\s*\(\s*\)[\s\S]*SECURITY\s+DEFINER[\s\S]*SET\s+search_path\s*=\s*pg_catalog\s*,\s*core\s*,\s*platform[\s\S]*REVOKE\s+ALL\s+ON\s+FUNCTION\s+core\.capture_user_termination_identity_snapshot\s*\(\s*\)\s+FROM\s+PUBLIC/i, "termination capture must use a fixed-search-path, non-public security-definer boundary");
   requireSemanticText(path, content, /AFTER\s+INSERT\s+ON\s+platform\.outbox_events[\s\S]*EXECUTE\s+FUNCTION\s+core\.capture_user_termination_identity_snapshot\s*\(\s*\)/i, "termination snapshot trigger must bind the capture function");
   requireSemanticText(path, content, /event_type\s*<>\s*'core\.user\.terminated'[\s\S]*payload_employee_version[\s\S]*u\.version\s*=\s*payload_employee_version/i, "termination capture must bind the exact durable employee version");
   requireSemanticText(path, content, /JOIN\s+platform\.user_session_preferences\s+preference\s+ON\s+preference\.user_id\s*=\s*u\.id[\s\S]*preference\.company_id\s*=\s*payload_company_id[\s\S]*membership_count\s*<>\s*1[\s\S]*ERRCODE\s*=\s*'23514'/i, "termination capture must bind exactly one transition-time company membership");
+  requireSemanticText(path, content, /u\.employment_status\s*=\s*'terminated'[\s\S]*u\.terminated_on\s+IS\s+NOT\s+NULL[\s\S]*ERRCODE\s*=\s*'23514'/i, "termination capture must require a committed terminated employee state");
   requireSemanticText(path, content, /NEW\.lifecycle_event_id\s+IS\s+DISTINCT\s+FROM\s+OLD\.lifecycle_event_id/i, "recovery lifecycle event identity must be immutable");
+  requireSemanticText(path, content, /TG_OP\s*=\s*'DELETE'[\s\S]*ERRCODE\s*=\s*'55000'[\s\S]*BEFORE\s+UPDATE\s+OR\s+DELETE\s+ON\s+assets\.asset_recovery_tickets/i, "recovery history deletion must be rejected by the finalized trigger");
   requireSemanticText(path, content, /BEFORE\s+UPDATE\s+OR\s+DELETE\s+ON\s+core\.user_termination_identity_snapshots[\s\S]*EXECUTE\s+FUNCTION\s+core\.reject_user_termination_identity_snapshot_mutation\s*\(\s*\)/i, "termination snapshots must be immutable");
 }
 

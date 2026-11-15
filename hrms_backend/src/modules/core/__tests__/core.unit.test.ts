@@ -153,7 +153,7 @@ describe("core hierarchy", () => {
     const actorStore = createMemoryDataStore();
     const actor = actorStore.users.find((user) => user.id === seedIds.admin)!;
 
-    for (const action of ["patch-status", "deactivate", "disable-login", "remove-admin-role"] as const) {
+    for (const action of ["deactivate", "disable-login", "remove-admin-role"] as const) {
       const store = createMemoryDataStore();
       const service = new CoreService(store);
       addCompanyProfile(store, companyA);
@@ -167,11 +167,6 @@ describe("core hierarchy", () => {
 
       const run = () => {
         switch (action) {
-          case "patch-status":
-            return service.updateUser(actor, targetAdmin.id, {
-              expected_version: 1,
-              employment_status: "inactive"
-            });
           case "deactivate":
             return service.deactivateUser(actor, targetAdmin.id, {
               expected_version: 1,

@@ -148,10 +148,8 @@ export interface UserUpdateInput {
   department_id?: UUID;
   designation_id?: UUID;
   manager_user_id?: UUID | null;
-  employment_status?: CoreUser["employment_status"];
   timezone?: string | null;
   joined_on?: string | null;
-  terminated_on?: string | null;
   expected_version: number;
 }
 
@@ -336,12 +334,6 @@ export class CoreService {
     requirePeopleManager(actor);
     const user = this.requireUserForWrite(actor, id);
     requireExpectedVersion(user, input.expected_version);
-    if (input.employment_status !== undefined && input.employment_status !== EmploymentStatuses.Active) {
-      this.requireOrgAdminRecoveryPath(user, {
-        employmentStatus: input.employment_status
-      });
-    }
-
     if (input.email !== undefined) {
       const email = normalizeEmail(input.email);
       const duplicate = this.store.users.find((candidate) => candidate.id !== user.id && normalizeEmail(candidate.email) === email && !candidate.deleted_at);
@@ -364,20 +356,11 @@ export class CoreService {
     if (input.manager_user_id !== undefined) {
       this.updateManager(actor, user, input.manager_user_id);
     }
-    if (input.employment_status !== undefined) {
-      user.employment_status = input.employment_status;
-      if (input.employment_status !== EmploymentStatuses.Terminated) {
-        user.terminated_on = input.terminated_on ?? null;
-      }
-    }
     if (input.timezone !== undefined) {
       user.timezone = normalizeOptional(input.timezone);
     }
     if (input.joined_on !== undefined) {
       user.joined_on = input.joined_on;
-    }
-    if (input.terminated_on !== undefined) {
-      user.terminated_on = input.terminated_on;
     }
     user.version += 1;
     appendCoreOutboxEvent(this.store, {
