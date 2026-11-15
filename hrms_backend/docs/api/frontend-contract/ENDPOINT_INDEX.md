@@ -7305,6 +7305,12 @@ Success body highlights:
 | `total` | integer | required | minimum 0 |
 | `totals` | object | required | - |
 | `filters` | object | required | - |
+| `status_breakdown` | object | optional | - |
+| `type_breakdown` | object | optional | - |
+| `maintenance_rows` | array of object | optional | Bounded maintenance page selected by page/page_size. |
+| `recovery_rows` | array of object | optional | Bounded recovery page. Employee is the original-company name snapshot, not a mutable current profile. |
+| `maintenance_total` | integer | optional | minimum 0 |
+| `recovery_total` | integer | optional | minimum 0 |
 
 **Frontend behavior notes**
 
@@ -7773,6 +7779,8 @@ Success body highlights:
 | `qr_hash` | string | optional | - |
 | `status` | string | required | - |
 | `assigned_to_user_id` | string<uuid> | optional, nullable | Assigned employee UUID |
+| `maintenance_total` | integer | optional | Total maintenance records for this asset, including records outside the bounded embedded projection.; minimum 0 |
+| `maintenance_has_more` | boolean | optional | True when the embedded maintenance array is truncated; use the paginated maintenance endpoint for the complete history. |
 | `version` | integer | required | minimum 1 |
 
 **Frontend behavior notes**
@@ -8016,6 +8024,8 @@ Success body highlights:
 | `qr_hash` | string | optional | - |
 | `status` | string | required | - |
 | `assigned_to_user_id` | string<uuid> | optional, nullable | Assigned employee UUID |
+| `maintenance_total` | integer | optional | Total maintenance records for this asset, including records outside the bounded embedded projection.; minimum 0 |
+| `maintenance_has_more` | boolean | optional | True when the embedded maintenance array is truncated; use the paginated maintenance endpoint for the complete history. |
 | `version` | integer | required | minimum 1 |
 
 **Frontend behavior notes**
@@ -8075,6 +8085,8 @@ Success body highlights:
 | `qr_hash` | string | optional | - |
 | `status` | string | required | - |
 | `assigned_to_user_id` | string<uuid> | optional, nullable | Assigned employee UUID |
+| `maintenance_total` | integer | optional | Total maintenance records for this asset, including records outside the bounded embedded projection.; minimum 0 |
+| `maintenance_has_more` | boolean | optional | True when the embedded maintenance array is truncated; use the paginated maintenance endpoint for the complete history. |
 | `version` | integer | required | minimum 1 |
 
 **Frontend behavior notes**

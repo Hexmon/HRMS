@@ -168,6 +168,7 @@ export const reportRoutes: FastifyPluginAsync = async (fastify) => {
 
   fastify.get("/assets/summary", async (request) => {
     const actor = withActor(request);
+    const query = reportSummaryQuerySchema.parse(request.query);
     const company = resolveActiveCompanyMembershipContext(fastify.store, {
       userId: actor.id,
       operation: "reports.assets.summary",
@@ -178,10 +179,17 @@ export const reportRoutes: FastifyPluginAsync = async (fastify) => {
       company.companyId,
       actor.id,
       "reports.assets.summary",
+      {
+        page: query.page,
+        pageSize: query.page_size,
+        status: query.status,
+        type: query.type,
+        assignedToUserId: query.assigned_to_user_id,
+      },
     ) ?? fastify.store;
     const currentActor = store.users.find((user) => user.id === actor.id);
     if (!currentActor) throw unauthorized("User no longer exists");
-    return new ReportService(store).assetsSummary(currentActor, reportSummaryQuerySchema.parse(request.query));
+    return new ReportService(store).assetsSummary(currentActor, query);
   });
 
   fastify.get("/helpdesk/summary", async (request) => {

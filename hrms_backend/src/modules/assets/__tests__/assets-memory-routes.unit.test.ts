@@ -342,6 +342,82 @@ describe("asset routes with the memory persistence fallback", () => {
     });
   });
 
+  it("rejects a foreign-company assignee before mutating the memory fallback", async () => {
+    const asset = store.assets[0]!;
+    const originalVersion = asset.version;
+    const companyBId = randomUUID();
+    store.companyProfiles.push({
+      ...store.companyProfiles[0]!,
+      id: companyBId,
+      company_name: "Company B",
+      company_slug: `company-b-${companyBId}`,
+    });
+    const employeePreference = store.userSessionPreferences.find((item) => item.user_id === seedIds.employee2)!;
+    employeePreference.company_id = companyBId;
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/assets/${asset.id}/assign`,
+      headers: commandHeaders(seedIds.assetManager),
+      payload: { assigned_to_user_id: seedIds.employee2, expected_version: originalVersion },
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json().message).toMatch(/actor's company/u);
+    expect(asset).toMatchObject({ version: originalVersion, current_assigned_user_id: null });
+    expect(store.assetAssignments.some((item) => item.asset_id === asset.id)).toBe(false);
+    expect(store.assetStateEvents.some((item) => item.asset_id === asset.id && item.event_type === "asset.assigned")).toBe(false);
+  });
+
+  it("keeps original-company recovery identity after a later company/profile change", async () => {
+    const asset = store.assets[0]!;
+    const employee = store.users.find((user) => user.id === seedIds.employee1)!;
+    const originalName = employee.full_name;
+    const originalCode = employee.employee_code;
+    const assigned = await app.inject({
+      method: "POST",
+      url: `/assets/${asset.id}/assign`,
+      headers: commandHeaders(seedIds.assetManager),
+      payload: { assigned_to_user_id: employee.id, expected_version: asset.version },
+    });
+    expect(assigned.statusCode).toBe(200);
+    const lifecycleEventId = recordMemoryTermination(store, employee.id);
+    const terminated = await app.inject({
+      method: "POST",
+      url: "/assets/events/employee-terminated",
+      headers: commandHeaders(seedIds.admin),
+      payload: { employee_user_id: employee.id, lifecycle_event_id: lifecycleEventId },
+    });
+    expect(terminated.statusCode).toBe(200);
+
+    const companyBId = randomUUID();
+    store.companyProfiles.push({
+      ...store.companyProfiles[0]!,
+      id: companyBId,
+      company_name: "Company B",
+      company_slug: `company-b-${companyBId}`,
+    });
+    store.userSessionPreferences.find((item) => item.user_id === employee.id)!.company_id = companyBId;
+    employee.full_name = "Company B Updated Name";
+    employee.employee_code = "B-SECRET-001";
+    employee.email = "private-company-b@example.test";
+    employee.roles = [Roles.FinanceManager];
+
+    const queue = await app.inject({
+      method: "GET",
+      url: "/assets/recovery-queue",
+      headers: { [actorHeader]: seedIds.assetManager },
+    });
+    expect(queue.statusCode).toBe(200);
+    expect(queue.json().items[0].employee).toEqual({
+      id: employee.id,
+      full_name: originalName,
+      employee_code: originalCode,
+    });
+    expect(queue.json().items[0].employee).not.toHaveProperty("email");
+    expect(queue.json().items[0].employee).not.toHaveProperty("roles");
+  });
+
   it("fails acknowledgement closed when custody has no matching active assignment", async () => {
     const asset = store.assets[0]!;
     const assigned = await app.inject({
@@ -490,6 +566,8 @@ describe("asset routes with the memory persistence fallback", () => {
       id: randomUUID(),
       company_id: store.userSessionPreferences.find((item) => item.user_id === seedIds.assetManager)!.company_id!,
       employee_user_id: randomUUID(),
+      employee_full_name_snapshot: "Former Employee",
+      employee_code_snapshot: "FORMER-001",
       asset_id: randomUUID(),
       assignment_id: null,
       status: "open",
@@ -509,7 +587,7 @@ describe("asset routes with the memory persistence fallback", () => {
     });
     expect(queue.statusCode).toBe(200);
     expect(queue.json().items).toContainEqual(expect.objectContaining({
-      employee: null,
+      employee: { id: expect.any(String), full_name: "Former Employee", employee_code: "FORMER-001" },
       asset: null,
       review_required: true,
     }));

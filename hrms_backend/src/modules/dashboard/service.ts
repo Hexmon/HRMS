@@ -113,10 +113,13 @@ export class DashboardService {
     const pendingLeaves = visibleLeaveRequests.filter((request) => this.isLeaveWfhPendingFor(actor, request)).length;
     const pendingWfh = visibleWfhRequests.filter((request) => this.isLeaveWfhPendingFor(actor, request)).length;
     const pendingDocuments = this.pendingDocumentVerificationCount(actor, visibleTickets, visibleUserIds);
+    const assetMetrics = this.store.assetReadMetadata?.operation === "dashboard.summary"
+      ? this.store.assetReadMetadata.dashboard
+      : undefined;
     const operations = {
-      assets_total: visibleAssets.length,
-      assets_assigned: visibleAssets.filter((asset) => asset.status === AssetStatuses.Assigned).length,
-      assets_recovery_pending: this.store.assetRecoveryTickets.filter(
+      assets_total: assetMetrics?.assetsTotal ?? visibleAssets.length,
+      assets_assigned: assetMetrics?.assetsAssigned ?? visibleAssets.filter((asset) => asset.status === AssetStatuses.Assigned).length,
+      assets_recovery_pending: assetMetrics?.recoveryPending ?? this.store.assetRecoveryTickets.filter(
         (ticket) => visibleUserIds.has(ticket.employee_user_id) && ticket.status !== "closed"
       ).length,
       notifications_pending: this.store.notifications.filter((notification) => this.isNotificationVisible(actor, visibleUserIds, notification.target_user_id) && notification.status === "pending").length,

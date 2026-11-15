@@ -180,6 +180,7 @@ export const coreRoutes: FastifyPluginAsync = async (fastify) => {
       company.companyId,
       request.actor.id,
       "core.users.detail",
+      { userId: params.id },
     ) ?? fastify.store;
     const actor = store.users.find((user) => user.id === request.actor!.id);
     if (!actor) throw unauthorized("User no longer exists");

@@ -5,6 +5,10 @@ import { nowIso } from "../../platform/data-store.js";
 import { conflict } from "../../platform/errors.js";
 
 export function createRecoveryTicketsForTerminatedEmployee(store: MemoryDataStore, companyId: UUID, employeeUserId: UUID): number {
+  const employee = store.users.find((user) => user.id === employeeUserId);
+  if (!employee) {
+    throw conflict("A terminated employee record is required for asset recovery.", { employee_user_id: employeeUserId });
+  }
   const assigned = store.assets.filter((asset) =>
     asset.company_id === companyId && asset.current_assigned_user_id === employeeUserId && asset.status === AssetStatuses.Assigned
   );
@@ -24,6 +28,8 @@ export function createRecoveryTicketsForTerminatedEmployee(store: MemoryDataStor
       id: randomUUID(),
       company_id: companyId,
       employee_user_id: employeeUserId,
+      employee_full_name_snapshot: employee.full_name,
+      employee_code_snapshot: employee.employee_code,
       asset_id: asset.id,
       assignment_id: activeAssignments[0]!.id,
       status: "open",

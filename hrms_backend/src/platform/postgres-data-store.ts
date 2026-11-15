@@ -56,6 +56,7 @@ import type {
 import {
   type AssetAssignmentRecord,
   type AssetCommandInput,
+  type AssetReadQuery,
   type AssetStateEventRecord,
   type AdminMasterDataItemRecord,
   type AuthPersistenceFlushOptions,
@@ -601,6 +602,7 @@ class PostgresPersistence {
     companyId?: UUID,
     actorUserId?: UUID,
     actionKey?: string,
+    query?: AssetReadQuery,
   ): Promise<DataStore> {
     const operation = actionKey ?? "assets.read";
     const client = await this.pool.connect();
@@ -612,7 +614,16 @@ class PostgresPersistence {
       const currentActor = companyId && actorUserId
         ? await this.loadCurrentAssetActor(client, { actorUserId, companyId, actionKey: operation }, false)
         : undefined;
-      const snapshot = await this.loadAssetSnapshot(client, baseStore, companyId);
+      const snapshot = companyId && actorUserId && actionKey
+        ? await this.loadBoundedAssetReadSnapshot(client, baseStore, companyId, currentActor!, actionKey, query)
+        : actionKey === "assets.licenses.validate"
+          ? {
+              ...(baseStore ?? this.store),
+              licenseEntitlements: await this.loadLicenseEntitlements(client),
+              licenseActivations: await this.loadLicenseActivations(client),
+              compromisedKeys: await this.loadCompromisedKeys(client),
+            }
+          : await this.loadAssetSnapshot(client, baseStore, companyId);
       await client.query("COMMIT");
       if (!currentActor) return snapshot;
       return {
@@ -625,6 +636,396 @@ class PostgresPersistence {
     } finally {
       client.release(destroyClient);
     }
+  }
+
+  private async loadBoundedAssetReadSnapshot(
+    client: PoolClient,
+    baseStore: DataStore | undefined,
+    companyId: UUID,
+    actor: AuthUser,
+    operation: string,
+    query: AssetReadQuery | undefined,
+  ): Promise<DataStore> {
+    const source = baseStore ?? this.store;
+    const pageNumber = Math.max(1, query?.page ?? 1);
+    const pageSize = Math.max(1, Math.min(100, query?.pageSize ?? 20));
+    const offset = (pageNumber - 1) * pageSize;
+    const empty = (): DataStore => ({
+      ...source,
+      assets: [],
+      assetAssignments: [],
+      assetStateEvents: [],
+      assetRequests: [],
+      assetAcknowledgements: [],
+      assetMaintenanceRecords: [],
+      assetVendors: [],
+      assetRecoveryTickets: [],
+    });
+    const pageIds = async (
+      tableAndWhere: string,
+      parameters: unknown[],
+      orderBy: string,
+    ): Promise<{ ids: UUID[]; total: number }> => {
+      const total = await client.query<{ total: string }>(`SELECT count(*)::text AS total ${tableAndWhere}`, parameters);
+      const rows = await client.query<{ id: UUID }>(
+        `SELECT id ${tableAndWhere} ORDER BY ${orderBy} LIMIT $${parameters.length + 1} OFFSET $${parameters.length + 2}`,
+        [...parameters, pageSize, offset],
+      );
+      return { ids: rows.rows.map((row) => row.id), total: Number(total.rows[0]?.total ?? 0) };
+    };
+    const withAssetGraph = async (snapshot: DataStore, assetIds: UUID[]): Promise<DataStore> => {
+      const maintenanceCounts = assetIds.length === 0
+        ? []
+        : (await client.query<{ asset_id: UUID; total: string }>(
+            `SELECT asset_id, count(*)::text AS total
+               FROM assets.asset_maintenance_records
+              WHERE company_id = $1 AND asset_id = ANY($2::uuid[]) AND deleted_at IS NULL
+              GROUP BY asset_id`,
+            [companyId, assetIds],
+          )).rows;
+      const maintenanceIds = assetIds.length === 0
+        ? []
+        : (await client.query<{ id: UUID }>(
+            `SELECT id FROM (
+               SELECT id, asset_id,
+                      row_number() OVER (PARTITION BY asset_id ORDER BY created_at DESC, id DESC) AS row_number
+                 FROM assets.asset_maintenance_records
+                WHERE company_id = $1 AND asset_id = ANY($2::uuid[]) AND deleted_at IS NULL
+             ) ranked
+             WHERE row_number <= 100
+             ORDER BY asset_id, row_number`,
+            [companyId, assetIds],
+          )).rows.map((row) => row.id);
+      const maintenance = await this.loadAssetMaintenanceRecords(client, companyId, maintenanceIds);
+      const vendorIds = Array.from(new Set(maintenance.flatMap((record) => record.vendor_id ? [record.vendor_id] : [])));
+      return {
+        ...snapshot,
+        assets: await this.loadAssets(client, companyId, assetIds),
+        assetAssignments: await this.loadAssetAssignments(client, companyId, assetIds, undefined, true),
+        assetAcknowledgements: await this.loadAssetAcknowledgements(client, companyId, assetIds, true),
+        assetMaintenanceRecords: maintenance,
+        assetVendors: await this.loadAssetVendors(client, companyId, vendorIds),
+        assetReadMetadata: {
+          operation: "asset.graph",
+          assetMaintenanceTotals: Object.fromEntries(
+            maintenanceCounts.map((row) => [row.asset_id, Number(row.total)]),
+          ),
+        },
+      };
+    };
+
+    if (operation === "assets.list" || operation === "assets.my" || operation === "assets.detail") {
+      const parameters: unknown[] = [companyId];
+      const conditions = ["company_id = $1", "deleted_at IS NULL"];
+      if (operation === "assets.my") {
+        parameters.push(actor.id);
+        conditions.push(`current_assigned_user_id = $${parameters.length}`);
+      }
+      if (operation === "assets.detail") {
+        parameters.push(query?.resourceId ?? "00000000-0000-0000-0000-000000000000");
+        conditions.push(`id = $${parameters.length}`);
+      }
+      const selected = await pageIds(
+        `FROM assets.assets WHERE ${conditions.join(" AND ")}`,
+        parameters,
+        "created_at, asset_code, id",
+      );
+      const snapshot = await withAssetGraph(empty(), selected.ids);
+      snapshot.assetReadMetadata = { ...snapshot.assetReadMetadata, operation, total: selected.total };
+      return snapshot;
+    }
+
+    if (operation === "assets.warranty-alerts") {
+      const windowDays = Math.max(0, Math.min(365, query?.windowDays ?? 60));
+      const includeExpired = query?.includeExpired ?? true;
+      const parameters: unknown[] = [companyId, windowDays];
+      const dateExpression = "to_date(metadata->>'warranty_expiry', 'YYYY-MM-DD')";
+      const conditions = [
+        "company_id = $1",
+        "deleted_at IS NULL",
+        "metadata->>'warranty_expiry' ~ '^\\d{4}-\\d{2}-\\d{2}$'",
+        `${dateExpression} <= current_date + $2::int`,
+        ...(includeExpired ? [] : [`${dateExpression} >= current_date`]),
+      ];
+      const selected = await pageIds(
+        `FROM assets.assets WHERE ${conditions.join(" AND ")}`,
+        parameters,
+        `${dateExpression}, asset_code, id`,
+      );
+      const counts = await client.query<{ expired: string; critical: string; warning: string }>(
+        `SELECT
+           count(*) FILTER (WHERE ${dateExpression} < current_date)::text AS expired,
+           count(*) FILTER (WHERE ${dateExpression} BETWEEN current_date AND current_date + 14)::text AS critical,
+           count(*) FILTER (WHERE ${dateExpression} > current_date + 14 AND ${dateExpression} <= current_date + $2::int)::text AS warning
+         FROM assets.assets WHERE ${conditions.join(" AND ")}`,
+        parameters,
+      );
+      const snapshot = await withAssetGraph(empty(), selected.ids);
+      snapshot.assetReadMetadata = {
+        ...snapshot.assetReadMetadata,
+        operation,
+        total: selected.total,
+        alertCounts: {
+          expired: Number(counts.rows[0]?.expired ?? 0),
+          critical: Number(counts.rows[0]?.critical ?? 0),
+          warning: Number(counts.rows[0]?.warning ?? 0),
+        },
+      };
+      return snapshot;
+    }
+
+    if (operation === "assets.requests.my" || operation === "assets.requests.queue") {
+      const parameters: unknown[] = [companyId];
+      const conditions = ["company_id = $1", "deleted_at IS NULL"];
+      if (operation === "assets.requests.my") {
+        parameters.push(actor.id);
+        conditions.push(`requester_user_id = $${parameters.length}`);
+      }
+      if (query?.status) {
+        parameters.push(query.status);
+        conditions.push(`status = $${parameters.length}`);
+      }
+      if (query?.type) {
+        parameters.push(query.type);
+        conditions.push(`asset_type = $${parameters.length}`);
+      }
+      const tableAndWhere = `FROM assets.asset_requests WHERE ${conditions.join(" AND ")}`;
+      const selected = await pageIds(tableAndWhere, parameters, "created_at DESC, id DESC");
+      const snapshot = empty();
+      snapshot.assetRequests = await this.loadAssetRequests(client, companyId, selected.ids);
+      let queueCounts: Record<string, number> | undefined;
+      if (operation === "assets.requests.queue") {
+        const grouped = await client.query<{ status: string; total: string }>(
+          `SELECT status, count(*)::text AS total ${tableAndWhere} GROUP BY status`,
+          parameters,
+        );
+        queueCounts = Object.fromEntries(grouped.rows.map((row) => [row.status, Number(row.total)]));
+      }
+      snapshot.assetReadMetadata = { operation, total: selected.total, queueCounts };
+      return snapshot;
+    }
+
+    if (operation === "assets.maintenance.list") {
+      const assetId = query?.resourceId ?? "00000000-0000-0000-0000-000000000000";
+      const parameters: unknown[] = [companyId, assetId];
+      const conditions = ["company_id = $1", "asset_id = $2", "deleted_at IS NULL"];
+      if (query?.status) {
+        parameters.push(query.status);
+        conditions.push(`status = $${parameters.length}`);
+      }
+      const selected = await pageIds(
+        `FROM assets.asset_maintenance_records WHERE ${conditions.join(" AND ")}`,
+        parameters,
+        "created_at DESC, id DESC",
+      );
+      const snapshot = await withAssetGraph(empty(), [assetId]);
+      snapshot.assetMaintenanceRecords = await this.loadAssetMaintenanceRecords(client, companyId, selected.ids);
+      const vendorIds = Array.from(new Set(snapshot.assetMaintenanceRecords.flatMap((record) => record.vendor_id ? [record.vendor_id] : [])));
+      snapshot.assetVendors = await this.loadAssetVendors(client, companyId, vendorIds);
+      snapshot.assetReadMetadata = { ...snapshot.assetReadMetadata, operation, total: selected.total };
+      return snapshot;
+    }
+
+    if (operation === "assets.vendors.list") {
+      const literalSearch = (query?.search ?? "").replace(/[\\%_]/gu, (character) => `\\${character}`);
+      const parameters: unknown[] = [companyId];
+      const conditions = ["company_id = $1", "deleted_at IS NULL"];
+      if (query?.activeOnly) conditions.push("status = 'active'");
+      if (literalSearch) {
+        parameters.push(literalSearch);
+        conditions.push(`name ILIKE '%' || $${parameters.length} || '%' ESCAPE '\\'`);
+      }
+      const selected = await pageIds(
+        `FROM assets.software_vendors WHERE ${conditions.join(" AND ")}`,
+        parameters,
+        "name, id",
+      );
+      const snapshot = empty();
+      snapshot.assetVendors = await this.loadAssetVendors(client, companyId, selected.ids);
+      snapshot.assetReadMetadata = { operation, total: selected.total };
+      return snapshot;
+    }
+
+    if (operation === "assets.recovery.queue") {
+      const parameters: unknown[] = [companyId];
+      const conditions = ["company_id = $1"];
+      if (query?.userId) {
+        parameters.push(query.userId);
+        conditions.push(`employee_user_id = $${parameters.length}`);
+      }
+      if (query?.status) {
+        parameters.push(query.status);
+        conditions.push(`status = $${parameters.length}`);
+      }
+      const tableAndWhere = `FROM assets.asset_recovery_tickets WHERE ${conditions.join(" AND ")}`;
+      const selected = await pageIds(tableAndWhere, parameters, "created_at DESC, id DESC");
+      const tickets = await this.loadAssetRecoveryTickets(client, companyId, selected.ids);
+      const assetIds = Array.from(new Set(tickets.map((ticket) => ticket.asset_id)));
+      const assignmentIds = Array.from(new Set(tickets.flatMap((ticket) => ticket.assignment_id ? [ticket.assignment_id] : [])));
+      const grouped = await client.query<{ status: string; total: string }>(
+        `SELECT status, count(*)::text AS total ${tableAndWhere} GROUP BY status`,
+        parameters,
+      );
+      const snapshot = empty();
+      snapshot.assets = await this.loadAssets(client, companyId, assetIds);
+      snapshot.assetAssignments = await this.loadAssetAssignments(client, companyId, undefined, assignmentIds);
+      snapshot.assetRecoveryTickets = tickets;
+      snapshot.assetReadMetadata = {
+        ...snapshot.assetReadMetadata,
+        operation,
+        total: selected.total,
+        recoveryTotals: Object.fromEntries(grouped.rows.map((row) => [row.status, Number(row.total)])),
+      };
+      return snapshot;
+    }
+
+    if (operation === "core.users.detail") {
+      const targetUserId = query?.userId ?? query?.resourceId ?? actor.id;
+      const counts = await client.query<{ assigned: string; recovery: string }>(
+        `SELECT
+           (SELECT count(*) FROM assets.assets WHERE company_id = $1 AND current_assigned_user_id = $2 AND deleted_at IS NULL)::text AS assigned,
+           (SELECT count(*) FROM assets.asset_recovery_tickets WHERE company_id = $1 AND employee_user_id = $2 AND status <> 'closed')::text AS recovery`,
+        [companyId, targetUserId],
+      );
+      const snapshot = empty();
+      snapshot.assetReadMetadata = {
+        ...snapshot.assetReadMetadata,
+        operation,
+        coreUser: {
+          assignedAssets: Number(counts.rows[0]?.assigned ?? 0),
+          recoveryPending: Number(counts.rows[0]?.recovery ?? 0),
+        },
+      };
+      return snapshot;
+    }
+
+    if (operation === "dashboard.summary") {
+      const systemWideRoles = new Set<RoleKey>([Roles.Admin, Roles.Auditor, Roles.HRManager, Roles.AssetManager]);
+      const systemWide = actor.roles.some((role) => systemWideRoles.has(role));
+      const actorRow = await client.query<{ hierarchy_path: string }>("SELECT hierarchy_path::text FROM core.users WHERE id = $1", [actor.id]);
+      const hierarchyPath = actorRow.rows[0]?.hierarchy_path ?? "";
+      const visibility = systemWide
+        ? "TRUE"
+        : `current_assigned_user_id IN (
+             SELECT u.id FROM core.users u
+             JOIN platform.user_session_preferences p ON p.user_id = u.id
+             WHERE p.company_id = $1 AND u.deleted_at IS NULL
+               AND (u.id = $2 OR u.hierarchy_path <@ ($3::ltree))
+           )`;
+      const recoveryVisibility = systemWide
+        ? "TRUE"
+        : `employee_user_id IN (
+             SELECT u.id FROM core.users u
+             JOIN platform.user_session_preferences p ON p.user_id = u.id
+             WHERE p.company_id = $1 AND u.deleted_at IS NULL
+               AND (u.id = $2 OR u.hierarchy_path <@ ($3::ltree))
+           )`;
+      const counts = await client.query<{ total: string; assigned: string; recovery: string }>(
+        `SELECT
+           (SELECT count(*) FROM assets.assets WHERE company_id = $1 AND deleted_at IS NULL AND ${visibility})::text AS total,
+           (SELECT count(*) FROM assets.assets WHERE company_id = $1 AND deleted_at IS NULL AND status = 'Assigned' AND ${visibility})::text AS assigned,
+           (SELECT count(*) FROM assets.asset_recovery_tickets WHERE company_id = $1 AND status <> 'closed'
+              AND ${recoveryVisibility})::text AS recovery`,
+        systemWide ? [companyId] : [companyId, actor.id, hierarchyPath],
+      );
+      const snapshot = empty();
+      snapshot.assetReadMetadata = {
+        operation,
+        dashboard: {
+          assetsTotal: Number(counts.rows[0]?.total ?? 0),
+          assetsAssigned: Number(counts.rows[0]?.assigned ?? 0),
+          recoveryPending: Number(counts.rows[0]?.recovery ?? 0),
+        },
+      };
+      return snapshot;
+    }
+
+    if (operation === "reports.assets.summary") {
+      const parameters: unknown[] = [companyId];
+      const conditions = ["company_id = $1", "deleted_at IS NULL"];
+      if (query?.status) {
+        parameters.push(query.status);
+        conditions.push(`status = $${parameters.length}`);
+      }
+      if (query?.type) {
+        parameters.push(query.type);
+        conditions.push(`asset_type = $${parameters.length}`);
+      }
+      if (query?.assignedToUserId) {
+        parameters.push(query.assignedToUserId);
+        conditions.push(`current_assigned_user_id = $${parameters.length}`);
+      }
+      const tableAndWhere = `FROM assets.assets WHERE ${conditions.join(" AND ")}`;
+      const selected = await pageIds(tableAndWhere, parameters, "created_at DESC, id DESC");
+      const groupedStatus = await client.query<{ key: string; total: string }>(
+        `SELECT status AS key, count(*)::text AS total ${tableAndWhere} GROUP BY status`,
+        parameters,
+      );
+      const groupedType = await client.query<{ key: string; total: string }>(
+        `SELECT asset_type AS key, count(*)::text AS total ${tableAndWhere} GROUP BY asset_type`,
+        parameters,
+      );
+      const totals = Object.fromEntries(groupedStatus.rows.map((row) => [row.key, Number(row.total)]));
+      const maintenanceCount = await client.query<{ total: string }>(
+        "SELECT count(*)::text AS total FROM assets.asset_maintenance_records WHERE company_id = $1 AND deleted_at IS NULL",
+        [companyId],
+      );
+      const maintenanceRows = await client.query<Record<string, unknown>>(
+        `SELECT m.id, m.asset_id, a.asset_code, a.name AS asset, m.maintenance_type AS type,
+                m.started_on AS date, v.name AS vendor, m.cost::text, m.status, m.notes
+           FROM assets.asset_maintenance_records m
+           JOIN assets.assets a ON a.company_id = m.company_id AND a.id = m.asset_id
+           LEFT JOIN assets.software_vendors v ON v.company_id = m.company_id AND v.id = m.vendor_id
+          WHERE m.company_id = $1 AND m.deleted_at IS NULL
+          ORDER BY m.created_at DESC, m.id DESC LIMIT $2 OFFSET $3`,
+        [companyId, pageSize, offset],
+      );
+      const recoveryCount = await client.query<{ total: string }>(
+        "SELECT count(*)::text AS total FROM assets.asset_recovery_tickets WHERE company_id = $1",
+        [companyId],
+      );
+      const recoveryRows = await client.query<Record<string, unknown>>(
+        `SELECT r.id, r.employee_user_id, r.employee_full_name_snapshot AS employee,
+                r.asset_id, a.asset_code, r.status, r.created_at
+           FROM assets.asset_recovery_tickets r
+           JOIN assets.assets a ON a.company_id = r.company_id AND a.id = r.asset_id
+          WHERE r.company_id = $1
+          ORDER BY r.created_at DESC, r.id DESC LIMIT $2 OFFSET $3`,
+        [companyId, pageSize, offset],
+      );
+      const snapshot = await withAssetGraph(empty(), selected.ids);
+      snapshot.assetReadMetadata = {
+        ...snapshot.assetReadMetadata,
+        operation,
+        total: selected.total,
+        report: {
+          totals: {
+            assets: selected.total,
+            assigned: totals["Assigned"] ?? 0,
+            available: totals["In Stock"] ?? 0,
+            repair: totals["In Maintenance"] ?? 0,
+            lost_or_damaged: totals["Lost/Stolen"] ?? 0,
+          },
+          statusBreakdown: totals,
+          typeBreakdown: Object.fromEntries(groupedType.rows.map((row) => [row.key, Number(row.total)])),
+          maintenanceRows: maintenanceRows.rows.map((row) => ({
+            ...row,
+            date: asDate(row.date),
+          })),
+          recoveryRows: recoveryRows.rows.map((row) => ({
+            ...row,
+            created_at: asIso(row.created_at),
+          })),
+          maintenanceTotal: Number(maintenanceCount.rows[0]?.total ?? 0),
+          recoveryTotal: Number(recoveryCount.rows[0]?.total ?? 0),
+        },
+      };
+      return snapshot;
+    }
+
+    // Unknown authenticated consumers fail closed instead of silently loading
+    // an unbounded company history. Add an explicit bounded projection first.
+    throw new Error(`Unsupported bounded asset read operation: ${operation}`);
   }
 
   async assetPublicScan(qrHash: string): Promise<PublicAssetScan | null> {
@@ -690,9 +1091,22 @@ class PostgresPersistence {
     try {
       await client.query("BEGIN");
       await client.query("SET LOCAL lock_timeout = '5s'");
-      await client.query(
-        "SELECT pg_advisory_xact_lock(hashtext(current_database()), hashtext('hrms_asset_command'))",
-      );
+      if (input.actionKey.startsWith("assets.licenses.")) {
+        // Licensing tables remain global until LIC-S25-001 supplies immutable
+        // product ownership, so their seat/device invariants keep one narrow
+        // global lock. Tenant-owned inventory never shares this lock.
+        await client.query(
+          "SELECT pg_advisory_xact_lock(hashtext(current_database()), hashtext('hrms_asset_licensing'))",
+        );
+      } else {
+        // Request-code allocation, vendor uniqueness and termination recovery
+        // span a company. Serialize only that company so one tenant cannot
+        // exhaust every other tenant's five-second command lock budget.
+        await client.query(
+          "SELECT pg_advisory_xact_lock(hashtext('hrms_asset_company'), hashtext($1::text))",
+          [input.companyId],
+        );
+      }
       // The migration fence checks a transaction-local marker. No pooled
       // connection can carry this authority into a later request.
       await client.query("SELECT set_config('hrms.asset_writer_v2', 'on', true)");
@@ -2313,10 +2727,16 @@ class PostgresPersistence {
     };
   }
 
-  private async loadAssets(client: PoolClient, companyId?: UUID): Promise<AssetRecord[]> {
+  private async loadAssets(client: PoolClient, companyId?: UUID, ids?: readonly UUID[]): Promise<AssetRecord[]> {
+    if (ids?.length === 0) return [];
+    const conditions = [
+      ...(companyId ? ["company_id = $1"] : []),
+      ...(ids ? [`id = ANY($${companyId ? 2 : 1}::uuid[])`] : []),
+    ];
+    const parameters = [...(companyId ? [companyId] : []), ...(ids ? [[...ids]] : [])];
     const { rows } = await client.query(
-      `SELECT * FROM assets.assets${companyId ? " WHERE company_id = $1" : ""} ORDER BY created_at, asset_code`,
-      companyId ? [companyId] : [],
+      `SELECT * FROM assets.assets${conditions.length ? ` WHERE ${conditions.join(" AND ")}` : ""} ORDER BY created_at, asset_code`,
+      parameters,
     );
     return rows.map((row) => ({
       id: row.id,
@@ -2339,10 +2759,26 @@ class PostgresPersistence {
   private async loadAssetAssignments(
     client: PoolClient,
     companyId?: UUID,
+    assetIds?: readonly UUID[],
+    assignmentIds?: readonly UUID[],
+    activeOnly = false,
   ): Promise<AssetAssignmentRecord[]> {
+    if (assetIds?.length === 0 || assignmentIds?.length === 0) return [];
+    const parameterIndex = () => 1 + Number(Boolean(companyId)) + Number(Boolean(assetIds));
+    const conditions = [
+      ...(companyId ? ["company_id = $1"] : []),
+      ...(assetIds ? [`asset_id = ANY($${companyId ? 2 : 1}::uuid[])`] : []),
+      ...(assignmentIds ? [`id = ANY($${parameterIndex()}::uuid[])`] : []),
+      ...(activeOnly ? ["status = 'active'"] : []),
+    ];
+    const parameters = [
+      ...(companyId ? [companyId] : []),
+      ...(assetIds ? [[...assetIds]] : []),
+      ...(assignmentIds ? [[...assignmentIds]] : []),
+    ];
     const { rows } = await client.query(
-      `SELECT * FROM assets.asset_assignments${companyId ? " WHERE company_id = $1" : ""} ORDER BY created_at, id`,
-      companyId ? [companyId] : [],
+      `SELECT * FROM assets.asset_assignments${conditions.length ? ` WHERE ${conditions.join(" AND ")}` : ""} ORDER BY created_at, id`,
+      parameters,
     );
     return rows.map((row) => ({
       id: row.id,
@@ -2380,10 +2816,17 @@ class PostgresPersistence {
   private async loadAssetRequests(
     client: PoolClient,
     companyId?: UUID,
+    ids?: readonly UUID[],
   ): Promise<DataStore["assetRequests"]> {
+    if (ids?.length === 0) return [];
+    const conditions = [
+      ...(companyId ? ["company_id = $1"] : []),
+      ...(ids ? [`id = ANY($${companyId ? 2 : 1}::uuid[])`] : []),
+    ];
+    const parameters = [...(companyId ? [companyId] : []), ...(ids ? [[...ids]] : [])];
     const { rows } = await client.query(
-      `SELECT * FROM assets.asset_requests${companyId ? " WHERE company_id = $1" : ""} ORDER BY created_at, id`,
-      companyId ? [companyId] : [],
+      `SELECT * FROM assets.asset_requests${conditions.length ? ` WHERE ${conditions.join(" AND ")}` : ""} ORDER BY created_at, id`,
+      parameters,
     );
     return rows.map((row) => ({
       id: row.id,
@@ -2412,10 +2855,18 @@ class PostgresPersistence {
   private async loadAssetAcknowledgements(
     client: PoolClient,
     companyId?: UUID,
+    assetIds?: readonly UUID[],
+    latestOnly = false,
   ): Promise<DataStore["assetAcknowledgements"]> {
+    if (assetIds?.length === 0) return [];
+    const conditions = [
+      ...(companyId ? ["company_id = $1"] : []),
+      ...(assetIds ? [`asset_id = ANY($${companyId ? 2 : 1}::uuid[])`] : []),
+    ];
+    const parameters = [...(companyId ? [companyId] : []), ...(assetIds ? [[...assetIds]] : [])];
     const { rows } = await client.query(
-      `SELECT * FROM assets.asset_acknowledgements${companyId ? " WHERE company_id = $1" : ""} ORDER BY created_at, id`,
-      companyId ? [companyId] : [],
+      `${latestOnly ? "SELECT DISTINCT ON (asset_id) *" : "SELECT *"} FROM assets.asset_acknowledgements${conditions.length ? ` WHERE ${conditions.join(" AND ")}` : ""} ORDER BY ${latestOnly ? "asset_id, created_at DESC, id DESC" : "created_at, id"}`,
+      parameters,
     );
     return rows.map((row) => ({
       id: row.id,
@@ -2435,10 +2886,17 @@ class PostgresPersistence {
   private async loadAssetMaintenanceRecords(
     client: PoolClient,
     companyId?: UUID,
+    ids?: readonly UUID[],
   ): Promise<DataStore["assetMaintenanceRecords"]> {
+    if (ids?.length === 0) return [];
+    const conditions = [
+      ...(companyId ? ["company_id = $1"] : []),
+      ...(ids ? [`id = ANY($${companyId ? 2 : 1}::uuid[])`] : []),
+    ];
+    const parameters = [...(companyId ? [companyId] : []), ...(ids ? [[...ids]] : [])];
     const { rows } = await client.query(
-      `SELECT * FROM assets.asset_maintenance_records${companyId ? " WHERE company_id = $1" : ""} ORDER BY created_at, id`,
-      companyId ? [companyId] : [],
+      `SELECT * FROM assets.asset_maintenance_records${conditions.length ? ` WHERE ${conditions.join(" AND ")}` : ""} ORDER BY created_at, id`,
+      parameters,
     );
     return rows.map((row) => ({
       id: row.id,
@@ -2461,10 +2919,17 @@ class PostgresPersistence {
   private async loadAssetVendors(
     client: PoolClient,
     companyId?: UUID,
+    ids?: readonly UUID[],
   ): Promise<DataStore["assetVendors"]> {
+    if (ids?.length === 0) return [];
+    const conditions = [
+      ...(companyId ? ["company_id = $1"] : []),
+      ...(ids ? [`id = ANY($${companyId ? 2 : 1}::uuid[])`] : []),
+    ];
+    const parameters = [...(companyId ? [companyId] : []), ...(ids ? [[...ids]] : [])];
     const { rows } = await client.query(
-      `SELECT * FROM assets.software_vendors${companyId ? " WHERE company_id = $1" : ""} ORDER BY name, id`,
-      companyId ? [companyId] : [],
+      `SELECT * FROM assets.software_vendors${conditions.length ? ` WHERE ${conditions.join(" AND ")}` : ""} ORDER BY name, id`,
+      parameters,
     );
     return rows.map((row) => ({
       id: row.id,
@@ -2484,15 +2949,24 @@ class PostgresPersistence {
   private async loadAssetRecoveryTickets(
     client: PoolClient,
     companyId?: UUID,
+    ids?: readonly UUID[],
   ): Promise<DataStore["assetRecoveryTickets"]> {
+    if (ids?.length === 0) return [];
+    const conditions = [
+      ...(companyId ? ["company_id = $1"] : []),
+      ...(ids ? [`id = ANY($${companyId ? 2 : 1}::uuid[])`] : []),
+    ];
+    const parameters = [...(companyId ? [companyId] : []), ...(ids ? [[...ids]] : [])];
     const { rows } = await client.query(
-      `SELECT * FROM assets.asset_recovery_tickets${companyId ? " WHERE company_id = $1" : ""} ORDER BY created_at, id`,
-      companyId ? [companyId] : [],
+      `SELECT * FROM assets.asset_recovery_tickets${conditions.length ? ` WHERE ${conditions.join(" AND ")}` : ""} ORDER BY created_at, id`,
+      parameters,
     );
     return rows.map((row) => ({
       id: row.id,
       company_id: row.company_id,
       employee_user_id: row.employee_user_id,
+      employee_full_name_snapshot: row.employee_full_name_snapshot,
+      employee_code_snapshot: row.employee_code_snapshot,
       asset_id: row.asset_id,
       assignment_id: row.assignment_id,
       status: row.status,
@@ -4580,10 +5054,11 @@ class PostgresPersistence {
     for (const ticket of source.assetRecoveryTickets) {
       await client.query(
         `INSERT INTO assets.asset_recovery_tickets (
-          id, company_id, employee_user_id, asset_id, assignment_id, status, settlement_status, settlement_amount,
+          id, company_id, employee_user_id, employee_full_name_snapshot, employee_code_snapshot,
+          asset_id, assignment_id, status, settlement_status, settlement_amount,
           settlement_remarks, settled_by_user_id, settled_at, version, created_at, updated_at
         )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
          ON CONFLICT (id) DO UPDATE
          SET assignment_id = EXCLUDED.assignment_id,
              status = EXCLUDED.status,
@@ -4598,6 +5073,8 @@ class PostgresPersistence {
           ticket.id,
           ticket.company_id,
           ticket.employee_user_id,
+          ticket.employee_full_name_snapshot,
+          ticket.employee_code_snapshot,
           ticket.asset_id,
           ticket.assignment_id,
           ticket.status,

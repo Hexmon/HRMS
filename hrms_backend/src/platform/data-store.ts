@@ -352,6 +352,8 @@ export interface AssetRecoveryTicketRecord {
   id: UUID;
   company_id: UUID;
   employee_user_id: UUID;
+  employee_full_name_snapshot: string;
+  employee_code_snapshot: string;
   asset_id: UUID;
   assignment_id: UUID | null;
   status: string;
@@ -467,6 +469,7 @@ export interface DataStorePersistence {
     companyId?: UUID,
     actorUserId?: UUID,
     actionKey?: string,
+    query?: AssetReadQuery,
   ): Promise<DataStore>;
   assetPublicScan?(qrHash: string): Promise<PublicAssetScan | null>;
   assetAssignees?(actorUserId: UUID, companyId: UUID, search?: string): Promise<{ items: Array<{ id: UUID; full_name: string }>; has_more: boolean }>;
@@ -476,6 +479,47 @@ export interface DataStorePersistence {
     execute: (store: DataStore, actor: AuthUser) => T,
   ): Promise<T>;
   close(): Promise<void>;
+}
+
+export interface AssetReadQuery {
+  page?: number;
+  pageSize?: number;
+  resourceId?: UUID;
+  userId?: UUID;
+  status?: string;
+  type?: string;
+  activeOnly?: boolean;
+  search?: string;
+  windowDays?: number;
+  includeExpired?: boolean;
+  assignedToUserId?: UUID;
+}
+
+export interface AssetReadMetadata {
+  operation: string;
+  total?: number;
+  queueCounts?: Record<string, number>;
+  recoveryTotals?: Record<string, number>;
+  alertCounts?: Record<string, number>;
+  assetMaintenanceTotals?: Record<UUID, number>;
+  dashboard?: {
+    assetsTotal: number;
+    assetsAssigned: number;
+    recoveryPending: number;
+  };
+  coreUser?: {
+    assignedAssets: number;
+    recoveryPending: number;
+  };
+  report?: {
+    totals: Record<string, number>;
+    statusBreakdown: Record<string, number>;
+    typeBreakdown: Record<string, number>;
+    maintenanceRows: Array<Record<string, unknown>>;
+    recoveryRows: Array<Record<string, unknown>>;
+    maintenanceTotal: number;
+    recoveryTotal: number;
+  };
 }
 
 export interface PublicAssetScan {
@@ -590,6 +634,8 @@ export interface DataStore {
   assetMaintenanceRecords: AssetMaintenanceRecord[];
   assetVendors: AssetVendorRecord[];
   assetRecoveryTickets: AssetRecoveryTicketRecord[];
+  /** Request-local SQL read metadata. Never persist this transient projection. */
+  assetReadMetadata?: AssetReadMetadata;
   licenseEntitlements: LicenseEntitlement[];
   licenseActivations: LicenseActivation[];
   compromisedKeys: Array<{

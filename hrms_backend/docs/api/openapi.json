@@ -51159,6 +51159,46 @@
                     "filters": {
                       "type": "object",
                       "additionalProperties": true
+                    },
+                    "status_breakdown": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    },
+                    "type_breakdown": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    },
+                    "maintenance_rows": {
+                      "type": "array",
+                      "description": "Bounded maintenance page selected by page/page_size.",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    },
+                    "recovery_rows": {
+                      "type": "array",
+                      "description": "Bounded recovery page. Employee is the original-company name snapshot, not a mutable current profile.",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    },
+                    "maintenance_total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 12
+                    },
+                    "recovery_total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 3
                     }
                   },
                   "additionalProperties": true
@@ -54632,6 +54672,17 @@
                       "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
                       "nullable": true
                     },
+                    "maintenance_total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Total maintenance records for this asset, including records outside the bounded embedded projection.",
+                      "example": 3
+                    },
+                    "maintenance_has_more": {
+                      "type": "boolean",
+                      "description": "True when the embedded maintenance array is truncated; use the paginated maintenance endpoint for the complete history.",
+                      "example": false
+                    },
                     "version": {
                       "type": "integer",
                       "minimum": 1,
@@ -55038,6 +55089,17 @@
                             "description": "Assigned employee UUID",
                             "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
                             "nullable": true
+                          },
+                          "maintenance_total": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "Total maintenance records for this asset, including records outside the bounded embedded projection.",
+                            "example": 3
+                          },
+                          "maintenance_has_more": {
+                            "type": "boolean",
+                            "description": "True when the embedded maintenance array is truncated; use the paginated maintenance endpoint for the complete history.",
+                            "example": false
                           },
                           "version": {
                             "type": "integer",
@@ -56739,6 +56801,17 @@
                           "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
                           "nullable": true
                         },
+                        "maintenance_total": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "Total maintenance records for this asset, including records outside the bounded embedded projection.",
+                          "example": 3
+                        },
+                        "maintenance_has_more": {
+                          "type": "boolean",
+                          "description": "True when the embedded maintenance array is truncated; use the paginated maintenance endpoint for the complete history.",
+                          "example": false
+                        },
                         "version": {
                           "type": "integer",
                           "minimum": 1,
@@ -57250,6 +57323,17 @@
                       "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
                       "nullable": true
                     },
+                    "maintenance_total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Total maintenance records for this asset, including records outside the bounded embedded projection.",
+                      "example": 3
+                    },
+                    "maintenance_has_more": {
+                      "type": "boolean",
+                      "description": "True when the embedded maintenance array is truncated; use the paginated maintenance endpoint for the complete history.",
+                      "example": false
+                    },
                     "version": {
                       "type": "integer",
                       "minimum": 1,
@@ -57658,6 +57742,17 @@
                       "description": "Assigned employee UUID",
                       "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
                       "nullable": true
+                    },
+                    "maintenance_total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Total maintenance records for this asset, including records outside the bounded embedded projection.",
+                      "example": 3
+                    },
+                    "maintenance_has_more": {
+                      "type": "boolean",
+                      "description": "True when the embedded maintenance array is truncated; use the paginated maintenance endpoint for the complete history.",
+                      "example": false
                     },
                     "version": {
                       "type": "integer",
@@ -61528,6 +61623,17 @@
                           "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
                           "nullable": true
                         },
+                        "maintenance_total": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "Total maintenance records for this asset, including records outside the bounded embedded projection.",
+                          "example": 3
+                        },
+                        "maintenance_has_more": {
+                          "type": "boolean",
+                          "description": "True when the embedded maintenance array is truncated; use the paginated maintenance endpoint for the complete history.",
+                          "example": false
+                        },
                         "version": {
                           "type": "integer",
                           "minimum": 1,
@@ -63571,6 +63677,17 @@
                           "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
                           "nullable": true
                         },
+                        "maintenance_total": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "Total maintenance records for this asset, including records outside the bounded embedded projection.",
+                          "example": 3
+                        },
+                        "maintenance_has_more": {
+                          "type": "boolean",
+                          "description": "True when the embedded maintenance array is truncated; use the paginated maintenance endpoint for the complete history.",
+                          "example": false
+                        },
                         "version": {
                           "type": "integer",
                           "minimum": 1,
@@ -65334,7 +65451,29 @@
                           "employee": {
                             "type": "object",
                             "nullable": true,
-                            "additionalProperties": true
+                            "required": [
+                              "id",
+                              "full_name",
+                              "employee_code"
+                            ],
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "Historical employee user UUID",
+                                "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                              },
+                              "full_name": {
+                                "type": "string",
+                                "example": "Ananya Rao"
+                              },
+                              "employee_code": {
+                                "type": "string",
+                                "example": "EMP-001"
+                              }
+                            },
+                            "additionalProperties": false,
+                            "description": "Original-company identity captured when recovery started; current profile and roles are never returned."
                           },
                           "asset": {
                             "type": "object",
@@ -65391,6 +65530,17 @@
                                 "description": "Assigned employee UUID",
                                 "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
                                 "nullable": true
+                              },
+                              "maintenance_total": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "description": "Total maintenance records for this asset, including records outside the bounded embedded projection.",
+                                "example": 3
+                              },
+                              "maintenance_has_more": {
+                                "type": "boolean",
+                                "description": "True when the embedded maintenance array is truncated; use the paginated maintenance endpoint for the complete history.",
+                                "example": false
                               },
                               "version": {
                                 "type": "integer",
@@ -65919,7 +66069,29 @@
                         "employee": {
                           "type": "object",
                           "nullable": true,
-                          "additionalProperties": true
+                          "required": [
+                            "id",
+                            "full_name",
+                            "employee_code"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "description": "Historical employee user UUID",
+                              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                            },
+                            "full_name": {
+                              "type": "string",
+                              "example": "Ananya Rao"
+                            },
+                            "employee_code": {
+                              "type": "string",
+                              "example": "EMP-001"
+                            }
+                          },
+                          "additionalProperties": false,
+                          "description": "Original-company identity captured when recovery started; current profile and roles are never returned."
                         },
                         "asset": {
                           "type": "object",
@@ -65976,6 +66148,17 @@
                               "description": "Assigned employee UUID",
                               "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
                               "nullable": true
+                            },
+                            "maintenance_total": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "description": "Total maintenance records for this asset, including records outside the bounded embedded projection.",
+                              "example": 3
+                            },
+                            "maintenance_has_more": {
+                              "type": "boolean",
+                              "description": "True when the embedded maintenance array is truncated; use the paginated maintenance endpoint for the complete history.",
+                              "example": false
                             },
                             "version": {
                               "type": "integer",
@@ -66056,6 +66239,17 @@
                           "description": "Assigned employee UUID",
                           "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
                           "nullable": true
+                        },
+                        "maintenance_total": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "Total maintenance records for this asset, including records outside the bounded embedded projection.",
+                          "example": 3
+                        },
+                        "maintenance_has_more": {
+                          "type": "boolean",
+                          "description": "True when the embedded maintenance array is truncated; use the paginated maintenance endpoint for the complete history.",
+                          "example": false
                         },
                         "version": {
                           "type": "integer",

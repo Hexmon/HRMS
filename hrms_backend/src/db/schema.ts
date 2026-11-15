@@ -2209,6 +2209,8 @@ export const assetRecoveryTickets = assets.table(
     id: uuidPk.defaultRandom(),
     companyId: uuid("company_id").notNull(),
     employeeUserId: uuid("employee_user_id").notNull(),
+    employeeFullNameSnapshot: text("employee_full_name_snapshot").notNull(),
+    employeeCodeSnapshot: text("employee_code_snapshot").notNull(),
     assetId: uuid("asset_id").notNull(),
     assignmentId: uuid("assignment_id").references(() => assetAssignments.id),
     status: text("status").notNull(),
@@ -2396,7 +2398,7 @@ export const assetTenantOwnershipMap = assets.table(
     resourceId: uuid("resource_id").notNull(),
     companyId: uuid("company_id").notNull(),
     verificationNote: text("verification_note").notNull(),
-    verifiedByUserId: uuid("verified_by_user_id"),
+    verifiedByUserId: uuid("verified_by_user_id").notNull(),
     verifiedAt: timestamp("verified_at", { withTimezone: true }).notNull().defaultNow()
   },
   (table) => [

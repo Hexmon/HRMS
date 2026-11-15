@@ -27,8 +27,7 @@ export class AssetService {
     assertAssetManager(actor);
     const companyId = this.companyId(actor, "assets.list");
     const items = this.repository.list(companyId).map((asset) => this.presentAsset(asset));
-    const start = (page - 1) * pageSize;
-    return { items: items.slice(start, start + pageSize), page, page_size: pageSize, total: items.length };
+    return this.pageResult("assets.list", items, page, pageSize);
   }
 
   myAssets(actor: AuthUser, pageNumber: number, pageSize: number) {
@@ -36,8 +35,7 @@ export class AssetService {
     const items = this.repository.list(companyId)
       .filter((asset) => asset.current_assigned_user_id === actor.id)
       .map((asset) => this.presentEmployeeAsset(asset));
-    const start = (pageNumber - 1) * pageSize;
-    return { items: items.slice(start, start + pageSize), page: pageNumber, page_size: pageSize, total: items.length };
+    return this.pageResult("assets.my", items, pageNumber, pageSize);
   }
 
   assignees(actor: AuthUser, search = "") {
@@ -87,15 +85,18 @@ export class AssetService {
       })
       .filter((item): item is NonNullable<typeof item> => Boolean(item))
       .sort((a, b) => a.days_left - b.days_left || a.asset_code.localeCompare(b.asset_code));
-    const result = page(items, query.page, query.page_size);
+    const result = this.pageResult("assets.warranty-alerts", items, query.page, query.page_size);
+    const counts = this.store.assetReadMetadata?.operation === "assets.warranty-alerts"
+      ? this.store.assetReadMetadata.alertCounts
+      : undefined;
     return {
       ...result,
       alert_window_days: windowDays,
       generated_at: nowIso(),
       counts: {
-        expired: items.filter((item) => item.days_left < 0).length,
-        critical: items.filter((item) => item.days_left >= 0 && item.days_left <= 14).length,
-        warning: items.filter((item) => item.days_left > 14 && item.days_left <= windowDays).length
+        expired: counts?.expired ?? items.filter((item) => item.days_left < 0).length,
+        critical: counts?.critical ?? items.filter((item) => item.days_left >= 0 && item.days_left <= 14).length,
+        warning: counts?.warning ?? items.filter((item) => item.days_left > 14 && item.days_left <= windowDays).length
       }
     };
   }
@@ -147,7 +148,7 @@ export class AssetService {
     const items = this.repository
       .listRequests({ companyId, requesterUserId: actor.id, status: query.status, assetType: query.type })
       .map((request) => this.presentRequest(request));
-    return page(items, query.page, query.page_size);
+    return this.pageResult("assets.requests.my", items, query.page, query.page_size);
   }
 
   createRequest(
@@ -203,13 +204,15 @@ export class AssetService {
     const companyId = this.companyId(actor, "assets.requests.queue");
     const all = this.repository.listRequests({ companyId, status: query.status, assetType: query.type });
     const items = all.map((request) => this.presentRequest(request));
-    const queue_counts = {
+    const queue_counts = this.store.assetReadMetadata?.operation === "assets.requests.queue"
+      ? this.store.assetReadMetadata.queueCounts ?? {}
+      : {
       pending: all.filter((request) => request.status === "pending").length,
       approved: all.filter((request) => request.status === "approved").length,
       rejected: all.filter((request) => request.status === "rejected").length,
       fulfilled: all.filter((request) => request.status === "fulfilled").length
     };
-    return { ...page(items, query.page, query.page_size), queue_counts };
+    return { ...this.pageResult("assets.requests.queue", items, query.page, query.page_size), queue_counts };
   }
 
   decideRequest(
@@ -307,7 +310,7 @@ export class AssetService {
     const companyId = this.companyId(actor, "assets.maintenance.list");
     this.assertAssetVisible(actor, id, "assets.maintenance.list", companyId);
     const items = this.repository.listMaintenance(id, companyId, query.status).map((record) => this.presentMaintenance(record));
-    return page(items, query.page, query.page_size);
+    return this.pageResult("assets.maintenance.list", items, query.page, query.page_size);
   }
 
   createMaintenance(
@@ -354,7 +357,12 @@ export class AssetService {
   vendors(actor: AuthUser, query: { page: number; page_size: number; active_only?: boolean; search?: string }) {
     assertAssetManager(actor);
     const companyId = this.companyId(actor, "assets.vendors.list");
-    return page(this.repository.listVendors(companyId, { activeOnly: query.active_only, search: query.search }), query.page, query.page_size);
+    return this.pageResult(
+      "assets.vendors.list",
+      this.repository.listVendors(companyId, { activeOnly: query.active_only, search: query.search }),
+      query.page,
+      query.page_size,
+    );
   }
 
   createVendor(
@@ -422,14 +430,14 @@ export class AssetService {
       .filter((ticket) => !query.status || ticket.status === query.status)
       .sort((a, b) => b.created_at.localeCompare(a.created_at));
     const items = tickets.map((ticket) => this.presentRecoveryTicket(ticket));
-    return {
-      ...page(items, query.page, query.page_size),
-      totals: {
+    const totals = this.store.assetReadMetadata?.operation === "assets.recovery.queue"
+      ? this.store.assetReadMetadata.recoveryTotals ?? {}
+      : {
         open: tickets.filter((ticket) => ticket.status === "open").length,
         in_progress: tickets.filter((ticket) => ticket.status === "in_progress").length,
         closed: tickets.filter((ticket) => ticket.status === "closed").length
-      }
-    };
+      };
+    return { ...this.pageResult("assets.recovery.queue", items, query.page, query.page_size), totals };
   }
 
   settleRecovery(
@@ -681,7 +689,7 @@ export class AssetService {
       ...ticket,
       assignment_assigned_at: context.assignmentAssignedAt,
       review_required: context.reviewRequired,
-      employee: this.store.users.find((user) => user.id === ticket.employee_user_id) ?? null,
+      employee: this.presentRecoveryEmployee(ticket),
       asset: context.asset ?? null
     };
   }
@@ -698,6 +706,8 @@ export class AssetService {
       )
       .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
     const metadata = asset.metadata ?? {};
+    const maintenance = this.repository.listMaintenance(asset.id, asset.company_id).map((record) => this.presentMaintenance(record));
+    const maintenanceTotal = this.store.assetReadMetadata?.assetMaintenanceTotals?.[asset.id] ?? maintenance.length;
     return {
       ...asset,
       category: metadata.category,
@@ -715,7 +725,9 @@ export class AssetService {
       assigned_on: activeAssignment?.assigned_at ?? null,
       active_assignment_id: activeAssignment?.id ?? null,
       latest_acknowledgement: latestAcknowledgement ?? null,
-      maintenance: this.repository.listMaintenance(asset.id, asset.company_id).map((record) => this.presentMaintenance(record))
+      maintenance,
+      maintenance_total: maintenanceTotal,
+      maintenance_has_more: maintenanceTotal > maintenance.length
     };
   }
 
@@ -725,6 +737,27 @@ export class AssetService {
       operation,
       requireActiveEmployment: true,
     }).companyId;
+  }
+
+  private pageResult<T>(operation: string, items: T[], pageNumber: number, pageSize: number) {
+    const metadata = this.store.assetReadMetadata;
+    if (metadata?.operation === operation && metadata.total !== undefined) {
+      return { items, page: pageNumber, page_size: pageSize, total: metadata.total };
+    }
+    return page(items, pageNumber, pageSize);
+  }
+
+  /**
+   * Recovery history exposes only identity captured for the original-company
+   * workflow. Never spread the mutable current CoreUser: after transfer that
+   * object contains the new employer's roles and organisation profile.
+   */
+  private presentRecoveryEmployee(ticket: MemoryDataStore["assetRecoveryTickets"][number]) {
+    return {
+      id: ticket.employee_user_id,
+      full_name: ticket.employee_full_name_snapshot,
+      employee_code: ticket.employee_code_snapshot,
+    };
   }
 
   /**

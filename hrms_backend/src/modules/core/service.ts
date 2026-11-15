@@ -1042,6 +1042,9 @@ export class CoreService {
     const item = this.toListItem(user);
     const directReports = this.repository.listUsers().filter((candidate) => candidate.manager_user_id === user.id && !candidate.deleted_at);
     const documents = this.store.documents.filter((document) => document.owner_user_id === user.id && !document.deleted_at);
+    const assetMetadata = this.store.assetReadMetadata?.operation === "core.users.detail"
+      ? this.store.assetReadMetadata.coreUser
+      : undefined;
     const assignedAssets = this.store.assets.filter((asset) => asset.current_assigned_user_id === user.id && !asset.deleted_at);
     const recoveryTickets = this.store.assetRecoveryTickets.filter((ticket) => ticket.employee_user_id === user.id && ticket.status !== "closed");
     const submissions = this.store.timesheetSubmissions.filter((submission) => submission.employee_user_id === user.id && !submission.deleted_at);
@@ -1060,8 +1063,8 @@ export class CoreService {
         restricted: documents.filter((document) => document.classification !== "normal").length
       },
       assets_summary: {
-        assigned: assignedAssets.length,
-        recovery_pending: recoveryTickets.length
+        assigned: assetMetadata?.assignedAssets ?? assignedAssets.length,
+        recovery_pending: assetMetadata?.recoveryPending ?? recoveryTickets.length
       },
       attendance_summary: { status: "not_available" },
       leave_summary: {

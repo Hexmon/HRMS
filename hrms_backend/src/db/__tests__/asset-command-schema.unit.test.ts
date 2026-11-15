@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getTableConfig } from "drizzle-orm/pg-core";
-import { assetRecoveryTickets } from "../schema.js";
+import { assetRecoveryTickets, attendancePunchEvents } from "../schema.js";
 import { swaggerTransform } from "../../platform/openapi.js";
 
 describe("asset command schema and OpenAPI boundary", () => {
@@ -13,6 +13,18 @@ describe("asset command schema and OpenAPI boundary", () => {
 
     expect(assignment).toBeDefined();
     expect(foreignKey?.reference().foreignColumns[0]?.name).toBe("id");
+  });
+
+  it("declares historical employee identity only on recovery tickets", () => {
+    const recoveryColumns = getTableConfig(assetRecoveryTickets).columns.map((column) => column.name);
+    const attendanceColumns = getTableConfig(attendancePunchEvents).columns.map((column) => column.name);
+
+    expect(recoveryColumns).toEqual(expect.arrayContaining([
+      "employee_full_name_snapshot",
+      "employee_code_snapshot",
+    ]));
+    expect(attendanceColumns).not.toContain("employee_full_name_snapshot");
+    expect(attendanceColumns).not.toContain("employee_code_snapshot");
   });
 
   it("documents idempotency only for private asset mutations", () => {

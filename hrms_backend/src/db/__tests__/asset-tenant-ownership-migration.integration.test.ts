@@ -59,6 +59,8 @@ describe("asset tenant ownership migration", () => {
   const assignmentId = randomUUID();
   const requestId = randomUUID();
   const vendorId = randomUUID();
+  const recoveryEmployeeId = randomUUID();
+  const verifierUserId = randomUUID();
 
   beforeAll(async () => {
     admin = new Client({ connectionString: adminUrl.toString() });
@@ -74,6 +76,19 @@ describe("asset tenant ownership migration", () => {
       `INSERT INTO platform.company_profiles (id, company_name, company_slug, status)
        VALUES ($1, 'Company A', $2, 'active'), ($3, 'Company B', $4, 'active')`,
       [companyA, `company-a-${companyA}`, companyB, `company-b-${companyB}`],
+    );
+    await client.query(
+      `INSERT INTO core.users (
+         id, employee_code, email, full_name, hierarchy_path, employment_status
+       ) VALUES
+         ($1, 'RECOVERY-001', $2, 'Original Company Employee', 'recovery_001', 'terminated'),
+         ($3, 'VERIFY-001', $4, 'Ownership Verifier', 'verify_001', 'active')`,
+      [
+        recoveryEmployeeId,
+        `recovery-${recoveryEmployeeId}@example.test`,
+        verifierUserId,
+        `verifier-${verifierUserId}@example.test`,
+      ],
     );
     await client.query(
       `INSERT INTO assets.assets (id, asset_code, qr_hash, asset_type, name, status)
@@ -119,7 +134,7 @@ describe("asset tenant ownership migration", () => {
       `INSERT INTO assets.asset_recovery_tickets (
          employee_user_id, asset_id, assignment_id, status
        ) VALUES ($1, $2, $3, 'open')`,
-      [randomUUID(), assetId, assignmentId],
+      [recoveryEmployeeId, assetId, assignmentId],
     );
     await client.query("COMMIT");
     await applyMigration(client, "0068_asset_tenant_ownership_map.sql");
@@ -153,12 +168,12 @@ describe("asset tenant ownership migration", () => {
 
     await client.query(
       `INSERT INTO assets.asset_tenant_ownership_map (
-         resource_type, resource_id, company_id, verification_note
+         resource_type, resource_id, company_id, verification_note, verified_by_user_id
        ) VALUES
-         ('asset', $1, $2, 'verified asset owner'),
-         ('request', $3, $4, 'intentionally conflicting request owner'),
-         ('vendor', $5, $2, 'verified vendor owner')`,
-      [assetId, companyA, requestId, companyB, vendorId],
+         ('asset', $1, $2, 'verified asset owner', $6),
+         ('request', $3, $4, 'intentionally conflicting request owner', $6),
+         ('vendor', $5, $2, 'verified vendor owner', $6)`,
+      [assetId, companyA, requestId, companyB, vendorId, verifierUserId],
     );
     await expect(
       applyMigration(client, "0069_asset_tenant_ownership.sql"),
@@ -171,6 +186,97 @@ describe("asset tenant ownership migration", () => {
       [companyA, requestId],
     );
     await applyMigration(client, "0069_asset_tenant_ownership.sql");
+
+    const orphanId = randomUUID();
+    await client.query(
+      `INSERT INTO assets.asset_tenant_ownership_map (
+         resource_type, resource_id, company_id, verification_note, verified_by_user_id
+       ) VALUES ('asset', $1, $2, 'unattributed draft mapping', NULL)`,
+      [orphanId, companyA],
+    );
+    await expect(applyMigration(client, "0070_asset_tenant_ownership_finalization.sql"))
+      .rejects.toMatchObject({ code: "23502", message: expect.stringMatching(/no verifier/u) });
+    await client.query(
+      "DELETE FROM assets.asset_tenant_ownership_map WHERE resource_type = 'asset' AND resource_id = $1",
+      [orphanId],
+    );
+    await client.query(
+      `INSERT INTO assets.asset_tenant_ownership_map (
+         resource_type, resource_id, company_id, verification_note, verified_by_user_id
+       ) VALUES ('asset', $1, $2, 'unknown verifier mapping', $3)`,
+      [orphanId, companyA, randomUUID()],
+    );
+    await expect(applyMigration(client, "0070_asset_tenant_ownership_finalization.sql"))
+      .rejects.toMatchObject({ code: "23503", message: expect.stringMatching(/unknown verifier/u) });
+    await client.query(
+      "DELETE FROM assets.asset_tenant_ownership_map WHERE resource_type = 'asset' AND resource_id = $1",
+      [orphanId],
+    );
+    await client.query(
+      `INSERT INTO assets.asset_tenant_ownership_map (
+         resource_type, resource_id, company_id, verification_note, verified_by_user_id
+       ) VALUES ('asset', $1, $2, 'invalid orphan mapping', $3)`,
+      [orphanId, companyA, verifierUserId],
+    );
+    await expect(applyMigration(client, "0070_asset_tenant_ownership_finalization.sql"))
+      .rejects.toMatchObject({ code: "23503" });
+    await client.query(
+      "DELETE FROM assets.asset_tenant_ownership_map WHERE resource_type = 'asset' AND resource_id = $1",
+      [orphanId],
+    );
+    await client.query("UPDATE platform.company_profiles SET status = 'inactive' WHERE id = $1", [companyA]);
+    await applyMigration(client, "0070_asset_tenant_ownership_finalization.sql");
+
+    await expect(
+      client.query(
+        `INSERT INTO assets.asset_tenant_ownership_map (
+           resource_type, resource_id, company_id, verification_note, verified_by_user_id
+         ) VALUES ('asset', $1, $2, 'late mutation', $3)`,
+        [randomUUID(), companyA, verifierUserId],
+      ),
+    ).rejects.toMatchObject({ code: "55000" });
+
+    await expect(
+      client.query(
+        `UPDATE assets.asset_tenant_ownership_map
+            SET verification_note = 'tampered evidence'
+          WHERE resource_type = 'asset' AND resource_id = $1`,
+        [assetId],
+      ),
+    ).rejects.toMatchObject({ code: "55000" });
+    await expect(
+      client.query(
+        "DELETE FROM assets.asset_tenant_ownership_map WHERE resource_type = 'asset' AND resource_id = $1",
+        [assetId],
+      ),
+    ).rejects.toMatchObject({ code: "55000" });
+    await expect(withAssetWriter(client, () => client.query(
+      "DELETE FROM assets.assets WHERE id = $1",
+      [assetId],
+    ))).rejects.toMatchObject({ code: "55000" });
+    await expect(withAssetWriter(client, () => client.query(
+      "UPDATE assets.assets SET id = $1 WHERE id = $2",
+      [randomUUID(), assetId],
+    ))).rejects.toMatchObject({ code: "55000" });
+
+    const recoveryIdentity = await client.query<{
+      employee_full_name_snapshot: string;
+      employee_code_snapshot: string;
+    }>(
+      `SELECT employee_full_name_snapshot, employee_code_snapshot
+         FROM assets.asset_recovery_tickets WHERE asset_id = $1`,
+      [assetId],
+    );
+    expect(recoveryIdentity.rows).toEqual([{
+      employee_full_name_snapshot: "Original Company Employee",
+      employee_code_snapshot: "RECOVERY-001",
+    }]);
+    await expect(
+      withAssetWriter(client, () => client.query(
+        "UPDATE assets.asset_recovery_tickets SET employee_full_name_snapshot = 'Mutable profile' WHERE asset_id = $1",
+        [assetId],
+      )),
+    ).rejects.toMatchObject({ code: "55000" });
 
     const ownership = await client.query<{ table_name: string; company_id: string }>(
       `SELECT 'assets' AS table_name, company_id FROM assets.assets WHERE id = $1

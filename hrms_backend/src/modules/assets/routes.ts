@@ -2,23 +2,34 @@ import type { FastifyPluginAsync, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { assetAssignSchema, assetCreateSchema, EmploymentStatuses, licenseActivationSchema, paginationQuerySchema, Roles, type AuthUser } from "#shared";
 import { badRequest, conflict, forbidden, notFound, unauthorized } from "../../platform/errors.js";
-import type { AssetCommandInput, DataStore } from "../../platform/data-store.js";
+import type { AssetCommandInput, AssetReadQuery, DataStore } from "../../platform/data-store.js";
 import { canonicalJsonHash } from "../attendance/canonical-json.js";
 import { resolveActiveCompanyMembershipContext } from "../../platform/company-membership-context.js";
 import { assertAssetManager } from "./policy.js";
 import { AssetService } from "./service.js";
 
-async function readStore(store: DataStore): Promise<DataStore> {
-  return store.persistence?.assetReadStore?.() ?? store;
+async function readStore(store: DataStore, operation: string): Promise<DataStore> {
+  return store.persistence?.assetReadStore?.(undefined, undefined, undefined, operation) ?? store;
 }
 
-async function readContext(store: DataStore, actor: AuthUser, operation: string): Promise<{ store: DataStore; actor: AuthUser }> {
+async function readContext(
+  store: DataStore,
+  actor: AuthUser,
+  operation: string,
+  query?: AssetReadQuery,
+): Promise<{ store: DataStore; actor: AuthUser }> {
   const membership = resolveActiveCompanyMembershipContext(store, {
     userId: actor.id,
     operation,
     requireActiveEmployment: true,
   });
-  const snapshot = await store.persistence?.assetReadStore?.(undefined, membership.companyId, actor.id, operation) ?? store;
+  const snapshot = await store.persistence?.assetReadStore?.(
+    undefined,
+    membership.companyId,
+    actor.id,
+    operation,
+    query,
+  ) ?? store;
   const currentActor = snapshot.users.find((user) => user.id === actor.id);
   if (!currentActor) throw unauthorized("User no longer exists");
   return { store: snapshot, actor: currentActor };
@@ -42,6 +53,19 @@ async function assetMutation<T>(
       requireActiveEmployment: true,
     });
     authorize(store, actor, membership.companyId);
+    if (commandContext.assigneeUserId) {
+      const assignee = store.users.find((candidate) =>
+        candidate.id === commandContext.assigneeUserId &&
+        !candidate.deleted_at &&
+        candidate.employment_status === EmploymentStatuses.Active
+      );
+      const sameCompany = store.userSessionPreferences.some((preference) =>
+        preference.user_id === commandContext.assigneeUserId && preference.company_id === membership.companyId
+      );
+      if (!assignee || !sameCompany) {
+        throw forbidden("Assignee is not an active employee in the actor's company.");
+      }
+    }
     return execute(new AssetService(store), actor);
   }
   const key = request.headers["idempotency-key"];
@@ -235,7 +259,10 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const query = paginationQuerySchema.parse(request.query);
-    const context = await readContext(fastify.store, request.actor, "assets.list");
+    const context = await readContext(fastify.store, request.actor, "assets.list", {
+      page: query.page,
+      pageSize: query.page_size,
+    });
     return new AssetService(context.store).list(context.actor, query.page, query.page_size);
   });
 
@@ -243,17 +270,27 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
     if (!request.actor) {
       throw unauthorized();
     }
-    const context = await readContext(fastify.store, request.actor, "assets.warranty-alerts");
+    const query = warrantyAlertsQuerySchema.parse(request.query);
+    const context = await readContext(fastify.store, request.actor, "assets.warranty-alerts", {
+      page: query.page,
+      pageSize: query.page_size,
+      windowDays: query.window_days,
+      includeExpired: query.include_expired,
+    });
     return new AssetService(context.store).warrantyAlerts(
       context.actor,
-      warrantyAlertsQuerySchema.parse(request.query)
+      query
     );
   });
 
   fastify.get("/my", async (request) => {
     if (!request.actor) throw unauthorized();
     const query = paginationQuerySchema.parse(request.query);
-    const context = await readContext(fastify.store, request.actor, "assets.my");
+    const context = await readContext(fastify.store, request.actor, "assets.my", {
+      page: query.page,
+      pageSize: query.page_size,
+      userId: request.actor.id,
+    });
     return new AssetService(context.store).myAssets(context.actor, query.page, query.page_size);
   });
 
@@ -270,7 +307,9 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const params = idParamSchema.parse(request.params);
-    const context = await readContext(fastify.store, request.actor, "assets.detail");
+    const context = await readContext(fastify.store, request.actor, "assets.detail", {
+      resourceId: params.id,
+    });
     return new AssetService(context.store).detail(context.actor, params.id);
   });
 
@@ -308,7 +347,7 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
   });
 
   fastify.post("/licenses/validate", async (request) => {
-    return new AssetService(await readStore(fastify.store)).validateLicense(
+    return new AssetService(await readStore(fastify.store, "assets.licenses.validate")).validateLicense(
       z.object({ product_id: z.uuid(), hardware_fingerprint: z.string().min(8) }).parse(request.body)
     );
   });
@@ -356,10 +395,17 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
     if (!request.actor) {
       throw unauthorized();
     }
-    const context = await readContext(fastify.store, request.actor, "assets.requests.my");
+    const query = assetRequestQuerySchema.parse(request.query);
+    const context = await readContext(fastify.store, request.actor, "assets.requests.my", {
+      page: query.page,
+      pageSize: query.page_size,
+      userId: request.actor.id,
+      status: query.status,
+      type: query.type,
+    });
     return new AssetService(context.store).myRequests(
       context.actor,
-      assetRequestQuerySchema.parse(request.query)
+      query
     );
   });
 
@@ -367,10 +413,16 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
     if (!request.actor) {
       throw unauthorized();
     }
-    const context = await readContext(fastify.store, request.actor, "assets.requests.queue");
+    const query = assetRequestQuerySchema.parse(request.query);
+    const context = await readContext(fastify.store, request.actor, "assets.requests.queue", {
+      page: query.page,
+      pageSize: query.page_size,
+      status: query.status,
+      type: query.type,
+    });
     return new AssetService(context.store).requestQueue(
       context.actor,
-      assetRequestQuerySchema.parse(request.query)
+      query
     );
   });
 
@@ -406,11 +458,17 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
       throw unauthorized();
     }
     const params = idParamSchema.parse(request.params);
-    const context = await readContext(fastify.store, request.actor, "assets.maintenance.list");
+    const query = maintenanceQuerySchema.parse(request.query);
+    const context = await readContext(fastify.store, request.actor, "assets.maintenance.list", {
+      resourceId: params.id,
+      page: query.page,
+      pageSize: query.page_size,
+      status: query.status,
+    });
     return new AssetService(context.store).listMaintenance(
       context.actor,
       params.id,
-      maintenanceQuerySchema.parse(request.query)
+      query
     );
   });
 
@@ -427,8 +485,14 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
     if (!request.actor) {
       throw unauthorized();
     }
-    const context = await readContext(fastify.store, request.actor, "assets.vendors.list");
-    return new AssetService(context.store).vendors(context.actor, vendorQuerySchema.parse(request.query));
+    const query = vendorQuerySchema.parse(request.query);
+    const context = await readContext(fastify.store, request.actor, "assets.vendors.list", {
+      page: query.page,
+      pageSize: query.page_size,
+      activeOnly: query.active_only,
+      search: query.search,
+    });
+    return new AssetService(context.store).vendors(context.actor, query);
   });
 
   fastify.post("/vendors", async (request) => {
@@ -452,10 +516,16 @@ export const assetRoutes: FastifyPluginAsync = async (fastify) => {
     if (!request.actor) {
       throw unauthorized();
     }
-    const context = await readContext(fastify.store, request.actor, "assets.recovery.queue");
+    const query = recoveryQuerySchema.parse(request.query);
+    const context = await readContext(fastify.store, request.actor, "assets.recovery.queue", {
+      page: query.page,
+      pageSize: query.page_size,
+      userId: query.user_id,
+      status: query.status,
+    });
     return new AssetService(context.store).recoveryQueue(
       context.actor,
-      recoveryQuerySchema.parse(request.query)
+      query
     );
   });
 

@@ -3066,6 +3066,17 @@ const assetSchema = {
     qr_hash: { type: "string", example: "release-qr-hash-lap-available" },
     status: { type: "string", example: "In Stock" },
     assigned_to_user_id: { ...uuid("Assigned employee UUID"), nullable: true },
+    maintenance_total: {
+      type: "integer",
+      minimum: 0,
+      description: "Total maintenance records for this asset, including records outside the bounded embedded projection.",
+      example: 3,
+    },
+    maintenance_has_more: {
+      type: "boolean",
+      description: "True when the embedded maintenance array is truncated; use the paginated maintenance endpoint for the complete history.",
+      example: false,
+    },
     version: { type: "integer", minimum: 1, example: 1 },
   },
   additionalProperties: true,
@@ -3424,7 +3435,18 @@ const assetRecoveryTicketSchema = {
     settled_by_user_id: { ...uuid("Settlement actor UUID"), nullable: true },
     settled_at: { ...dateTime("Settlement timestamp"), nullable: true },
     version: { type: "integer", minimum: 1, example: 1 },
-    employee: { type: "object", nullable: true, additionalProperties: true },
+    employee: {
+      type: "object",
+      nullable: true,
+      required: ["id", "full_name", "employee_code"],
+      properties: {
+        id: uuid("Historical employee user UUID"),
+        full_name: { type: "string", example: "Ananya Rao" },
+        employee_code: { type: "string", example: "EMP-001" },
+      },
+      additionalProperties: false,
+      description: "Original-company identity captured when recovery started; current profile and roles are never returned.",
+    },
     asset: { ...assetSchema, nullable: true },
     created_at: dateTime("Created timestamp"),
     updated_at: dateTime("Updated timestamp"),
@@ -7599,6 +7621,27 @@ const genericReportSummarySchema = {
     filters: { type: "object", additionalProperties: true },
   },
   additionalProperties: true,
+};
+
+const assetReportSummarySchema = {
+  ...genericReportSummarySchema,
+  properties: {
+    ...genericReportSummarySchema.properties,
+    status_breakdown: { type: "object", additionalProperties: { type: "integer", minimum: 0 } },
+    type_breakdown: { type: "object", additionalProperties: { type: "integer", minimum: 0 } },
+    maintenance_rows: {
+      type: "array",
+      description: "Bounded maintenance page selected by page/page_size.",
+      items: { type: "object", additionalProperties: true },
+    },
+    recovery_rows: {
+      type: "array",
+      description: "Bounded recovery page. Employee is the original-company name snapshot, not a mutable current profile.",
+      items: { type: "object", additionalProperties: true },
+    },
+    maintenance_total: { type: "integer", minimum: 0, example: 12 },
+    recovery_total: { type: "integer", minimum: 0, example: 3 },
+  },
 };
 
 const attendanceReportSummaryRowSchema = {
@@ -12326,7 +12369,7 @@ const routeDocs: Record<string, RouteSchema> = {
     "Asset report rows with inventory status, maintenance history, recovery queue, and type/status breakdowns.",
     {
       querystring: reportSummaryQuerySchema,
-      response200: genericReportSummarySchema,
+      response200: assetReportSummarySchema,
     },
   ),
   "GET /api/v1/reports/helpdesk/summary": operation(
