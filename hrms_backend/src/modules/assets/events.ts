@@ -4,10 +4,19 @@ import type { MemoryDataStore } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
 import { conflict } from "../../platform/errors.js";
 
-export function createRecoveryTicketsForTerminatedEmployee(store: MemoryDataStore, companyId: UUID, employeeUserId: UUID): number {
+export function createRecoveryTicketsForTerminatedEmployee(
+  store: MemoryDataStore,
+  companyId: UUID,
+  employeeUserId: UUID,
+  lifecycleEventId: UUID | null = null,
+  historicalIdentity?: { employeeUserId: UUID; fullName: string; employeeCode: string },
+): number {
   const employee = store.users.find((user) => user.id === employeeUserId);
-  if (!employee) {
+  if (!historicalIdentity && !employee) {
     throw conflict("A terminated employee record is required for asset recovery.", { employee_user_id: employeeUserId });
+  }
+  if (historicalIdentity && historicalIdentity.employeeUserId !== employeeUserId) {
+    throw conflict("The termination identity does not match the recovery employee.", { employee_user_id: employeeUserId });
   }
   const assigned = store.assets.filter((asset) =>
     asset.company_id === companyId && asset.current_assigned_user_id === employeeUserId && asset.status === AssetStatuses.Assigned
@@ -28,8 +37,9 @@ export function createRecoveryTicketsForTerminatedEmployee(store: MemoryDataStor
       id: randomUUID(),
       company_id: companyId,
       employee_user_id: employeeUserId,
-      employee_full_name_snapshot: employee.full_name,
-      employee_code_snapshot: employee.employee_code,
+      employee_full_name_snapshot: historicalIdentity?.fullName ?? employee!.full_name,
+      employee_code_snapshot: historicalIdentity?.employeeCode ?? employee!.employee_code,
+      lifecycle_event_id: lifecycleEventId,
       asset_id: asset.id,
       assignment_id: activeAssignments[0]!.id,
       status: "open",

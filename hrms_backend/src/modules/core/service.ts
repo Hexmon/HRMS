@@ -547,6 +547,10 @@ export class CoreService {
       payload: {
         user_id: user.id,
         employee_code: user.employee_code,
+        ...(nextStatus === EmploymentStatuses.Terminated ? {
+          company_id: this.activeCompanyIdForActor(actor, "core.users.deactivate"),
+          employee_version: user.version,
+        } : {}),
         actor_user_id: actor.id,
         status: nextStatus,
         reason: input.reason ?? null,

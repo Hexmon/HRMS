@@ -25,6 +25,19 @@ export interface MigrationPlan {
   pending: MigrationFile[];
 }
 
+export const ASSET_IDENTITY_FINALIZATION_MIGRATION = "0072_asset_tenant_ownership_finalization.sql";
+
+export function stagePendingMigrations(
+  pending: MigrationFile[],
+  approval: string | undefined,
+): { runnable: MigrationFile[]; blocked: MigrationFile[] } {
+  const barrier = pending.findIndex((migration) => migration.filename === ASSET_IDENTITY_FINALIZATION_MIGRATION);
+  if (barrier < 0 || (barrier === 0 && approval === ASSET_IDENTITY_FINALIZATION_MIGRATION)) {
+    return { runnable: pending, blocked: [] };
+  }
+  return { runnable: pending.slice(0, barrier), blocked: pending.slice(barrier) };
+}
+
 const MIGRATION_FILENAME_PATTERN = /^(?<id>\d{4})_[a-z0-9][a-z0-9_]*\.sql$/;
 
 const MIGRATION_LEDGER_SQL = `

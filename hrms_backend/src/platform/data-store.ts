@@ -354,6 +354,7 @@ export interface AssetRecoveryTicketRecord {
   employee_user_id: UUID;
   employee_full_name_snapshot: string;
   employee_code_snapshot: string;
+  lifecycle_event_id?: UUID | null;
   asset_id: UUID;
   assignment_id: UUID | null;
   status: string;
@@ -476,7 +477,7 @@ export interface DataStorePersistence {
   assetCommand?<T>(
     input: AssetCommandInput,
     authorize: (store: DataStore, actor: AuthUser, replayBody?: T) => void,
-    execute: (store: DataStore, actor: AuthUser) => T,
+    execute: (store: DataStore, actor: AuthUser, context: AssetCommandExecutionContext) => T,
   ): Promise<T>;
   close(): Promise<void>;
 }
@@ -493,6 +494,8 @@ export interface AssetReadQuery {
   windowDays?: number;
   includeExpired?: boolean;
   assignedToUserId?: UUID;
+  licenseProductId?: UUID;
+  licenseFingerprintHash?: string;
 }
 
 export interface AssetReadMetadata {
@@ -540,6 +543,24 @@ export interface AssetCommandInput {
   assigneeUserId?: UUID;
   lifecycleEventId?: UUID;
   terminatedEmployeeUserId?: UUID;
+  resourceId?: UUID;
+  relatedAssetId?: UUID;
+  relatedVendorId?: UUID;
+  requestAssetType?: string;
+  vendorName?: string;
+  assetCode?: string;
+  licenseProductId?: UUID;
+  licenseEntitlementId?: UUID;
+  licenseFingerprintHash?: string;
+}
+
+export interface AssetCommandExecutionContext {
+  terminationIdentity?: {
+    employeeUserId: UUID;
+    fullName: string;
+    employeeCode: string;
+    employeeVersion: number;
+  };
 }
 
 export type PersistenceDomain =
@@ -636,6 +657,8 @@ export interface DataStore {
   assetRecoveryTickets: AssetRecoveryTicketRecord[];
   /** Request-local SQL read metadata. Never persist this transient projection. */
   assetReadMetadata?: AssetReadMetadata;
+  /** Request-local SQL command allocation metadata. Never persist this projection. */
+  assetCommandMetadata?: { nextRequestNumber?: number };
   licenseEntitlements: LicenseEntitlement[];
   licenseActivations: LicenseActivation[];
   compromisedKeys: Array<{

@@ -9,6 +9,13 @@ import { assertDisposableResetTarget } from "../../../platform/postgres-data-sto
 
 async function recordDurableTermination(app: FastifyInstance, employeeUserId: string): Promise<string> {
   const eventId = randomUUID();
+  const identity = await app.store.pgPool!.query<{ company_id: string; version: number }>(
+    `SELECT preference.company_id, employee.version
+       FROM core.users employee
+       JOIN platform.user_session_preferences preference ON preference.user_id = employee.id
+      WHERE employee.id = $1`,
+    [employeeUserId],
+  );
   await app.store.pgPool!.query(
     "UPDATE core.users SET employment_status = 'terminated', terminated_on = current_date WHERE id = $1",
     [employeeUserId],
@@ -22,7 +29,12 @@ async function recordDurableTermination(app: FastifyInstance, employeeUserId: st
     [
       eventId,
       employeeUserId,
-      JSON.stringify({ user_id: employeeUserId, status: "terminated" }),
+      JSON.stringify({
+        user_id: employeeUserId,
+        company_id: identity.rows[0]!.company_id,
+        employee_version: identity.rows[0]!.version,
+        status: "terminated",
+      }),
       `core.user.deactivated:${employeeUserId}:${eventId}`,
     ],
   );
@@ -379,6 +391,7 @@ describe("asset transaction boundary", () => {
     const createdA = await createAsset(adminA.token, "Company A laptop");
     const companyALock = await first.store.pgPool!.connect();
     let createdB!: Awaited<ReturnType<typeof createAsset>>;
+    let blockedA!: Awaited<ReturnType<typeof createAsset>>;
     try {
       await companyALock.query("BEGIN");
       await companyALock.query(
@@ -386,12 +399,20 @@ describe("asset transaction boundary", () => {
         [companyA.id],
       );
       createdB = await createAsset(managerB.token, "Company B laptop");
+      blockedA = await first.inject({
+        method: "POST",
+        url: "/api/v1/assets/",
+        headers: { ...authHeader(adminA.token), "Idempotency-Key": randomUUID() },
+        payload: { asset_code: `LOCKED-${randomUUID()}`, asset_type: "Laptop", name: "Serialized Company A" },
+      });
     } finally {
       await companyALock.query("ROLLBACK").catch(() => undefined);
       companyALock.release();
     }
     expect(createdA.statusCode, createdA.body).toBe(200);
     expect(createdB.statusCode, createdB.body).toBe(200);
+    expect(blockedA.statusCode, blockedA.body).toBe(409);
+    expect(blockedA.json().message).toMatch(/busy; retry with the same Idempotency-Key/u);
     expect(createdA.json().company_id).toBe(companyA.id);
     expect(createdB.json().company_id).toBe(companyBId);
     const foreignAssignee = await first.inject({
@@ -979,6 +1000,41 @@ describe("asset transaction boundary", () => {
         client.release();
       }
 
+      const expectedMaintenance = await first.store.pgPool!.query<{ id: string }>(
+        `SELECT id
+           FROM assets.asset_maintenance_records
+          WHERE company_id = $1 AND asset_id = $2 AND deleted_at IS NULL
+          ORDER BY started_on DESC, created_at DESC, id DESC
+          LIMIT 6`,
+        [asset.company_id, asset.id],
+      );
+      const firstMaintenancePage = await first.inject({
+        method: "GET",
+        url: `/api/v1/assets/${asset.id}/maintenance?page=1&page_size=3`,
+        headers: authHeader(manager.token),
+      });
+      const secondMaintenancePage = await first.inject({
+        method: "GET",
+        url: `/api/v1/assets/${asset.id}/maintenance?page=2&page_size=3`,
+        headers: authHeader(manager.token),
+      });
+      expect(firstMaintenancePage.statusCode, firstMaintenancePage.body).toBe(200);
+      expect(secondMaintenancePage.statusCode, secondMaintenancePage.body).toBe(200);
+      const pagedMaintenanceIds = [
+        ...firstMaintenancePage.json().items,
+        ...secondMaintenancePage.json().items,
+      ].map((record: { id: string }) => record.id);
+      expect(pagedMaintenanceIds).toEqual(expectedMaintenance.rows.map((record) => record.id));
+      expect(new Set(pagedMaintenanceIds)).toHaveLength(6);
+
+      const excessiveOffset = await first.inject({
+        method: "GET",
+        url: `/api/v1/assets/${asset.id}/maintenance?page=102&page_size=100`,
+        headers: authHeader(manager.token),
+      });
+      expect(excessiveOffset.statusCode, excessiveOffset.body).toBe(400);
+      expect(excessiveOffset.json().message).toMatch(/offset cannot exceed 10000/u);
+
       const detail = await first.inject({
         method: "GET",
         url: `/api/v1/assets/${asset.id}`,
@@ -995,6 +1051,73 @@ describe("asset transaction boundary", () => {
     } finally {
       persistence.assetReadStore = originalAssetReadStore;
     }
+  });
+
+  it("keeps command projections bounded when unrelated tenant history is large", async () => {
+    const manager = await loginAs(first, "AST");
+    const persistence = first.store.persistence;
+    if (!persistence?.assetCommand) throw new Error("Expected PostgreSQL asset command persistence");
+    const companyId = first.store.userSessionPreferences.find((item) => item.user_id === seedIds.assetManager)!.company_id!;
+    const inventory = await first.inject({ method: "GET", url: "/api/v1/assets?page=1&page_size=1", headers: authHeader(manager.token) });
+    const target = inventory.json().items[0] as { id: string };
+    const client = await first.store.pgPool!.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query("SET LOCAL hrms.asset_writer_v2 = 'on'");
+      await client.query(
+        `INSERT INTO assets.assets (id, company_id, asset_code, qr_hash, asset_type, name, status)
+         SELECT gen_random_uuid(), $1, 'SCALE-' || item::text || '-' || $2,
+                'scale-qr-' || item::text || '-' || $2, 'Laptop', 'Scale history', 'In Stock'
+           FROM generate_series(1, 200) item`,
+        [companyId, randomUUID()],
+      );
+      await client.query(
+        `INSERT INTO assets.asset_maintenance_records
+           (id, company_id, asset_id, maintenance_type, started_on, status, notes)
+         SELECT gen_random_uuid(), $1, $2, 'inspection', current_date - (item % 5),
+                'completed', 'command-scale-' || item::text
+           FROM generate_series(1, 105) item`,
+        [companyId, target.id],
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    const observations: Array<Record<string, number>> = [];
+    const run = (actionKey: string, extra: Record<string, unknown>) => persistence.assetCommand!(
+      {
+        companyId, actorUserId: seedIds.assetManager, actionKey,
+        idempotencyKey: randomUUID(), requestHash: randomUUID().replaceAll("-", "").padEnd(64, "0"),
+        ...extra,
+      },
+      (store) => observations.push({
+        assets: store.assets.length,
+        assignments: store.assetAssignments.length,
+        maintenance: store.assetMaintenanceRecords.length,
+        acknowledgements: store.assetAcknowledgements.length,
+        requests: store.assetRequests.length,
+        vendors: store.assetVendors.length,
+        recoveries: store.assetRecoveryTickets.length,
+        entitlements: store.licenseEntitlements.length,
+        activations: store.licenseActivations.length,
+      }),
+      () => ({ ok: true }),
+    );
+    await run("assets.create", { assetCode: `NEW-${randomUUID()}` });
+    await run(`assets.maintenance.create:${target.id}`, { resourceId: target.id });
+
+    expect(observations[0]).toEqual({
+      assets: 0, assignments: 0, maintenance: 0, acknowledgements: 0,
+      requests: 0, vendors: 0, recoveries: 0, entitlements: 0, activations: 0,
+    });
+    expect(observations[1]).toMatchObject({
+      assets: 1, maintenance: 100, requests: 0, recoveries: 0,
+      entitlements: 0, activations: 0,
+    });
   });
 
   it("executes every bounded SQL projection with tenant filters and empty-result behavior", async () => {
@@ -1089,14 +1212,6 @@ describe("asset transaction boundary", () => {
     });
     expect(assigned.statusCode, assigned.body).toBe(200);
     const lifecycleEventId = await recordDurableTermination(first, seedIds.employee1);
-    const terminated = await first.inject({
-      method: "POST",
-      url: "/api/v1/assets/events/employee-terminated",
-      headers: { ...authHeader(admin.token), "Idempotency-Key": randomUUID() },
-      payload: { employee_user_id: seedIds.employee1, lifecycle_event_id: lifecycleEventId },
-    });
-    expect(terminated.statusCode, terminated.body).toBe(200);
-
     const companyBId = randomUUID();
     await first.store.pgPool!.query(
       "INSERT INTO platform.company_profiles (id, company_name, company_slug, status) VALUES ($1, 'Transferred Employer', $2, 'active')",
@@ -1107,13 +1222,22 @@ describe("asset transaction boundary", () => {
       [companyBId, seedIds.employee1],
     );
     await first.store.pgPool!.query(
-      "UPDATE core.users SET full_name = 'Foreign Company Profile', email = $1 WHERE id = $2",
+      "UPDATE core.users SET full_name = 'Foreign Company Profile', email = $1, deleted_at = now() WHERE id = $2",
       [`foreign-${companyBId}@example.test`, seedIds.employee1],
     );
     const cachedEmployee = first.store.users.find((user) => user.id === seedIds.employee1)!;
     cachedEmployee.full_name = "Foreign Company Profile";
     cachedEmployee.email = `foreign-${companyBId}@example.test`;
     cachedEmployee.roles = [Roles.Admin];
+    cachedEmployee.deleted_at = new Date().toISOString();
+
+    const terminated = await first.inject({
+      method: "POST",
+      url: "/api/v1/assets/events/employee-terminated",
+      headers: { ...authHeader(admin.token), "Idempotency-Key": randomUUID() },
+      payload: { employee_user_id: seedIds.employee1, lifecycle_event_id: lifecycleEventId },
+    });
+    expect(terminated.statusCode, terminated.body).toBe(200);
 
     const queue = await first.inject({
       method: "GET",
@@ -1129,6 +1253,24 @@ describe("asset transaction boundary", () => {
     });
     expect(ticket?.employee).not.toHaveProperty("email");
     expect(ticket?.employee).not.toHaveProperty("roles");
+    const durable = await first.store.pgPool!.query<{
+      lifecycle_event_id: string; employee_full_name_snapshot: string; employee_code_snapshot: string;
+    }>(
+      `SELECT lifecycle_event_id, employee_full_name_snapshot, employee_code_snapshot
+         FROM assets.asset_recovery_tickets WHERE id = $1`,
+      [ticket.id],
+    );
+    expect(durable.rows[0]).toEqual({
+      lifecycle_event_id: lifecycleEventId,
+      employee_full_name_snapshot: originalEmployee.rows[0]!.full_name,
+      employee_code_snapshot: originalEmployee.rows[0]!.employee_code,
+    });
+    const recoveryOutbox = await first.store.pgPool!.query<{ payload: Record<string, unknown> }>(
+      "SELECT payload FROM platform.outbox_events WHERE event_type = 'employee.terminated' AND payload->>'lifecycle_event_id' = $1",
+      [lifecycleEventId],
+    );
+    expect(recoveryOutbox.rows).toHaveLength(1);
+    expect(JSON.stringify(recoveryOutbox.rows)).not.toContain("Foreign Company Profile");
     const dashboard = await first.inject({
       method: "GET",
       url: "/api/v1/dashboard/summary",
@@ -1468,13 +1610,15 @@ describe("asset transaction boundary", () => {
     const durableBefore = await first.store.pgPool!.query<{ id: string }>(
       "SELECT id FROM assets.assets ORDER BY id",
     );
+    const targetAssetId = durableBefore.rows[0]!.id;
     await expect(persistence.assetCommand(
       {
         companyId,
         actorUserId: manager.id,
-        actionKey: "assets.test.remove-row",
+        actionKey: `assets.return:${targetAssetId}`,
         idempotencyKey: randomUUID(),
         requestHash: "a".repeat(64),
+        resourceId: targetAssetId,
       },
       () => undefined,
       (store) => {

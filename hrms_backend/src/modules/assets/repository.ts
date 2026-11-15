@@ -87,10 +87,11 @@ export class AssetRepository {
     const now = nowIso();
     // Asset commands load the current SQL snapshot under the DB command lock.
     // Count-based allocation reuses codes after imports or deleted/gapped rows.
-    const nextNumber = Math.max(400, ...this.store.assetRequests.filter((request) => request.company_id === companyId).map((request) => {
-      const match = /^REQ-(\d+)$/u.exec(request.request_code);
-      return match ? Number(match[1]) : 400;
-    })) + 1;
+    const nextNumber = this.store.assetCommandMetadata?.nextRequestNumber ??
+      Math.max(400, ...this.store.assetRequests.filter((request) => request.company_id === companyId).map((request) => {
+        const match = /^REQ-(\d+)$/u.exec(request.request_code);
+        return match ? Number(match[1]) : 400;
+      })) + 1;
     const request: AssetRequestRecord = {
       id: randomUUID(),
       company_id: companyId,
@@ -155,7 +156,11 @@ export class AssetRepository {
     return this.store.assetMaintenanceRecords
       .filter((record) => record.asset_id === assetId && record.company_id === companyId && !record.deleted_at)
       .filter((record) => !status || record.status === status)
-      .sort((a, b) => b.started_on.localeCompare(a.started_on));
+      .sort((a, b) =>
+        b.started_on.localeCompare(a.started_on) ||
+        b.created_at.localeCompare(a.created_at) ||
+        b.id.localeCompare(a.id)
+      );
   }
 
   createMaintenance(companyId: UUID, input: Omit<AssetMaintenanceRecord, "id" | "company_id" | "version" | "created_at" | "updated_at" | "deleted_at">): AssetMaintenanceRecord {

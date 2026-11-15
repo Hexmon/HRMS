@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { assertDisposableResetTarget } from "../../platform/postgres-data-store.js";
+import { assertDisposableResetTarget, resetPostgresDatabase } from "../../platform/postgres-data-store.js";
 
 function requiredTestDatabaseUrl(): URL {
   const value = process.env.TEST_DATABASE_URL;
@@ -89,6 +89,11 @@ describe("asset tenant ownership migration", () => {
         verifierUserId,
         `verifier-${verifierUserId}@example.test`,
       ],
+    );
+    await client.query(
+      `INSERT INTO platform.user_session_preferences (user_id, active_role, company_id)
+       VALUES ($1, 'Employee', $2), ($3, 'Admin', $2)`,
+      [recoveryEmployeeId, companyA, verifierUserId],
     );
     await client.query(
       `INSERT INTO assets.assets (id, asset_code, qr_hash, asset_type, name, status)
@@ -224,8 +229,95 @@ describe("asset tenant ownership migration", () => {
       "DELETE FROM assets.asset_tenant_ownership_map WHERE resource_type = 'asset' AND resource_id = $1",
       [orphanId],
     );
-    await client.query("UPDATE platform.company_profiles SET status = 'inactive' WHERE id = $1", [companyA]);
     await applyMigration(client, "0070_asset_tenant_ownership_finalization.sql");
+    await applyMigration(client, "0071_asset_recovery_identity_evidence_prep.sql");
+    const recoveryTicket = await client.query<{ id: string }>(
+      "SELECT id FROM assets.asset_recovery_tickets WHERE asset_id = $1",
+      [assetId],
+    );
+    await expect(applyMigration(client, "0072_asset_tenant_ownership_finalization.sql"))
+      .rejects.toMatchObject({ code: "23502", message: expect.stringMatching(/no verified identity evidence/u) });
+    const insertEvidence = (overrides: { ticketId?: string; companyId?: string; name?: string; verifier?: string } = {}) => client.query(
+      `INSERT INTO assets.asset_recovery_identity_evidence (
+         ticket_id, company_id, employee_user_id, employee_full_name_snapshot,
+         employee_code_snapshot, source_reference, verified_by_user_id
+       ) VALUES ($1, $2, $3, $4, 'RECOVERY-001', $5, $6)`,
+      [
+        overrides.ticketId ?? recoveryTicket.rows[0]!.id,
+        overrides.companyId ?? companyA,
+        recoveryEmployeeId,
+        overrides.name ?? "Verified Original Company Employee",
+        `reviewed-termination-${recoveryEmployeeId}`,
+        overrides.verifier ?? verifierUserId,
+      ],
+    );
+    await insertEvidence({ companyId: companyB });
+    await expect(applyMigration(client, "0072_asset_tenant_ownership_finalization.sql"))
+      .rejects.toMatchObject({ code: "23514" });
+    await client.query("DELETE FROM assets.asset_recovery_identity_evidence");
+    await insertEvidence({ name: "" });
+    await expect(applyMigration(client, "0072_asset_tenant_ownership_finalization.sql"))
+      .rejects.toMatchObject({ code: "23514" });
+    await client.query("DELETE FROM assets.asset_recovery_identity_evidence");
+    await insertEvidence({ verifier: randomUUID() });
+    await expect(applyMigration(client, "0072_asset_tenant_ownership_finalization.sql"))
+      .rejects.toMatchObject({ code: "23514" });
+    await client.query("DELETE FROM assets.asset_recovery_identity_evidence");
+    await insertEvidence();
+    await insertEvidence({ ticketId: randomUUID() });
+    await expect(applyMigration(client, "0072_asset_tenant_ownership_finalization.sql"))
+      .rejects.toMatchObject({ code: "23514" });
+    await client.query("DELETE FROM assets.asset_recovery_identity_evidence WHERE ticket_id <> $1", [recoveryTicket.rows[0]!.id]);
+    await client.query("UPDATE platform.company_profiles SET status = 'inactive' WHERE id = $1", [companyA]);
+    await applyMigration(client, "0072_asset_tenant_ownership_finalization.sql");
+    await applyMigration(client, "0073_asset_termination_identity_snapshot.sql");
+
+    const lifecycleEventId = randomUUID();
+    await expect(client.query(
+      `INSERT INTO platform.outbox_events (
+         event_id, aggregate_type, aggregate_id, event_type, payload,
+         idempotency_key, status, retry_count, available_at
+       ) VALUES ($1, 'core.user', $2, 'core.user.terminated', $3::jsonb,
+         $4, 'pending', 0, now())`,
+      [lifecycleEventId, recoveryEmployeeId, JSON.stringify({ user_id: recoveryEmployeeId }), `legacy-${lifecycleEventId}`],
+    )).rejects.toMatchObject({ code: "23514" });
+    await expect(client.query(
+      `INSERT INTO platform.outbox_events (
+         event_id, aggregate_type, aggregate_id, event_type, payload,
+         idempotency_key, status, retry_count, available_at
+       ) VALUES ($1, 'core.user', $2, 'core.user.terminated', $3::jsonb,
+         $4, 'pending', 0, now())`,
+      [randomUUID(), recoveryEmployeeId, JSON.stringify({
+        user_id: recoveryEmployeeId, company_id: companyB, employee_version: 1,
+      }), `wrong-company-${lifecycleEventId}`],
+    )).rejects.toMatchObject({ code: "23514", message: expect.stringMatching(/company/u) });
+    await client.query(
+      `INSERT INTO platform.outbox_events (
+         event_id, aggregate_type, aggregate_id, event_type, payload,
+         idempotency_key, status, retry_count, available_at
+       ) VALUES ($1, 'core.user', $2, 'core.user.terminated', $3::jsonb,
+         $4, 'pending', 0, now())`,
+      [lifecycleEventId, recoveryEmployeeId, JSON.stringify({
+        user_id: recoveryEmployeeId, company_id: companyA, employee_version: 1,
+      }), `valid-${lifecycleEventId}`],
+    );
+    const terminationSnapshot = await client.query<{
+      company_id: string; employee_full_name_snapshot: string; employee_code_snapshot: string; employee_version: number;
+    }>(
+      `SELECT company_id, employee_full_name_snapshot, employee_code_snapshot, employee_version
+         FROM core.user_termination_identity_snapshots WHERE lifecycle_event_id = $1`,
+      [lifecycleEventId],
+    );
+    expect(terminationSnapshot.rows).toEqual([{
+      company_id: companyA,
+      employee_full_name_snapshot: "Original Company Employee",
+      employee_code_snapshot: "RECOVERY-001",
+      employee_version: 1,
+    }]);
+    await expect(client.query(
+      "UPDATE core.user_termination_identity_snapshots SET employee_full_name_snapshot = 'tampered' WHERE lifecycle_event_id = $1",
+      [lifecycleEventId],
+    )).rejects.toMatchObject({ code: "55000" });
 
     await expect(
       client.query(
@@ -268,7 +360,7 @@ describe("asset tenant ownership migration", () => {
       [assetId],
     );
     expect(recoveryIdentity.rows).toEqual([{
-      employee_full_name_snapshot: "Original Company Employee",
+      employee_full_name_snapshot: "Verified Original Company Employee",
       employee_code_snapshot: "RECOVERY-001",
     }]);
     await expect(
@@ -385,5 +477,35 @@ describe("asset tenant ownership migration", () => {
          AND tc.constraint_schema <> ccu.table_schema`,
     );
     expect(crossSchemaForeignKeys.rowCount).toBe(0);
+  }, 30_000);
+
+  it("resets both fresh and previously migrated disposable databases", async () => {
+    const resetDatabaseName = `hrms_asset_reset_test_${randomUUID().replaceAll("-", "")}`;
+    const resetUrl = new URL(sourceUrl);
+    resetUrl.pathname = `/${resetDatabaseName}`;
+    await admin.query(`CREATE DATABASE "${resetDatabaseName}"`);
+    try {
+      await resetPostgresDatabase(resetUrl.toString());
+      await resetPostgresDatabase(resetUrl.toString());
+      const resetClient = new Client({ connectionString: resetUrl.toString() });
+      await resetClient.connect();
+      try {
+        const result = await resetClient.query<{ recovery_tickets: string; evidence: string; snapshots: string }>(
+          `SELECT
+             (SELECT count(*)::text FROM assets.asset_recovery_tickets) AS recovery_tickets,
+             (SELECT count(*)::text FROM assets.asset_recovery_identity_evidence) AS evidence,
+             (SELECT count(*)::text FROM core.user_termination_identity_snapshots) AS snapshots`,
+        );
+        expect(result.rows).toEqual([{ recovery_tickets: "0", evidence: "0", snapshots: "0" }]);
+      } finally {
+        await resetClient.end();
+      }
+    } finally {
+      await admin.query(
+        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()",
+        [resetDatabaseName],
+      );
+      await admin.query(`DROP DATABASE IF EXISTS "${resetDatabaseName}"`);
+    }
   }, 30_000);
 });

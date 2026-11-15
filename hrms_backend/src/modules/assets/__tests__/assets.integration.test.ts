@@ -11,6 +11,13 @@ function assetAuthHeader(token: string) {
 
 async function recordDurableTermination(app: FastifyInstance, employeeUserId: string): Promise<string> {
   const eventId = randomUUID();
+  const identity = await app.store.pgPool!.query<{ company_id: string; version: number }>(
+    `SELECT preference.company_id, employee.version
+       FROM core.users employee
+       JOIN platform.user_session_preferences preference ON preference.user_id = employee.id
+      WHERE employee.id = $1`,
+    [employeeUserId],
+  );
   await app.store.pgPool!.query(
     "UPDATE core.users SET employment_status = 'terminated', terminated_on = current_date WHERE id = $1",
     [employeeUserId],
@@ -21,7 +28,12 @@ async function recordDurableTermination(app: FastifyInstance, employeeUserId: st
        idempotency_key, status, retry_count, available_at, created_at
      ) VALUES ($1, 'core.user', $2, 'core.user.terminated', $3::jsonb,
        $4, 'pending', 0, now(), now())`,
-    [eventId, employeeUserId, JSON.stringify({ user_id: employeeUserId, status: "terminated" }), `core.user.deactivated:${employeeUserId}:${eventId}`],
+    [eventId, employeeUserId, JSON.stringify({
+      user_id: employeeUserId,
+      company_id: identity.rows[0]!.company_id,
+      employee_version: identity.rows[0]!.version,
+      status: "terminated",
+    }), `core.user.deactivated:${employeeUserId}:${eventId}`],
   );
   return eventId;
 }

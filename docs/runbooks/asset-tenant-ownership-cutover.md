@@ -5,7 +5,7 @@ This runbook is a draft deployment dependency for TEN-S25-010. It is not authori
 ## Safety And Required Inputs
 
 - Obtain release-owner approval, a tested database backup, an application-write maintenance window, and the exact candidate SHA.
-- Stop every old API and worker capable of writing asset tables. Migrations 0069/0070 change ownership, identity and immutability rules; mixed old/new writers are unsafe.
+- Stop every old API and worker capable of writing asset tables. Migrations 0069-0073 change ownership, identity and immutability rules; mixed old/new writers are unsafe.
 - Never infer historical ownership from a current employee company preference, current assignee, first company, or default company.
 - A human data owner must verify each existing asset, request, and vendor against authoritative company records and retain a non-sensitive verification note.
 - Use a dedicated QA copy first. Do not paste personal data, credentials, document contents, or secrets into mapping notes.
@@ -135,8 +135,11 @@ SELECT count(*) AS orphan_or_mismatch
  END;
 ```
 
-2. Apply `0070_asset_tenant_ownership_finalization.sql`. It must fail closed with SQLSTATE `23502` for unattributed mappings or missing recovery identity, `23503` for an unknown verifier/orphan root, and `23514` for an owner mismatch. Do not delete a legitimate mapping merely to pass preflight; repair from approved source evidence. The migration does not require an historical company to remain active.
-3. Confirm the map and recovery identity triggers are enabled and the map is no longer writable:
+2. Apply `0071_asset_recovery_identity_evidence_prep.sql` only. Pause before 0072. Populate one `assets.asset_recovery_identity_evidence` row per legacy recovery ticket from an approved original-company source, recording the ticket/company/user, historical name/code, source reference, accountable verifier and verification time. Grant the named migration operator only the temporary DML needed for this staging step; the runtime role must never receive it. Reconcile exact one-to-one counts and independently review blank, extra and mismatched rows.
+   The normal migration runner enforces this pause: without approval it applies 0071, refuses 0072 and exits non-zero. This first non-approved failure is expected and must be handled by deployment orchestration as a paused, incomplete rollout—not a successful deployment and not an automatic retry loop. After evidence review, run the finalization once with `HRMS_MIGRATION_APPROVAL=0072_asset_tenant_ownership_finalization.sql pnpm db:migrate` (or the production command), then remove that environment variable immediately. A wrong, absent, or prematurely supplied value cannot cross the barrier.
+3. Apply `0072_asset_tenant_ownership_finalization.sql`. It must fail closed with SQLSTATE `23502` for unattributed mappings or missing recovery evidence, `23503` for an unknown verifier/orphan root, and `23514` for an owner/evidence mismatch. It replaces any legacy mutable-profile snapshot with ticket-bound verified evidence, freezes both evidence maps and does not read current employee profiles. The migration does not require an historical company to remain active.
+4. Apply `0073_asset_termination_identity_snapshot.sql`. Confirm new `core.user.terminated` outbox inserts atomically create an immutable version-bound snapshot and that malformed legacy payloads fail closed. Revoke any temporary evidence-staging grant before starting the API.
+5. Confirm the map and recovery identity triggers are enabled and the map is no longer writable:
 
 ```sql
 SELECT tgname, tgenabled
@@ -165,7 +168,7 @@ ROLLBACK;
 
 The trigger check must return all five enabled triggers. Validate a real map row and a mapped-root delete/re-key inside rollback-only transactions using the approved migration role and expect SQLSTATE `55000`; the `WHERE false` smoke query only confirms syntax and privileges.
 
-4. Use a distinct non-owner runtime database role. Explicitly revoke ownership-map DML from that role in the environment's managed grants, then verify all four results are false before starting the API:
+6. Use a distinct non-owner runtime database role. Explicitly revoke ownership-map DML from that role in the environment's managed grants, then verify all four results are false before starting the API:
 
 ```sql
 SELECT
@@ -177,12 +180,12 @@ SELECT
 
 Do not run the API as the table owner or a superuser. Do not grant runtime code direct map DML after cutover. `REVOKE ... FROM PUBLIC` in 0070 is a floor, not proof that an environment-specific runtime role is least-privileged.
 
-5. Promote the exact new API build. Verify every instance reports the candidate SHA before resuming asset writes.
-6. In isolated QA, use independent Company A and Company B accounts to verify list/detail, bounded pagination and maintenance totals, foreign direct IDs, request queue/decision, maintenance/vendor relations, original-company termination recovery after an A→B profile movement, retry, restart, same-code assets, same-name vendors and parallel commands in different companies.
+7. Promote the exact new API build. Verify every instance reports the candidate SHA before resuming asset writes.
+8. In isolated QA, use independent Company A and Company B accounts to verify list/detail, bounded pagination and maintenance totals, foreign direct IDs, request queue/decision, maintenance/vendor relations, original-company termination recovery after an A→B profile movement, retry, restart, same-code assets, same-name vendors and parallel commands in different companies.
 
 ## Monitoring And Recovery
 
 - Monitor asset 400/401/403/404/409/500 rates, migration failures, command-result conflicts, outbox failures, and recovery-ticket creation by company.
 - If validation or the new API fails, keep asset writes paused. Do not restore an old binary after tenant-local duplicate codes or vendor names have been created.
-- After migration 0069, the schema is forward-only. After 0070, the verified map and historical recovery identity are immutable. Preserve company ownership, repair forward through a separately reviewed append-only migration, or restore the entire pre-cutover backup only with release-owner approval and a complete outage plan.
+- After migration 0069, the schema is forward-only. After 0072, the verified maps and historical recovery identity are immutable; after 0073, runtime termination snapshots and ticket lifecycle IDs are immutable. Preserve company ownership, repair forward through a separately reviewed append-only migration, or restore the entire pre-cutover backup only with release-owner approval and a complete outage plan.
 - Public QR access remains a separate capability path; QR rotation, revocation, and request-path log redaction are not certified by this cutover.

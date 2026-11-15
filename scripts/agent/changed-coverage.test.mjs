@@ -993,7 +993,7 @@ test("asset tenant ownership migrations use explicit fail-closed semantic contra
 
 test("asset tenant ownership finalization has an explicit immutable-evidence semantic contract", () => {
   const repositoryRoot = process.cwd();
-  const path = "hrms_backend/src/db/migrations/0070_asset_tenant_ownership_finalization.sql";
+  const path = "hrms_backend/src/db/migrations/0072_asset_tenant_ownership_finalization.sql";
   const migration = readFileSync(join(repositoryRoot, path), "utf8");
 
   assert.match(validateSemanticPath(repositoryRoot, path, migration, "base"), /semantic contract passed/);
@@ -1001,11 +1001,14 @@ test("asset tenant ownership finalization has an explicit immutable-evidence sem
     ["SET LOCAL hrms.asset_writer_v2", "SET hrms.asset_writer_v2", /transaction-local writer marker/],
     ["verified_by_user_id IS NULL", "FALSE", /unattributed ownership mappings/],
     ["FROM core.users verifier", "FROM core.users_missing verifier", /unknown ownership verifiers/],
+    ["DROP TRIGGER IF EXISTS asset_recovery_identity_immutable_trg", "DROP TRIGGER IF EXISTS asset_recovery_identity_missing_trg", /replace the applied 0070 snapshot/],
     ["FROM assets.asset_requests root WHERE root.id = ownership.resource_id", "FROM assets.asset_requests root WHERE false", /orphan detection is missing for request/],
+    ["IF orphan_count > 0 THEN", "IF false THEN", /orphan ownership roots/],
     ["FROM assets.software_vendors root\n        WHERE root.id = ownership.resource_id AND root.company_id <> ownership.company_id", "FROM assets.software_vendors root\n        WHERE false", /owner mismatch detection is missing for vendor/],
     ["BEFORE INSERT OR UPDATE OR DELETE ON assets.asset_tenant_ownership_map", "BEFORE INSERT OR UPDATE ON assets.asset_tenant_ownership_map", /every map mutation/],
     ["NEW.id IS DISTINCT FROM OLD.id", "FALSE", /deletion and identity replacement/],
     ["CREATE TRIGGER finalized_asset_vendor_root_identity_trg", "CREATE TRIGGER finalized_asset_vendor_root_identity_missing_trg", /software_vendors/],
+    ["EXECUTE FUNCTION assets.prevent_finalized_asset_root_orphaning()", "EXECUTE FUNCTION assets.reject_finalized_asset_ownership_map_mutation()", /misbound/],
     ["NEW.employee_full_name_snapshot IS DISTINCT FROM OLD.employee_full_name_snapshot", "FALSE", /employee_full_name_snapshot/],
     ["REVOKE INSERT, UPDATE, DELETE, TRUNCATE", "REVOKE SELECT", /PUBLIC ownership-map mutation privileges/],
   ]) {
@@ -1015,6 +1018,23 @@ test("asset tenant ownership finalization has an explicit immutable-evidence sem
       needle,
     );
   }
+});
+
+test("asset recovery evidence staging and runtime termination snapshots have semantic contracts", () => {
+  const repositoryRoot = process.cwd();
+  const appliedPath = "hrms_backend/src/db/migrations/0070_asset_tenant_ownership_finalization.sql";
+  const prepPath = "hrms_backend/src/db/migrations/0071_asset_recovery_identity_evidence_prep.sql";
+  const runtimePath = "hrms_backend/src/db/migrations/0073_asset_termination_identity_snapshot.sql";
+  const applied = readFileSync(join(repositoryRoot, appliedPath), "utf8");
+  const prep = readFileSync(join(repositoryRoot, prepPath), "utf8");
+  const runtime = readFileSync(join(repositoryRoot, runtimePath), "utf8");
+  assert.match(validateSemanticPath(repositoryRoot, appliedPath, applied, "base"), /semantic contract passed/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, appliedPath, `${applied}\n-- mutation`, "base"), /immutable/);
+  assert.match(validateSemanticPath(repositoryRoot, prepPath, prep, "base"), /semantic contract passed/);
+  assert.match(validateSemanticPath(repositoryRoot, runtimePath, runtime, "base"), /semantic contract passed/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, prepPath, prep.replace("ticket_id uuid PRIMARY KEY", "ticket_id uuid"), "base"), /staging schema/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replaceAll("u.version = payload_employee_version", "TRUE"), "base"), /exact durable employee version/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("NEW.lifecycle_event_id IS DISTINCT FROM OLD.lifecycle_event_id", "FALSE"), "base"), /lifecycle event identity/);
 });
 
 test("frontend contract route discovery excludes test modules without hiding runtime routes", () => {

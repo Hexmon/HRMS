@@ -56,6 +56,7 @@ import type {
 import {
   type AssetAssignmentRecord,
   type AssetCommandInput,
+  type AssetCommandExecutionContext,
   type AssetReadQuery,
   type AssetStateEventRecord,
   type AdminMasterDataItemRecord,
@@ -85,7 +86,7 @@ import { createValkeyClient } from "./valkey-client.js";
 import type { EmailDeliveryRecord, EmailEventRecord } from "./email/types.js";
 import { CloudinaryObjectStorage } from "./object-storage.js";
 import { normalizeAttendancePolicyConfig } from "../modules/attendance/policy-config.js";
-import { companyContextRequired, conflict, forbidden, notFound, unauthorized } from "./errors.js";
+import { badRequest, companyContextRequired, conflict, forbidden, notFound, unauthorized } from "./errors.js";
 
 function optionalSet(
   values: readonly string[] | undefined,
@@ -257,6 +258,8 @@ const resetTables = [
   "timesheets.workflow_definitions",
   "timesheets.work_segments",
   "assets.asset_command_results",
+  "assets.asset_recovery_identity_evidence",
+  "assets.asset_tenant_ownership_map",
   "assets.compromised_keys",
   "assets.license_activations",
   "assets.license_entitlements",
@@ -299,6 +302,7 @@ const resetTables = [
   "platform.company_profiles",
   "platform.user_credentials",
   "platform.finance_governance_config",
+  "core.user_termination_identity_snapshots",
   "core.user_roles",
   "core.role_permissions",
   "core.roles",
@@ -464,6 +468,20 @@ function migrationSql(): string {
   );
 }
 
+async function truncateExistingResetTables(client: PoolClient): Promise<void> {
+  const existing = await client.query<{ table_name: string }>(
+    `SELECT candidate AS table_name
+       FROM unnest($1::text[]) AS candidate
+      WHERE to_regclass(candidate) IS NOT NULL`,
+    [resetTables],
+  );
+  const existingNames = new Set(existing.rows.map((row) => row.table_name));
+  const tables = resetTables.filter((table) => existingNames.has(table));
+  if (tables.length > 0) {
+    await client.query(`TRUNCATE ${tables.join(", ")} RESTART IDENTITY`);
+  }
+}
+
 export async function resetPostgresDatabase(
   databaseUrl: string,
 ): Promise<void> {
@@ -476,9 +494,13 @@ export async function resetPostgresDatabase(
       "SELECT pg_advisory_lock(hashtext('hrms_postgres_schema_reset'))",
     );
     schemaLockAcquired = true;
+    // Disposable test databases can contain rows from a prior schema revision.
+    // Clear only the guarded local test target before fail-closed migrations;
+    // production migration behavior remains unchanged and must reconcile data.
+    await truncateExistingResetTables(client);
     await client.query(migrationSql());
     await client.query("BEGIN");
-    await client.query(`TRUNCATE ${resetTables.join(", ")} RESTART IDENTITY`);
+    await truncateExistingResetTables(client);
     await client.query("COMMIT");
   } catch (error) {
     await client.query("ROLLBACK").catch(() => undefined);
@@ -619,9 +641,12 @@ class PostgresPersistence {
         : actionKey === "assets.licenses.validate"
           ? {
               ...(baseStore ?? this.store),
-              licenseEntitlements: await this.loadLicenseEntitlements(client),
-              licenseActivations: await this.loadLicenseActivations(client),
-              compromisedKeys: await this.loadCompromisedKeys(client),
+              licenseEntitlements: [],
+              licenseActivations: await this.loadLicenseActivations(client, {
+                productId: query?.licenseProductId,
+                fingerprintHash: query?.licenseFingerprintHash,
+              }),
+              compromisedKeys: [],
             }
           : await this.loadAssetSnapshot(client, baseStore, companyId);
       await client.query("COMMIT");
@@ -650,6 +675,7 @@ class PostgresPersistence {
     const pageNumber = Math.max(1, query?.page ?? 1);
     const pageSize = Math.max(1, Math.min(100, query?.pageSize ?? 20));
     const offset = (pageNumber - 1) * pageSize;
+    if (offset > 10_000) throw badRequest("Asset pagination offset cannot exceed 10000.");
     const empty = (): DataStore => ({
       ...source,
       assets: [],
@@ -819,7 +845,7 @@ class PostgresPersistence {
       const selected = await pageIds(
         `FROM assets.asset_maintenance_records WHERE ${conditions.join(" AND ")}`,
         parameters,
-        "created_at DESC, id DESC",
+        "started_on DESC, created_at DESC, id DESC",
       );
       const snapshot = await withAssetGraph(empty(), [assetId]);
       snapshot.assetMaintenanceRecords = await this.loadAssetMaintenanceRecords(client, companyId, selected.ids);
@@ -1087,7 +1113,7 @@ class PostgresPersistence {
   async assetCommand<T>(
     input: AssetCommandInput,
     authorize: (store: DataStore, actor: AuthUser, replayBody?: T) => void,
-    execute: (store: DataStore, actor: AuthUser) => T,
+    execute: (store: DataStore, actor: AuthUser, context: AssetCommandExecutionContext) => T,
   ): Promise<T> {
     const client = await this.pool.connect();
     let destroyClient = false;
@@ -1114,8 +1140,6 @@ class PostgresPersistence {
       // connection can carry this authority into a later request.
       await client.query("SELECT set_config('hrms.asset_writer_v2', 'on', true)");
       const actor = await this.loadCurrentAssetActor(client, input, true);
-      const before = await this.loadAssetSnapshot(client, this.store, input.companyId);
-
       const previous = await client.query<{
         request_hash: string;
         response_body: T;
@@ -1126,6 +1150,7 @@ class PostgresPersistence {
            AND action_key = $3 AND idempotency_key = $4`,
         [input.companyId, input.actorUserId, input.actionKey, input.idempotencyKey],
       );
+      const before = await this.loadAssetCommandSnapshot(client, input, previous.rows[0]?.response_body);
       // Authorize against current SQL actor state and resource visibility
       // before either replaying or revealing a key/hash conflict.
       authorize(before, actor, previous.rows[0]?.response_body);
@@ -1141,33 +1166,50 @@ class PostgresPersistence {
       // exact replay semantics. Otherwise a stale privileged token could use
       // 403/409 differences as an event/assignment oracle, and later lifecycle
       // changes could make a committed command impossible to replay safely.
+      const executionContext: AssetCommandExecutionContext = {};
       if (input.lifecycleEventId || input.terminatedEmployeeUserId) {
         if (!input.lifecycleEventId || !input.terminatedEmployeeUserId) {
           throw conflict("A complete employee lifecycle event reference is required.");
         }
-        const lifecycle = await client.query(
-          `SELECT 1
-             FROM core.users u
-             JOIN platform.outbox_events o
-               ON o.event_id = $1
-              AND o.aggregate_type = 'core.user'
-              AND o.aggregate_id = u.id
-              AND o.event_type = 'core.user.terminated'
-            WHERE u.id = $2
-              AND u.employment_status = 'terminated'
+        const lifecycle = await client.query<{
+          employee_user_id: UUID;
+          employee_full_name_snapshot: string;
+          employee_code_snapshot: string;
+          employee_version: number;
+        }>(
+          `SELECT identity.employee_user_id, identity.employee_full_name_snapshot,
+                  identity.employee_code_snapshot, identity.employee_version
+             FROM platform.outbox_events event
+             JOIN core.user_termination_identity_snapshots identity
+               ON identity.lifecycle_event_id = event.event_id
+              AND identity.company_id = $3
+              AND identity.employee_user_id = $2
+            WHERE event.event_id = $1
+              AND event.aggregate_type = 'core.user'
+              AND event.aggregate_id = $2
+              AND event.event_type = 'core.user.terminated'
+              AND event.payload->>'company_id' = $3::text
+              AND event.payload->>'user_id' = $2::text
+              AND event.payload->>'employee_version' = identity.employee_version::text
               AND EXISTS (
-                SELECT 1
-                  FROM assets.asset_assignments aa
-                 WHERE aa.company_id = $3
-                   AND aa.assigned_to_user_id = u.id
-                   AND aa.status = 'active'
+                SELECT 1 FROM assets.asset_assignments assignment
+                 WHERE assignment.company_id = $3
+                   AND assignment.assigned_to_user_id = $2
+                   AND assignment.status = 'active'
               )
-            FOR SHARE OF u, o`,
+            FOR SHARE OF event, identity`,
           [input.lifecycleEventId, input.terminatedEmployeeUserId, input.companyId],
         );
         if (lifecycle.rowCount !== 1) {
           throw conflict("Employee termination event is not eligible for asset recovery.");
         }
+        const identity = lifecycle.rows[0]!;
+        executionContext.terminationIdentity = {
+          employeeUserId: identity.employee_user_id,
+          fullName: identity.employee_full_name_snapshot,
+          employeeCode: identity.employee_code_snapshot,
+          employeeVersion: identity.employee_version,
+        };
       }
 
       // A committed assignment remains replayable if its assignee later
@@ -1185,7 +1227,7 @@ class PostgresPersistence {
       }
 
       const staged = assetMutationStore(before, actor);
-      const result = execute(staged, actor);
+      const result = execute(staged, actor, executionContext);
       const changed = assetDeltaStore(before, staged);
       await this.flushAssets(client, changed);
       await this.flushOutbox(client, undefined, staged);
@@ -1303,6 +1345,198 @@ class PostgresPersistence {
       licenseEntitlements: await this.loadLicenseEntitlements(client),
       licenseActivations: await this.loadLicenseActivations(client),
       compromisedKeys: await this.loadCompromisedKeys(client),
+    };
+  }
+
+  private async loadAssetCommandSnapshot<T>(
+    client: PoolClient,
+    input: AssetCommandInput,
+    replayBody?: T,
+  ): Promise<DataStore> {
+    const snapshot: DataStore = {
+      ...this.store,
+      assets: [], assetAssignments: [], assetStateEvents: [], assetRequests: [],
+      assetAcknowledgements: [], assetMaintenanceRecords: [], assetVendors: [],
+      assetRecoveryTickets: [], licenseEntitlements: [], licenseActivations: [], compromisedKeys: [],
+      assetReadMetadata: undefined, assetCommandMetadata: undefined,
+    };
+    if (input.actionKey.startsWith("assets.licenses.")) {
+      snapshot.licenseEntitlements = await this.loadLicenseEntitlements(
+        client, input.licenseEntitlementId ? [input.licenseEntitlementId] : [],
+      );
+      snapshot.licenseActivations = await this.loadLicenseActivations(client, {
+        entitlementId: input.licenseEntitlementId,
+        fingerprintHash: input.licenseEntitlementId ? undefined : input.licenseFingerprintHash,
+      });
+      snapshot.compromisedKeys = await this.loadCompromisedKeys(client, input.licenseFingerprintHash);
+      return snapshot;
+    }
+
+    if (input.actionKey === "assets.create" && input.assetCode) {
+      const collision = await client.query<{ id: UUID }>(
+        `SELECT id FROM assets.assets
+          WHERE company_id = $1 AND asset_code = $2 AND deleted_at IS NULL
+          ORDER BY id LIMIT 1`,
+        [input.companyId, input.assetCode],
+      );
+      snapshot.assets = await this.loadAssets(client, input.companyId, collision.rows.map((row) => row.id));
+    }
+
+    if (input.actionKey === "assets.requests.create") {
+      const rows = await client.query<{ id: UUID }>(
+        `SELECT id FROM assets.asset_requests
+          WHERE company_id = $1 AND requester_user_id = $2 AND asset_type = $3
+            AND status = 'pending' AND deleted_at IS NULL
+          ORDER BY created_at DESC, id DESC LIMIT 1`,
+        [input.companyId, input.actorUserId, input.requestAssetType],
+      );
+      snapshot.assetRequests = await this.loadAssetRequests(client, input.companyId, rows.rows.map((row) => row.id));
+      const allocation = await client.query<{ next_number: number }>(
+        `SELECT GREATEST(401, COALESCE(max((regexp_match(request_code, '^REQ-([0-9]+)$'))[1]::integer), 400) + 1)::integer AS next_number
+           FROM assets.asset_requests WHERE company_id = $1`,
+        [input.companyId],
+      );
+      snapshot.assetCommandMetadata = { nextRequestNumber: allocation.rows[0]!.next_number };
+    }
+
+    const assetIds = new Set<UUID>();
+    if (input.resourceId && /^(assets\.(assign|return|acknowledge|maintenance\.create)):/u.test(input.actionKey)) assetIds.add(input.resourceId);
+    if (input.relatedAssetId) assetIds.add(input.relatedAssetId);
+    if (input.terminatedEmployeeUserId) {
+      const rows = await client.query<{ id: UUID }>(
+        `SELECT id FROM assets.assets WHERE company_id = $1
+          AND current_assigned_user_id = $2 AND status = 'Assigned' AND deleted_at IS NULL
+          ORDER BY id`,
+        [input.companyId, input.terminatedEmployeeUserId],
+      );
+      rows.rows.forEach((row) => assetIds.add(row.id));
+    }
+
+    if (input.actionKey.startsWith("assets.requests.") && input.resourceId) {
+      snapshot.assetRequests = await this.loadAssetRequests(client, input.companyId, [input.resourceId]);
+    }
+    if (input.actionKey.startsWith("assets.vendors.")) {
+      const vendorIds = new Set<UUID>();
+      if (input.resourceId) vendorIds.add(input.resourceId);
+      if (input.vendorName) {
+        const matches = await client.query<{ id: UUID }>(
+          `SELECT id FROM assets.software_vendors
+            WHERE company_id = $1 AND deleted_at IS NULL AND lower(btrim(name)) = lower(btrim($2))
+            ORDER BY id LIMIT 2`,
+          [input.companyId, input.vendorName],
+        );
+        matches.rows.forEach((row) => vendorIds.add(row.id));
+      }
+      snapshot.assetVendors = await this.loadAssetVendors(client, input.companyId, [...vendorIds]);
+    }
+    if (input.relatedVendorId) {
+      snapshot.assetVendors = await this.loadAssetVendors(client, input.companyId, [input.relatedVendorId]);
+    }
+    if (input.actionKey.startsWith("assets.recovery.settle:") && input.resourceId) {
+      snapshot.assetRecoveryTickets = await this.loadAssetRecoveryTickets(client, input.companyId, [input.resourceId]);
+      for (const ticket of snapshot.assetRecoveryTickets) assetIds.add(ticket.asset_id);
+    }
+
+    const needsPresentationGraph = input.actionKey.startsWith("assets.requests.decision:") ||
+      input.actionKey.startsWith("assets.maintenance.create:") ||
+      input.actionKey.startsWith("assets.recovery.settle:");
+    if (needsPresentationGraph) {
+      await this.loadAssetCommandGraph(client, snapshot, input.companyId, [...assetIds]);
+    } else {
+      snapshot.assets = [
+        ...snapshot.assets,
+        ...await this.loadAssets(client, input.companyId, [...assetIds]),
+      ];
+      snapshot.assets = [...new Map(snapshot.assets.map((asset) => [asset.id, asset])).values()];
+      const needsActiveAssignments = input.actionKey.startsWith("assets.return:") ||
+        input.actionKey.startsWith("assets.acknowledge:") || Boolean(input.terminatedEmployeeUserId);
+      if (needsActiveAssignments) {
+        snapshot.assetAssignments = await this.loadAssetAssignments(client, input.companyId, [...assetIds], undefined, true);
+      }
+    }
+    const linkedAssignmentIds = snapshot.assetRecoveryTickets.flatMap((ticket) => ticket.assignment_id ? [ticket.assignment_id] : []);
+    if (linkedAssignmentIds.length > 0) {
+      const linked = await this.loadAssetAssignments(client, input.companyId, undefined, linkedAssignmentIds, false);
+      snapshot.assetAssignments = [...new Map(
+        [...snapshot.assetAssignments, ...linked].map((assignment) => [assignment.id, assignment]),
+      ).values()];
+    }
+    if (input.actionKey.startsWith("assets.acknowledge:") && input.resourceId) {
+      const replay = json(replayBody);
+      const acknowledgement = json(replay.acknowledgement);
+      const replayId = typeof acknowledgement.id === "string" ? acknowledgement.id : undefined;
+      const rows = await client.query<{ id: UUID }>(
+        `SELECT id FROM assets.asset_acknowledgements
+          WHERE company_id = $1 AND asset_id = $2
+            AND ($3::uuid IS NULL OR id = $3::uuid)
+          ORDER BY created_at DESC, id DESC LIMIT 1`,
+        [input.companyId, input.resourceId, replayId ?? null],
+      );
+      snapshot.assetAcknowledgements = await this.loadAssetAcknowledgements(
+        client, input.companyId, undefined, false, rows.rows.map((row) => row.id),
+      );
+      const replayAssignmentIds = snapshot.assetAcknowledgements.flatMap(
+        (item) => item.assignment_id ? [item.assignment_id] : [],
+      );
+      if (replayAssignmentIds.length > 0) {
+        const replayAssignments = await this.loadAssetAssignments(
+          client, input.companyId, undefined, replayAssignmentIds, false,
+        );
+        snapshot.assetAssignments = [...new Map(
+          [...snapshot.assetAssignments, ...replayAssignments].map((assignment) => [assignment.id, assignment]),
+        ).values()];
+      }
+    }
+    return snapshot;
+  }
+
+  private async loadAssetCommandGraph(
+    client: PoolClient,
+    snapshot: DataStore,
+    companyId: UUID,
+    assetIds: UUID[],
+  ): Promise<void> {
+    if (assetIds.length === 0) return;
+    snapshot.assets = [
+      ...snapshot.assets,
+      ...await this.loadAssets(client, companyId, assetIds),
+    ];
+    snapshot.assets = [...new Map(snapshot.assets.map((asset) => [asset.id, asset])).values()];
+    snapshot.assetAssignments = await this.loadAssetAssignments(client, companyId, assetIds, undefined, true);
+    snapshot.assetAcknowledgements = await this.loadAssetAcknowledgements(client, companyId, assetIds, true);
+    const maintenanceCounts = await client.query<{ asset_id: UUID; total: string }>(
+      `SELECT asset_id, count(*)::text AS total
+         FROM assets.asset_maintenance_records
+        WHERE company_id = $1 AND asset_id = ANY($2::uuid[]) AND deleted_at IS NULL
+        GROUP BY asset_id`,
+      [companyId, assetIds],
+    );
+    const maintenanceIds = await client.query<{ id: UUID }>(
+      `SELECT id FROM (
+         SELECT id, asset_id,
+                row_number() OVER (
+                  PARTITION BY asset_id
+                  ORDER BY started_on DESC, created_at DESC, id DESC
+                ) AS row_number
+           FROM assets.asset_maintenance_records
+          WHERE company_id = $1 AND asset_id = ANY($2::uuid[]) AND deleted_at IS NULL
+       ) ranked WHERE row_number <= 100
+       ORDER BY asset_id, row_number`,
+      [companyId, assetIds],
+    );
+    snapshot.assetMaintenanceRecords = await this.loadAssetMaintenanceRecords(
+      client, companyId, maintenanceIds.rows.map((row) => row.id),
+    );
+    const vendorIds = Array.from(new Set(snapshot.assetMaintenanceRecords.flatMap((record) => record.vendor_id ? [record.vendor_id] : [])));
+    const maintenanceVendors = await this.loadAssetVendors(client, companyId, vendorIds);
+    snapshot.assetVendors = [...new Map(
+      [...snapshot.assetVendors, ...maintenanceVendors].map((vendor) => [vendor.id, vendor]),
+    ).values()];
+    snapshot.assetReadMetadata = {
+      operation: "assets.command",
+      assetMaintenanceTotals: Object.fromEntries(
+        maintenanceCounts.rows.map((row) => [row.asset_id, Number(row.total)]),
+      ),
     };
   }
 
@@ -2731,10 +2965,11 @@ class PostgresPersistence {
   }
 
   private async loadAssets(client: PoolClient, companyId?: UUID, ids?: readonly UUID[]): Promise<AssetRecord[]> {
+    if (ids && !companyId) throw new Error("Filtered asset loads require a company scope.");
     if (ids?.length === 0) return [];
     const conditions = [
       ...(companyId ? ["company_id = $1"] : []),
-      ...(ids ? ["id = ANY($2::uuid[])"] : []),
+      ...(ids ? [`id = ANY($${companyId ? 2 : 1}::uuid[])`] : []),
     ];
     const parameters = [...(companyId ? [companyId] : []), ...(ids ? [[...ids]] : [])];
     const { rows } = await client.query(
@@ -2766,11 +3001,12 @@ class PostgresPersistence {
     assignmentIds: readonly UUID[] | undefined,
     activeOnly: boolean,
   ): Promise<AssetAssignmentRecord[]> {
+    if ((assetIds || assignmentIds) && !companyId) throw new Error("Filtered assignment loads require a company scope.");
     if (assetIds?.length === 0 || assignmentIds?.length === 0) return [];
     const assignmentIdParameter = assetIds ? 3 : 2;
     const conditions = [
       ...(companyId ? ["company_id = $1"] : []),
-      ...(assetIds ? ["asset_id = ANY($2::uuid[])"] : []),
+      ...(assetIds ? [`asset_id = ANY($${companyId ? 2 : 1}::uuid[])`] : []),
       ...(assignmentIds ? [`id = ANY($${assignmentIdParameter}::uuid[])`] : []),
       ...(activeOnly ? ["status = 'active'"] : []),
     ];
@@ -2821,10 +3057,11 @@ class PostgresPersistence {
     companyId?: UUID,
     ids?: readonly UUID[],
   ): Promise<DataStore["assetRequests"]> {
+    if (ids && !companyId) throw new Error("Filtered request loads require a company scope.");
     if (ids?.length === 0) return [];
     const conditions = [
       ...(companyId ? ["company_id = $1"] : []),
-      ...(ids ? ["id = ANY($2::uuid[])"] : []),
+      ...(ids ? [`id = ANY($${companyId ? 2 : 1}::uuid[])`] : []),
     ];
     const parameters = [...(companyId ? [companyId] : []), ...(ids ? [[...ids]] : [])];
     const { rows } = await client.query(
@@ -2860,13 +3097,21 @@ class PostgresPersistence {
     companyId: UUID | undefined,
     assetIds: readonly UUID[] | undefined,
     latestOnly: boolean,
+    acknowledgementIds?: readonly UUID[],
   ): Promise<DataStore["assetAcknowledgements"]> {
-    if (assetIds?.length === 0) return [];
+    if ((assetIds || acknowledgementIds) && !companyId) throw new Error("Filtered acknowledgement loads require a company scope.");
+    if (assetIds?.length === 0 || acknowledgementIds?.length === 0) return [];
+    const acknowledgementIdParameter = 1 + Number(Boolean(companyId)) + Number(Boolean(assetIds));
     const conditions = [
       ...(companyId ? ["company_id = $1"] : []),
-      ...(assetIds ? ["asset_id = ANY($2::uuid[])"] : []),
+      ...(assetIds ? [`asset_id = ANY($${companyId ? 2 : 1}::uuid[])`] : []),
+      ...(acknowledgementIds ? [`id = ANY($${acknowledgementIdParameter}::uuid[])`] : []),
     ];
-    const parameters = [...(companyId ? [companyId] : []), ...(assetIds ? [[...assetIds]] : [])];
+    const parameters = [
+      ...(companyId ? [companyId] : []),
+      ...(assetIds ? [[...assetIds]] : []),
+      ...(acknowledgementIds ? [[...acknowledgementIds]] : []),
+    ];
     const { rows } = await client.query(
       `${latestOnly ? "SELECT DISTINCT ON (asset_id) *" : "SELECT *"} FROM assets.asset_acknowledgements${conditions.length ? ` WHERE ${conditions.join(" AND ")}` : ""} ORDER BY ${latestOnly ? "asset_id, created_at DESC, id DESC" : "created_at, id"}`,
       parameters,
@@ -2891,10 +3136,11 @@ class PostgresPersistence {
     companyId?: UUID,
     ids?: readonly UUID[],
   ): Promise<DataStore["assetMaintenanceRecords"]> {
+    if (ids && !companyId) throw new Error("Filtered maintenance loads require a company scope.");
     if (ids?.length === 0) return [];
     const conditions = [
       ...(companyId ? ["company_id = $1"] : []),
-      ...(ids ? ["id = ANY($2::uuid[])"] : []),
+      ...(ids ? [`id = ANY($${companyId ? 2 : 1}::uuid[])`] : []),
     ];
     const parameters = [...(companyId ? [companyId] : []), ...(ids ? [[...ids]] : [])];
     const { rows } = await client.query(
@@ -2924,10 +3170,11 @@ class PostgresPersistence {
     companyId?: UUID,
     ids?: readonly UUID[],
   ): Promise<DataStore["assetVendors"]> {
+    if (ids && !companyId) throw new Error("Filtered vendor loads require a company scope.");
     if (ids?.length === 0) return [];
     const conditions = [
       ...(companyId ? ["company_id = $1"] : []),
-      ...(ids ? ["id = ANY($2::uuid[])"] : []),
+      ...(ids ? [`id = ANY($${companyId ? 2 : 1}::uuid[])`] : []),
     ];
     const parameters = [...(companyId ? [companyId] : []), ...(ids ? [[...ids]] : [])];
     const { rows } = await client.query(
@@ -2954,10 +3201,11 @@ class PostgresPersistence {
     companyId?: UUID,
     ids?: readonly UUID[],
   ): Promise<DataStore["assetRecoveryTickets"]> {
+    if (ids && !companyId) throw new Error("Filtered recovery loads require a company scope.");
     if (ids?.length === 0) return [];
     const conditions = [
       ...(companyId ? ["company_id = $1"] : []),
-      ...(ids ? ["id = ANY($2::uuid[])"] : []),
+      ...(ids ? [`id = ANY($${companyId ? 2 : 1}::uuid[])`] : []),
     ];
     const parameters = [...(companyId ? [companyId] : []), ...(ids ? [[...ids]] : [])];
     const { rows } = await client.query(
@@ -2970,6 +3218,7 @@ class PostgresPersistence {
       employee_user_id: row.employee_user_id,
       employee_full_name_snapshot: row.employee_full_name_snapshot,
       employee_code_snapshot: row.employee_code_snapshot,
+      lifecycle_event_id: row.lifecycle_event_id,
       asset_id: row.asset_id,
       assignment_id: row.assignment_id,
       status: row.status,
@@ -2986,9 +3235,12 @@ class PostgresPersistence {
 
   private async loadLicenseEntitlements(
     client: PoolClient,
+    ids?: readonly UUID[],
   ): Promise<LicenseEntitlement[]> {
+    if (ids?.length === 0) return [];
     const { rows } = await client.query(
-      "SELECT * FROM assets.license_entitlements ORDER BY created_at, id",
+      `SELECT * FROM assets.license_entitlements${ids ? " WHERE id = ANY($1::uuid[])" : ""} ORDER BY created_at, id`,
+      ids ? [[...ids]] : [],
     );
     return rows.map((row) => ({
       id: row.id,
@@ -3002,9 +3254,16 @@ class PostgresPersistence {
 
   private async loadLicenseActivations(
     client: PoolClient,
+    filters?: { entitlementId?: UUID; productId?: UUID; fingerprintHash?: string },
   ): Promise<LicenseActivation[]> {
+    const parameters: unknown[] = [];
+    const conditions: string[] = [];
+    if (filters?.entitlementId) { parameters.push(filters.entitlementId); conditions.push(`entitlement_id = $${parameters.length}`); }
+    if (filters?.productId) { parameters.push(filters.productId); conditions.push(`product_id = $${parameters.length}`); }
+    if (filters?.fingerprintHash) { parameters.push(filters.fingerprintHash); conditions.push(`hardware_fingerprint_hash = $${parameters.length}`); }
     const { rows } = await client.query(
-      "SELECT * FROM assets.license_activations ORDER BY created_at, id",
+      `SELECT * FROM assets.license_activations${conditions.length ? ` WHERE ${conditions.join(" AND ")}` : ""} ORDER BY created_at, id`,
+      parameters,
     );
     return rows.map((row) => ({
       id: row.id,
@@ -3019,9 +3278,11 @@ class PostgresPersistence {
 
   private async loadCompromisedKeys(
     client: PoolClient,
+    keyHash?: string,
   ): Promise<DataStore["compromisedKeys"]> {
     const { rows } = await client.query(
-      "SELECT * FROM assets.compromised_keys ORDER BY created_at, id",
+      `SELECT * FROM assets.compromised_keys${keyHash ? " WHERE key_hash = $1" : ""} ORDER BY created_at, id`,
+      keyHash ? [keyHash] : [],
     );
     return rows.map((row) => ({
       id: row.id,
@@ -5058,10 +5319,10 @@ class PostgresPersistence {
       await client.query(
         `INSERT INTO assets.asset_recovery_tickets (
           id, company_id, employee_user_id, employee_full_name_snapshot, employee_code_snapshot,
-          asset_id, assignment_id, status, settlement_status, settlement_amount,
+          lifecycle_event_id, asset_id, assignment_id, status, settlement_status, settlement_amount,
           settlement_remarks, settled_by_user_id, settled_at, version, created_at, updated_at
         )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
          ON CONFLICT (id) DO UPDATE
          SET assignment_id = EXCLUDED.assignment_id,
              status = EXCLUDED.status,
@@ -5078,6 +5339,7 @@ class PostgresPersistence {
           ticket.employee_user_id,
           ticket.employee_full_name_snapshot,
           ticket.employee_code_snapshot,
+          ticket.lifecycle_event_id,
           ticket.asset_id,
           ticket.assignment_id,
           ticket.status,

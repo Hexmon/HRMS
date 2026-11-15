@@ -216,6 +216,29 @@ describe("core hierarchy", () => {
     expect(store.userCredentials.find((credential) => credential.user_id === targetAdmin.id)?.status).toBe("revoked");
   });
 
+  it("emits only a version-bound company reference for termination identity capture", () => {
+    const store = createMemoryDataStore();
+    const service = new CoreService(store);
+    const actor = store.users.find((user) => user.id === seedIds.admin)!;
+    const employee = store.users.find((user) => user.id === seedIds.employee1)!;
+    const companyId = store.userSessionPreferences.find((item) => item.user_id === actor.id)!.company_id!;
+
+    service.deactivateUser(actor, employee.id, {
+      expected_version: employee.version,
+      status: "terminated",
+    });
+
+    const event = store.outbox.find((candidate) => candidate.event_type === "core.user.terminated")!;
+    expect(event.payload).toMatchObject({
+      user_id: employee.id,
+      company_id: companyId,
+      employee_version: employee.version,
+      status: "terminated",
+    });
+    expect(event.payload).not.toHaveProperty("employee_full_name");
+    expect(event.payload).not.toHaveProperty("full_name");
+  });
+
   it("fails closed for missing or stale active company context on export and import reads", async () => {
     const store = createMemoryDataStore();
     const service = new CoreService(store);

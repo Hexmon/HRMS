@@ -343,6 +343,8 @@ export class AssetService {
       status: input.status ?? "in_progress",
       notes: input.notes ?? null
     });
+    const maintenanceTotals = this.store.assetReadMetadata?.assetMaintenanceTotals;
+    if (maintenanceTotals) maintenanceTotals[id] = (maintenanceTotals[id] ?? 0) + 1;
     this.appendAssetEvent(companyId, id, actor.id, "asset.maintenance_logged", {
       maintenance_id: record.id,
       maintenance_type: record.maintenance_type
@@ -602,7 +604,12 @@ export class AssetService {
     return { status: "revoked" };
   }
 
-  consumeEmployeeTerminated(actor: AuthUser, employeeUserId: UUID, lifecycleEventId: UUID): { recovery_tickets_created: number } {
+  consumeEmployeeTerminated(
+    actor: AuthUser,
+    employeeUserId: UUID,
+    lifecycleEventId: UUID,
+    historicalIdentity?: { employeeUserId: UUID; fullName: string; employeeCode: string },
+  ): { recovery_tickets_created: number } {
     const companyId = this.companyId(actor, "assets.employee-terminated");
     appendOutboxEvent(this.store, {
       aggregateType: "employee",
@@ -611,7 +618,7 @@ export class AssetService {
       payload: { company_id: companyId, employee_user_id: employeeUserId, lifecycle_event_id: lifecycleEventId },
       idempotencyKey: `employee.terminated:${companyId}:${employeeUserId}:${lifecycleEventId}`
     });
-    return { recovery_tickets_created: createRecoveryTicketsForTerminatedEmployee(this.store, companyId, employeeUserId) };
+    return { recovery_tickets_created: createRecoveryTicketsForTerminatedEmployee(this.store, companyId, employeeUserId, lifecycleEventId, historicalIdentity) };
   }
 
   private assertAssetVisible(actor: AuthUser, id: UUID, operation: string, resolvedCompanyId?: UUID): AssetRecord {
@@ -685,8 +692,9 @@ export class AssetService {
 
   private presentRecoveryTicket(ticket: MemoryDataStore["assetRecoveryTickets"][number]) {
     const context = this.recoveryTicketContext(ticket);
+    const { lifecycle_event_id: _lifecycleEventId, ...publicTicket } = ticket;
     return {
-      ...ticket,
+      ...publicTicket,
       assignment_assigned_at: context.assignmentAssignedAt,
       review_required: context.reviewRequired,
       employee: this.presentRecoveryEmployee(ticket),
@@ -706,7 +714,9 @@ export class AssetService {
       )
       .sort((a, b) => b.created_at.localeCompare(a.created_at))[0];
     const metadata = asset.metadata ?? {};
-    const maintenance = this.repository.listMaintenance(asset.id, asset.company_id).map((record) => this.presentMaintenance(record));
+    const maintenance = this.repository.listMaintenance(asset.id, asset.company_id)
+      .slice(0, 100)
+      .map((record) => this.presentMaintenance(record));
     const maintenanceTotal = this.store.assetReadMetadata?.assetMaintenanceTotals?.[asset.id] ?? maintenance.length;
     return {
       ...asset,

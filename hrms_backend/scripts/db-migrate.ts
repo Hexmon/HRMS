@@ -7,6 +7,7 @@ import {
   ensureMigrationLedger,
   loadAppliedMigrations,
   releaseMigrationLock,
+  stagePendingMigrations,
   validateMigrationPlan,
 } from "./db-migration-lib.js";
 
@@ -27,8 +28,16 @@ try {
   const migrationFiles = discoverMigrations();
   const appliedMigrations = await loadAppliedMigrations(client);
   const plan = validateMigrationPlan(migrationFiles, appliedMigrations);
+  const staged = stagePendingMigrations(plan.pending, process.env.HRMS_MIGRATION_APPROVAL);
 
-  const appliedCount = await applyPendingMigrations(client, plan.pending);
+  const appliedCount = await applyPendingMigrations(client, staged.runnable);
+  if (staged.blocked.length > 0) {
+    throw new Error(
+      `Migration paused after recovery evidence preparation. Populate and independently verify ` +
+      `assets.asset_recovery_identity_evidence, then rerun with HRMS_MIGRATION_APPROVAL=` +
+      `${staged.blocked[0]!.filename}.`,
+    );
+  }
 
   console.log(
     `Migration completed successfully. ` +
