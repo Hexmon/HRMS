@@ -1624,6 +1624,7 @@ function validateFrontendContractRouteCoverage(path, content) {
     semanticFailure(path, "frontend contract coverage canonical AST changed outside the trusted contract");
   }
 }
+
 function validateQaSeedSafety(path, content) {
   requireSemanticText(path, content, /HRMS_QA_SEED_ALLOW/, "QA seed safety must require explicit opt-in");
   requireSemanticText(path, content, /only isolated local or QA/, "QA seed safety must reject non-isolated targets");
