@@ -1102,7 +1102,16 @@ test("asset recovery evidence staging and runtime termination snapshots have sem
   assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replaceAll("u.version = payload_employee_version", "TRUE"), "base"), /exact durable employee version/);
   assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("IN SHARE ROW EXCLUSIVE MODE", "IN ACCESS SHARE MODE"), "base"), /writers must be locked/);
   assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("event.payload->>'user_id' IS DISTINCT FROM event.aggregate_id::text", "FALSE"), "base"), /durable user/);
-  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("approver.id <> evidence.verified_by_user_id", "TRUE"), "base"), /two distinct authorized/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("approver.id <> evidence.verified_by_user_id", "TRUE"), "base"), /two distinct current authorized/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("reviewer_role.status = 'active'", "reviewer_role.status = 'revoked'"), "base"), /current effective Admin or HR Manager/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("reviewer_role.effective_from <= current_date", "TRUE"), "base"), /current effective Admin or HR Manager/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("role_definition.status = 'active'", "TRUE"), "base"), /current effective Admin or HR Manager/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace(
+    "AND preference.company_id = evidence.company_id",
+    "AND preference.company_id = evidence.company_id\n           AND preference.active_role IN ('Admin', 'HR Manager')",
+  ), "base"), /selected session role/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("assignment.assigned_at <= event.created_at", "TRUE"), "base"), /event-time assignments/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("ticket.lifecycle_event_id = event.event_id", "TRUE"), "base"), /event-linked recovery/);
   assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("invalid_legacy_evidence_count > 0", "FALSE"), "base"), /historical termination evidence/);
   assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("unresolved_legacy_termination_count > 0", "FALSE"), "base"), /every unresolved replayable/);
   assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("BEFORE INSERT OR UPDATE OR DELETE ON core.user_termination_identity_evidence", "BEFORE UPDATE ON core.user_termination_identity_evidence"), "base"), /evidence must be frozen/);

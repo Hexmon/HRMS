@@ -22,6 +22,9 @@ CREATE INDEX IF NOT EXISTS asset_requests_company_numeric_code_idx
   )
   WHERE request_code ~ '^REQ-[0-9]+$';
 
+ALTER TABLE assets.asset_recovery_tickets
+  ADD COLUMN IF NOT EXISTS lifecycle_event_id uuid;
+
 -- Freeze the complete historical input set before validation and keep
 -- ordinary outbox/evidence writers excluded until finalization triggers are
 -- installed in this same transaction.
@@ -73,10 +76,20 @@ BEGIN
           JOIN platform.user_session_preferences preference
             ON preference.user_id = verifier.id
            AND preference.company_id = evidence.company_id
+          JOIN core.user_roles reviewer_role
+            ON reviewer_role.user_id = verifier.id
+           AND reviewer_role.role_key IN ('Admin', 'HR Manager')
+           AND reviewer_role.status = 'active'
+           AND reviewer_role.deleted_at IS NULL
+           AND reviewer_role.effective_from <= current_date
+           AND (reviewer_role.effective_to IS NULL OR reviewer_role.effective_to >= current_date)
+          JOIN core.roles role_definition
+            ON role_definition.role_key = reviewer_role.role_key
+           AND role_definition.status = 'active'
+           AND role_definition.deleted_at IS NULL
          WHERE verifier.id = evidence.verified_by_user_id
            AND verifier.deleted_at IS NULL
            AND verifier.employment_status = 'active'
-           AND preference.active_role IN ('Admin', 'HR Manager')
       )
       OR NOT EXISTS (
         SELECT 1
@@ -84,11 +97,21 @@ BEGIN
           JOIN platform.user_session_preferences preference
             ON preference.user_id = approver.id
            AND preference.company_id = evidence.company_id
+          JOIN core.user_roles reviewer_role
+            ON reviewer_role.user_id = approver.id
+           AND reviewer_role.role_key IN ('Admin', 'HR Manager')
+           AND reviewer_role.status = 'active'
+           AND reviewer_role.deleted_at IS NULL
+           AND reviewer_role.effective_from <= current_date
+           AND (reviewer_role.effective_to IS NULL OR reviewer_role.effective_to >= current_date)
+          JOIN core.roles role_definition
+            ON role_definition.role_key = reviewer_role.role_key
+           AND role_definition.status = 'active'
+           AND role_definition.deleted_at IS NULL
          WHERE approver.id = evidence.approved_by_user_id
            AND approver.id <> evidence.verified_by_user_id
            AND approver.deleted_at IS NULL
            AND approver.employment_status = 'active'
-           AND preference.active_role IN ('Admin', 'HR Manager')
       )
       OR EXISTS (
         SELECT 1
@@ -96,17 +119,13 @@ BEGIN
             SELECT assignment.company_id
               FROM assets.asset_assignments assignment
              WHERE assignment.assigned_to_user_id = evidence.employee_user_id
-               AND (
-                 assignment.status = 'active'
-                 OR (
-                   assignment.assigned_at <= event.created_at
-                   AND (assignment.returned_at IS NULL OR assignment.returned_at > event.created_at)
-                 )
-               )
+               AND assignment.assigned_at <= event.created_at
+               AND (assignment.returned_at IS NULL OR assignment.returned_at > event.created_at)
             UNION
             SELECT ticket.company_id
               FROM assets.asset_recovery_tickets ticket
              WHERE ticket.employee_user_id = evidence.employee_user_id
+               AND ticket.lifecycle_event_id = event.event_id
           ) ownership_source
         HAVING count(*) > 0
            AND (
@@ -241,9 +260,6 @@ DROP TRIGGER IF EXISTS user_termination_identity_evidence_finalized_trg
 CREATE TRIGGER user_termination_identity_evidence_finalized_trg
   BEFORE INSERT OR UPDATE OR DELETE ON core.user_termination_identity_evidence
   FOR EACH ROW EXECUTE FUNCTION core.reject_user_termination_identity_snapshot_mutation();
-
-ALTER TABLE assets.asset_recovery_tickets
-  ADD COLUMN IF NOT EXISTS lifecycle_event_id uuid;
 
 CREATE UNIQUE INDEX IF NOT EXISTS asset_recovery_lifecycle_asset_uq
   ON assets.asset_recovery_tickets (lifecycle_event_id, asset_id)

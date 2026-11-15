@@ -96,8 +96,22 @@ describe("asset tenant ownership migration", () => {
       ],
     );
     await client.query(
+      `INSERT INTO core.roles (role_key, name, status, builtin)
+       VALUES ('Admin', 'Admin', 'active', true),
+              ('HR Manager', 'HR Manager', 'active', true),
+              ('Employee', 'Employee', 'active', true)`,
+    );
+    await client.query(
+      `INSERT INTO core.user_roles (user_id, role_key, status, effective_from)
+       VALUES ($1, 'Admin', 'active', current_date),
+              ($1, 'Employee', 'active', current_date),
+              ($2, 'HR Manager', 'active', current_date),
+              ($2, 'Employee', 'active', current_date)`,
+      [verifierUserId, approverUserId],
+    );
+    await client.query(
       `INSERT INTO platform.user_session_preferences (user_id, active_role, company_id)
-       VALUES ($1, 'Employee', $2), ($3, 'Admin', $2), ($4, 'HR Manager', $2)`,
+       VALUES ($1, 'Employee', $2), ($3, 'Employee', $2), ($4, 'Employee', $2)`,
       [recoveryEmployeeId, companyA, verifierUserId, approverUserId],
     );
     await client.query(
@@ -109,7 +123,7 @@ describe("asset tenant ownership migration", () => {
       `INSERT INTO assets.asset_assignments (
          id, asset_id, assigned_to_user_id, assigned_by_user_id, status
        ) VALUES ($1, $2, $3, $4, 'active')`,
-      [assignmentId, assetId, randomUUID(), randomUUID()],
+      [assignmentId, assetId, recoveryEmployeeId, verifierUserId],
     );
     await client.query(
       `INSERT INTO assets.asset_state_events (asset_id, event_type)
@@ -346,6 +360,32 @@ describe("asset tenant ownership migration", () => {
           `reviewed-event-${event.eventId}`, verifierUserId, approverUserId],
       );
     }
+    const laterCompanyBAssetId = randomUUID();
+    const laterCompanyBAssignmentId = randomUUID();
+    const unrelatedCompanyBRecoveryId = randomUUID();
+    await withAssetWriter(client, async () => {
+      await client.query(
+        `INSERT INTO assets.assets (
+           id, company_id, asset_code, qr_hash, asset_type, name, status
+         ) VALUES ($1, $2, 'ASSET-B-LATER', $3, 'Laptop', 'Later Company B laptop', 'assigned')`,
+        [laterCompanyBAssetId, companyB, `qr-${laterCompanyBAssetId}`],
+      );
+      await client.query(
+        `INSERT INTO assets.asset_assignments (
+           id, company_id, asset_id, assigned_to_user_id, assigned_by_user_id,
+           status, assigned_at
+         ) VALUES ($1, $2, $3, $4, $5, 'active', now() + interval '1 day')`,
+        [laterCompanyBAssignmentId, companyB, laterCompanyBAssetId, recoveryEmployeeId, verifierUserId],
+      );
+      await client.query(
+        `INSERT INTO assets.asset_recovery_tickets (
+           id, company_id, employee_user_id, employee_full_name_snapshot,
+           employee_code_snapshot, asset_id, assignment_id, status
+         ) VALUES ($1, $2, $3, 'Later Company B Employee', 'RECOVERY-001', $4, $5, 'open')`,
+        [unrelatedCompanyBRecoveryId, companyB, recoveryEmployeeId,
+          laterCompanyBAssetId, laterCompanyBAssignmentId],
+      );
+    });
     const firstHistoricalEvent = preSnapshotEvents[0]!;
     const enrichedHistoricalEvent = preSnapshotEvents[2]!;
     const expectLegacyEvidenceRejection = () => expect(
@@ -369,6 +409,19 @@ describe("asset tenant ownership migration", () => {
       "UPDATE platform.user_session_preferences SET company_id = $1 WHERE user_id = ANY($2::uuid[])",
       [companyA, [verifierUserId, approverUserId]],
     );
+    await withAssetWriter(client, async () => {
+      await client.query(
+        "UPDATE assets.asset_assignments SET assigned_at = now() - interval '1 day' WHERE id = $1",
+        [laterCompanyBAssignmentId],
+      );
+    });
+    await expectLegacyEvidenceRejection();
+    await withAssetWriter(client, async () => {
+      await client.query(
+        "UPDATE assets.asset_assignments SET assigned_at = now() + interval '1 day' WHERE id = $1",
+        [laterCompanyBAssignmentId],
+      );
+    });
     await client.query(
       "UPDATE core.user_termination_identity_evidence SET employee_version = 99 WHERE lifecycle_event_id = $1",
       [firstHistoricalEvent.eventId],
@@ -390,6 +443,32 @@ describe("asset tenant ownership migration", () => {
           SET payload = jsonb_set(payload, '{user_id}', to_jsonb($1::text))
         WHERE event_id = $2`,
       [recoveryEmployeeId, enrichedHistoricalEvent.eventId],
+    );
+    await client.query(
+      `UPDATE platform.outbox_events
+          SET payload = jsonb_set(payload, '{company_id}', to_jsonb($1::text))
+        WHERE event_id = $2`,
+      [companyB, enrichedHistoricalEvent.eventId],
+    );
+    await expectLegacyEvidenceRejection();
+    await client.query(
+      `UPDATE platform.outbox_events
+          SET payload = jsonb_set(payload, '{company_id}', to_jsonb($1::text))
+        WHERE event_id = $2`,
+      [companyA, enrichedHistoricalEvent.eventId],
+    );
+    await client.query(
+      `UPDATE platform.outbox_events
+          SET payload = jsonb_set(payload, '{employee_version}', '99'::jsonb)
+        WHERE event_id = $1`,
+      [enrichedHistoricalEvent.eventId],
+    );
+    await expectLegacyEvidenceRejection();
+    await client.query(
+      `UPDATE platform.outbox_events
+          SET payload = jsonb_set(payload, '{employee_version}', to_jsonb($1::integer))
+        WHERE event_id = $2`,
+      [enrichedHistoricalEvent.version, enrichedHistoricalEvent.eventId],
     );
     await client.query(
       "UPDATE platform.outbox_events SET payload = payload - 'user_id' WHERE event_id = $1",
@@ -447,6 +526,51 @@ describe("asset tenant ownership migration", () => {
       "UPDATE core.user_termination_identity_evidence SET approved_by_user_id = $1 WHERE lifecycle_event_id = $2",
       [approverUserId, firstHistoricalEvent.eventId],
     );
+    await client.query(
+      "UPDATE core.user_roles SET status = 'revoked' WHERE user_id = $1 AND role_key = 'Admin'",
+      [verifierUserId],
+    );
+    await client.query(
+      "UPDATE platform.user_session_preferences SET active_role = 'Admin' WHERE user_id = $1",
+      [verifierUserId],
+    );
+    await expectLegacyEvidenceRejection();
+    await client.query(
+      "UPDATE core.user_roles SET status = 'active' WHERE user_id = $1 AND role_key = 'Admin'",
+      [verifierUserId],
+    );
+    await client.query(
+      "UPDATE platform.user_session_preferences SET active_role = 'Employee' WHERE user_id = $1",
+      [verifierUserId],
+    );
+    await client.query(
+      "UPDATE core.user_roles SET deleted_at = now() WHERE user_id = $1 AND role_key = 'Admin'",
+      [verifierUserId],
+    );
+    await expectLegacyEvidenceRejection();
+    await client.query(
+      "UPDATE core.user_roles SET deleted_at = NULL WHERE user_id = $1 AND role_key = 'Admin'",
+      [verifierUserId],
+    );
+    await client.query(
+      `UPDATE core.user_roles
+          SET effective_from = current_date - 2, effective_to = current_date - 1
+        WHERE user_id = $1 AND role_key = 'Admin'`,
+      [verifierUserId],
+    );
+    await expectLegacyEvidenceRejection();
+    await client.query(
+      `UPDATE core.user_roles
+          SET effective_from = current_date, effective_to = NULL
+        WHERE user_id = $1 AND role_key = 'Admin'`,
+      [verifierUserId],
+    );
+    await client.query("UPDATE core.roles SET status = 'inactive' WHERE role_key = 'Admin'");
+    await expectLegacyEvidenceRejection();
+    await client.query("UPDATE core.roles SET status = 'active' WHERE role_key = 'Admin'");
+    await client.query("UPDATE core.roles SET deleted_at = now() WHERE role_key = 'Admin'");
+    await expectLegacyEvidenceRejection();
+    await client.query("UPDATE core.roles SET deleted_at = NULL WHERE role_key = 'Admin'");
     await expect(client.query(
       "UPDATE core.user_termination_identity_evidence SET approved_by_user_id = verified_by_user_id WHERE lifecycle_event_id = $1",
       [firstHistoricalEvent.eventId],
