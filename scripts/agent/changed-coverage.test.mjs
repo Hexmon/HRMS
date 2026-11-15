@@ -16,6 +16,7 @@ import {
   changedLines,
   coverageDatabaseObjectCount,
   coverageArtifactPath,
+  deletionSemanticDisposition,
   instrumentableExternal,
   outsideExecutableOrConfig,
   prepareCoverageIntegrationServices,
@@ -97,6 +98,43 @@ test("generic user lifecycle deletions require the dedicated lifecycle semantic 
   const item = "hrms_backend/src/modules/core/routes.ts:@@ -2 +2,0 @@";
   assert.match(validateDeletionSemanticContract(root, item, base), /semantic deletion contract passed/);
   assert.equal(validateDeletionSemanticContract(root, "hrms_backend/src/modules/core/routes.ts:@@ -1 +1,0 @@", base), null);
+  assert.deepEqual(deletionSemanticDisposition(root, item, base), {
+    semantic: [`${item}: semantic deletion contract passed`], uncovered: [], unmeasured: 0,
+  });
+  assert.deepEqual(deletionSemanticDisposition(root, "unknown.ts:@@ -1 +1,0 @@", base), {
+    semantic: [],
+    uncovered: ["deletion-only unknown.ts:@@ -1 +1,0 @@: behavior requires explicit regression evidence"],
+    unmeasured: 1,
+  });
+
+  const currentFiles = new Map([
+    ["hrms_backend/src/modules/core/routes.ts", readFileSync(join(root, "hrms_backend/src/modules/core/routes.ts"), "utf8")],
+    ["hrms_backend/src/modules/core/service.ts", readFileSync(join(root, "hrms_backend/src/modules/core/service.ts"), "utf8")],
+    ["hrms_backend/src/platform/openapi.ts", readFileSync(join(root, "hrms_backend/src/platform/openapi.ts"), "utf8")],
+    ["hrms_backend/src/modules/core/__tests__/core.integration.test.ts", readFileSync(join(root, "hrms_backend/src/modules/core/__tests__/core.integration.test.ts"), "utf8")],
+  ]);
+  const injectedDependencies = {
+    gitCommand: () => `if (input.employment_status !== undefined && input.employment_status !== EmploymentStatuses.Active) {\n  this.requireOrgAdminRecoveryPath(user, {\n    employmentStatus: input.employment_status\n  });\n}\n\n`,
+    readCurrent: (path) => currentFiles.get(path) ?? "",
+  };
+  assert.match(validateDeletionSemanticContract(
+    root,
+    "hrms_backend/src/modules/core/service.ts:@@ -1,6 +1,0 @@",
+    base,
+    injectedDependencies,
+  ), /semantic deletion contract passed/);
+
+  const expectMissing = (path, replacement, message) => assert.throws(
+    () => validateDeletionSemanticContract(root, item, base, {
+      readCurrent: (candidatePath) => candidatePath === path ? replacement : currentFiles.get(candidatePath) ?? "",
+    }),
+    message,
+  );
+  expectMissing("hrms_backend/src/modules/core/routes.ts", "const statusBodySchema = {};", /generic user update schema/);
+  expectMissing("hrms_backend/src/modules/core/service.ts", String(currentFiles.get("hrms_backend/src/modules/core/service.ts")).replace(/export interface UserUpdateInput[\s\S]*?\n\}/u, ""), /input contract is missing/);
+  expectMissing("hrms_backend/src/modules/core/service.ts", String(currentFiles.get("hrms_backend/src/modules/core/service.ts")).replace("async uploadProfilePhoto", "uploadProfilePhoto"), /update method is missing/);
+  expectMissing("hrms_backend/src/platform/openapi.ts", "const coreProfilePhotoPolicySchema = {};", /OpenAPI contract is missing/);
+
   write(root, "hrms_backend/src/modules/core/routes.ts", `const updateUserSchema = expectedVersionSchema.extend({ employment_status: z.string() }).strict();\nconst statusBodySchema = {};\nfastify.post("/users/:id/activate", handler);\nfastify.post("/users/:id/deactivate", handler);\n`);
   assert.throws(() => validateDeletionSemanticContract(root, item, base), /still accepts lifecycle fields/);
 });

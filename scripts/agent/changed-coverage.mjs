@@ -1757,12 +1757,22 @@ export function validateDeletionSemanticContract(root, item, base, dependencies 
   requireSemanticText(path, updateSchema, /\.strict\(\)/u, "generic user update schema must reject undocumented lifecycle fields");
   forbidText(path, updateSchema, /employment_status|terminated_on/u, "generic user update schema still accepts lifecycle fields");
   requireSemanticText(path, routes, /fastify\.post\("\/users\/:id\/activate"[\s\S]*fastify\.post\("\/users\/:id\/deactivate"/u, "dedicated lifecycle routes are missing");
+  requireSemanticText(path, updateInput, /export interface UserUpdateInput/u, "generic user update input contract is missing");
   forbidText(path, updateInput, /employment_status|terminated_on/u, "generic user update input still exposes lifecycle fields");
+  requireSemanticText(path, updateMethod, /updateUser\(/u, "generic user update method is missing");
   forbidText(path, updateMethod, /input\.(?:employment_status|terminated_on)/u, "generic user update still mutates lifecycle state");
   requireSemanticText(path, service, /deactivateUser\([\s\S]*credential\.status\s*=\s*"revoked"[\s\S]*core\.user\.terminated/u, "dedicated lifecycle path must revoke credentials and emit termination evidence");
+  requireSemanticText(path, updateOpenapi, /const coreUserUpdateBodySchema/u, "generic user update OpenAPI contract is missing");
   forbidText(path, updateOpenapi, /employment_status|terminated_on/u, "generic user update OpenAPI still advertises lifecycle fields");
   requireSemanticText(path, regression, /employment_status:\s*"terminated"[\s\S]*terminated_on:\s*"2026-11-15"[\s\S]*toBe\(400\)[\s\S]*employment_status:\s*"active"[\s\S]*event_type\s*===\s*"core\.user\.terminated"[\s\S]*toBe\(false\)/u, "generic lifecycle bypass regression is incomplete");
   return `${item}: semantic deletion contract passed`;
+}
+
+export function deletionSemanticDisposition(root, item, base, dependencies = {}) {
+  const semantic = validateDeletionSemanticContract(root, item, base, dependencies);
+  return semantic
+    ? { semantic: [semantic], uncovered: [], unmeasured: 0 }
+    : { semantic: [], uncovered: [`deletion-only ${item}: behavior requires explicit regression evidence`], unmeasured: 1 };
 }
 
 export function validateSemanticPath(root, path, content, base) {
@@ -1842,14 +1852,10 @@ export function verify(root, base, head, suitePaths = fullSuitePaths(coverageOut
   for (const risk of importRisks) lines.push(`IMPORT GRAPH ${risk}: changed in-source test files require review`);
   for (const path of excludedGenerated) lines.push(`EXCLUDED TYPE/GENERATED ${path}: no product line denominator; typecheck/build regeneration evidence required`);
   for (const item of deletionOnly) {
-    const semantic = validateDeletionSemanticContract(root, item, mergeBase);
-    if (semantic) {
-      semanticLines.push(semantic);
-    } else {
-      const message = `deletion-only ${item}: behavior requires explicit regression evidence`;
-      totals.uncovered.push(message);
-      unmeasuredCount += 1;
-    }
+    const disposition = deletionSemanticDisposition(root, item, mergeBase);
+    semanticLines.push(...disposition.semantic);
+    totals.uncovered.push(...disposition.uncovered);
+    unmeasuredCount += disposition.unmeasured;
   }
   for (const item of removedRuntime) totals.uncovered.push(`removed runtime ${item}: replacement has no executable coverage target`);
   for (const path of outside) {
