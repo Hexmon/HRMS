@@ -22,14 +22,18 @@ CREATE INDEX IF NOT EXISTS asset_requests_company_numeric_code_idx
   )
   WHERE request_code ~ '^REQ-[0-9]+$';
 
+-- Freeze the complete historical input set before validation and keep
+-- every authority, ownership, event, and evidence writer excluded until
+-- finalization triggers are installed in this same transaction. Acquire in
+-- identity -> ownership -> outbox -> staging order to match product writes.
+LOCK TABLE core.users, core.roles, core.user_roles,
+  platform.company_profiles, platform.user_session_preferences,
+  assets.asset_assignments, assets.asset_recovery_tickets,
+  platform.outbox_events, core.user_termination_identity_evidence
+  IN SHARE ROW EXCLUSIVE MODE;
+
 ALTER TABLE assets.asset_recovery_tickets
   ADD COLUMN IF NOT EXISTS lifecycle_event_id uuid;
-
--- Freeze the complete historical input set before validation and keep
--- ordinary outbox/evidence writers excluded until finalization triggers are
--- installed in this same transaction.
-LOCK TABLE platform.outbox_events, core.user_termination_identity_evidence
-  IN SHARE ROW EXCLUSIVE MODE;
 
 DO $$
 DECLARE

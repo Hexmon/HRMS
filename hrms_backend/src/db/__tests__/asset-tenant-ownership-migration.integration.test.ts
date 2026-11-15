@@ -321,6 +321,42 @@ describe("asset tenant ownership migration", () => {
          ) VALUES ($1, $2, $3, 'blocked', 'RECOVERY-001', 1, 'blocked', $4, $5)`,
         [blockedEventId, companyA, recoveryEmployeeId, verifierUserId, approverUserId],
       )).rejects.toMatchObject({ code: "55P03" });
+      await expect(contender.query(
+        `UPDATE assets.asset_assignments
+            SET assigned_at = assigned_at - interval '1 second'
+          WHERE id = $1`,
+        [assignmentId],
+      )).rejects.toMatchObject({ code: "55P03" });
+      await expect(contender.query(
+        `INSERT INTO assets.asset_assignments (
+           id, company_id, asset_id, assigned_to_user_id, assigned_by_user_id,
+           assigned_at, returned_at, status
+         ) VALUES ($1, $2, $3, $4, $5, now() - interval '1 day', now(), 'returned')`,
+        [randomUUID(), companyA, assetId, recoveryEmployeeId, verifierUserId],
+      )).rejects.toMatchObject({ code: "55P03" });
+      await expect(contender.query(
+        "UPDATE assets.asset_recovery_tickets SET status = status WHERE id = $1",
+        [recoveryTicket.rows[0]!.id],
+      )).rejects.toMatchObject({ code: "55P03" });
+      await expect(contender.query(
+        "UPDATE core.user_roles SET status = 'revoked' WHERE user_id = $1 AND role_key = 'Admin'",
+        [verifierUserId],
+      )).rejects.toMatchObject({ code: "55P03" });
+      await expect(contender.query(
+        "UPDATE core.roles SET status = 'inactive' WHERE role_key = 'Admin'",
+      )).rejects.toMatchObject({ code: "55P03" });
+      await expect(contender.query(
+        "UPDATE core.users SET employment_status = 'inactive' WHERE id = $1",
+        [verifierUserId],
+      )).rejects.toMatchObject({ code: "55P03" });
+      await expect(contender.query(
+        "UPDATE platform.user_session_preferences SET company_id = $1 WHERE user_id = $2",
+        [companyB, verifierUserId],
+      )).rejects.toMatchObject({ code: "55P03" });
+      await expect(contender.query(
+        "UPDATE platform.company_profiles SET status = 'inactive' WHERE id = $1",
+        [companyA],
+      )).rejects.toMatchObject({ code: "55P03" });
     } finally {
       await client.query("ROLLBACK");
       await contender.end();

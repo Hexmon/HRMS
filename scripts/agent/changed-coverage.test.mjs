@@ -1101,6 +1101,8 @@ test("asset recovery evidence staging and runtime termination snapshots have sem
   assert.throws(() => validateSemanticPath(repositoryRoot, prepPath, prep.replace("REVOKE SELECT, INSERT, UPDATE, DELETE, TRUNCATE", "REVOKE INSERT, UPDATE, DELETE, TRUNCATE"), "base"), /read and mutation privileges/);
   assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replaceAll("u.version = payload_employee_version", "TRUE"), "base"), /exact durable employee version/);
   assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("IN SHARE ROW EXCLUSIVE MODE", "IN ACCESS SHARE MODE"), "base"), /writers must be locked/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("assets.asset_assignments, assets.asset_recovery_tickets,", "assets.asset_recovery_tickets,"), "base"), /authority, ownership, event and evidence writers/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("core.users, core.roles, core.user_roles,", "core.users, core.roles,"), "base"), /authority, ownership, event and evidence writers/);
   assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("event.payload->>'user_id' IS DISTINCT FROM event.aggregate_id::text", "FALSE"), "base"), /durable user/);
   assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("approver.id <> evidence.verified_by_user_id", "TRUE"), "base"), /two distinct current authorized/);
   assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("reviewer_role.status = 'active'", "reviewer_role.status = 'revoked'"), "base"), /current effective Admin or HR Manager/);
