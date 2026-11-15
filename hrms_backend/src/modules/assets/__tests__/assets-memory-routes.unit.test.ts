@@ -7,6 +7,7 @@ import { createMemoryDataStore, nowIso, seedIds, type MemoryDataStore } from "..
 import { assetRoutes } from "../routes.js";
 import { createRecoveryTicketsForTerminatedEmployee } from "../events.js";
 import { assertAssignedAssetEmployee } from "../policy.js";
+import { AssetRepository } from "../repository.js";
 
 const actorHeader = "x-test-actor";
 
@@ -543,6 +544,65 @@ describe("asset routes with the memory persistence fallback", () => {
     expect(store.assets).toEqual(before.assets);
     expect(store.assetRecoveryTickets).toEqual(before.tickets);
     expect(store.assetStateEvents).toEqual(before.events);
+  });
+
+  it("covers fallback request allocation, vendor uniqueness, and historical identity validation", () => {
+    const companyId = store.userSessionPreferences.find((item) => item.user_id === seedIds.employee1)!.company_id!;
+    store.assetCommandMetadata = undefined;
+    store.assetRequests.push(
+      { ...store.assetRequests[0]!, id: randomUUID(), company_id: companyId, request_code: "REQ-450" },
+      { ...store.assetRequests[0]!, id: randomUUID(), company_id: companyId, request_code: "IMPORTED" },
+    );
+    const repository = new AssetRepository(store);
+    const request = repository.createRequest(companyId, {
+      requester_user_id: seedIds.employee1,
+      request_type: "new",
+      asset_type: "Laptop",
+      asset_id: null,
+      reason: "Fallback allocation coverage",
+      priority: "medium",
+      needed_by: null,
+      preferred_specs: {},
+      status: "pending",
+      decision_by_user_id: null,
+      decision_at: null,
+      decision_remarks: null,
+      assigned_asset_id: null,
+    });
+    expect(request.request_code).toBe("REQ-451");
+
+    const firstVendor = repository.createVendor(companyId, { name: "Coverage Vendor" });
+    expect(() => repository.createVendor(companyId, { name: " coverage vendor " }))
+      .toThrow(/already exists/u);
+    const secondVendor = repository.createVendor(companyId, { name: "Another Vendor" });
+    expect(() => repository.updateVendorVersioned(secondVendor.id, companyId, secondVendor.version, (vendor) => {
+      vendor.name = firstVendor.name.toUpperCase();
+    })).toThrow(/already exists/u);
+
+    expect(() => createRecoveryTicketsForTerminatedEmployee(
+      store,
+      companyId,
+      seedIds.employee1,
+      randomUUID(),
+      { employeeUserId: seedIds.employee2, fullName: "Wrong Employee", employeeCode: "WRONG" },
+    )).toThrow(/identity does not match/u);
+  });
+
+  it("increments bounded maintenance totals from zero", async () => {
+    const asset = store.assets[0]!;
+    store.assetReadMetadata = { operation: "assets.maintenance.list", assetMaintenanceTotals: {} };
+    const response = await app.inject({
+      method: "POST",
+      url: `/assets/${asset.id}/maintenance`,
+      headers: commandHeaders(seedIds.assetManager),
+      payload: {
+        maintenance_type: "inspection",
+        started_on: "2026-11-15",
+        expected_version: asset.version,
+      },
+    });
+    expect(response.statusCode, response.body).toBe(200);
+    expect(store.assetReadMetadata.assetMaintenanceTotals?.[asset.id]).toBe(1);
   });
 
   it("covers every changed protected route's own actor guard", async () => {

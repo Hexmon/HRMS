@@ -975,6 +975,8 @@ export function runFullCoverageWorker(root, outputRoot, expectedHead, tools, run
   execute("agent setup validation", tools.bash, ["scripts/agent/validate-agent-setup.sh"], {}, ["NODE_V8_COVERAGE"]);
   const includes = [
     "hrms_backend/scripts/lib.ts",
+    "hrms_backend/scripts/db-migrate.ts",
+    "hrms_backend/scripts/db-migration-lib.ts",
     "qa-artifacts/hrms/discovery-2026-11-09/admin-settings-cross-company-probe.ts",
     "qa-artifacts/hrms/discovery-2026-11-09/disposable-probe-guard.ts",
     "qa-artifacts/hrms/discovery-2026-11-09/multi-instance-asset-probe.ts",
@@ -982,6 +984,7 @@ export function runFullCoverageWorker(root, outputRoot, expectedHead, tools, run
   ];
   execute("isolated TypeScript tests", tools.pnpm, ["--dir", "hrms_backend", "exec", "vitest", "run", "--project", "unit",
     "src/__tests__/discovery-probes.unit.test.ts", "src/__tests__/disposable-probe-guard.unit.test.ts", "src/__tests__/walk-files.unit.test.ts",
+    "src/platform/__tests__/db-migration-staging.unit.test.ts", "src/platform/__tests__/db-migrate-cli.unit.test.ts",
     "--coverage", "--coverage.allowExternal=true", ...includes.flatMap((path) => ["--coverage.include", resolve(root, path)]),
     "--coverage.reporter=text", "--coverage.reporter=json", `--coverage.reportsDirectory=${typescriptReport}`], {}, ["NODE_V8_COVERAGE"]);
   execute("backend unit and integration coverage", tools.pnpm, ["--dir", "hrms_backend", "exec", "vitest", "run",

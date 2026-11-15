@@ -201,6 +201,14 @@ export interface PostgresDataStoreOptions {
   seedIfEmpty?: boolean;
 }
 
+export function assertScopedAssetLoad(
+  companyId: UUID | undefined,
+  ids: readonly UUID[] | undefined,
+  resource: string,
+): void {
+  if (ids && !companyId) throw new Error(`Filtered ${resource} loads require a company scope.`);
+}
+
 const resetTables = [
   "helpdesk.ticket_events",
   "helpdesk.ticket_attachments",
@@ -2965,11 +2973,11 @@ class PostgresPersistence {
   }
 
   private async loadAssets(client: PoolClient, companyId?: UUID, ids?: readonly UUID[]): Promise<AssetRecord[]> {
-    if (ids && !companyId) throw new Error("Filtered asset loads require a company scope.");
+    assertScopedAssetLoad(companyId, ids, "asset");
     if (ids?.length === 0) return [];
     const conditions = [
       ...(companyId ? ["company_id = $1"] : []),
-      ...(ids ? [`id = ANY($${companyId ? 2 : 1}::uuid[])`] : []),
+      ...(ids ? ["id = ANY($2::uuid[])"] : []),
     ];
     const parameters = [...(companyId ? [companyId] : []), ...(ids ? [[...ids]] : [])];
     const { rows } = await client.query(
@@ -3001,12 +3009,12 @@ class PostgresPersistence {
     assignmentIds: readonly UUID[] | undefined,
     activeOnly: boolean,
   ): Promise<AssetAssignmentRecord[]> {
-    if ((assetIds || assignmentIds) && !companyId) throw new Error("Filtered assignment loads require a company scope.");
+    assertScopedAssetLoad(companyId, assetIds ?? assignmentIds, "assignment");
     if (assetIds?.length === 0 || assignmentIds?.length === 0) return [];
     const assignmentIdParameter = assetIds ? 3 : 2;
     const conditions = [
       ...(companyId ? ["company_id = $1"] : []),
-      ...(assetIds ? [`asset_id = ANY($${companyId ? 2 : 1}::uuid[])`] : []),
+      ...(assetIds ? ["asset_id = ANY($2::uuid[])"] : []),
       ...(assignmentIds ? [`id = ANY($${assignmentIdParameter}::uuid[])`] : []),
       ...(activeOnly ? ["status = 'active'"] : []),
     ];
@@ -3057,11 +3065,11 @@ class PostgresPersistence {
     companyId?: UUID,
     ids?: readonly UUID[],
   ): Promise<DataStore["assetRequests"]> {
-    if (ids && !companyId) throw new Error("Filtered request loads require a company scope.");
+    assertScopedAssetLoad(companyId, ids, "request");
     if (ids?.length === 0) return [];
     const conditions = [
       ...(companyId ? ["company_id = $1"] : []),
-      ...(ids ? [`id = ANY($${companyId ? 2 : 1}::uuid[])`] : []),
+      ...(ids ? ["id = ANY($2::uuid[])"] : []),
     ];
     const parameters = [...(companyId ? [companyId] : []), ...(ids ? [[...ids]] : [])];
     const { rows } = await client.query(
@@ -3099,12 +3107,12 @@ class PostgresPersistence {
     latestOnly: boolean,
     acknowledgementIds?: readonly UUID[],
   ): Promise<DataStore["assetAcknowledgements"]> {
-    if ((assetIds || acknowledgementIds) && !companyId) throw new Error("Filtered acknowledgement loads require a company scope.");
+    assertScopedAssetLoad(companyId, assetIds ?? acknowledgementIds, "acknowledgement");
     if (assetIds?.length === 0 || acknowledgementIds?.length === 0) return [];
     const acknowledgementIdParameter = 1 + Number(Boolean(companyId)) + Number(Boolean(assetIds));
     const conditions = [
       ...(companyId ? ["company_id = $1"] : []),
-      ...(assetIds ? [`asset_id = ANY($${companyId ? 2 : 1}::uuid[])`] : []),
+      ...(assetIds ? ["asset_id = ANY($2::uuid[])"] : []),
       ...(acknowledgementIds ? [`id = ANY($${acknowledgementIdParameter}::uuid[])`] : []),
     ];
     const parameters = [
@@ -3136,11 +3144,11 @@ class PostgresPersistence {
     companyId?: UUID,
     ids?: readonly UUID[],
   ): Promise<DataStore["assetMaintenanceRecords"]> {
-    if (ids && !companyId) throw new Error("Filtered maintenance loads require a company scope.");
+    assertScopedAssetLoad(companyId, ids, "maintenance");
     if (ids?.length === 0) return [];
     const conditions = [
       ...(companyId ? ["company_id = $1"] : []),
-      ...(ids ? [`id = ANY($${companyId ? 2 : 1}::uuid[])`] : []),
+      ...(ids ? ["id = ANY($2::uuid[])"] : []),
     ];
     const parameters = [...(companyId ? [companyId] : []), ...(ids ? [[...ids]] : [])];
     const { rows } = await client.query(
@@ -3170,11 +3178,11 @@ class PostgresPersistence {
     companyId?: UUID,
     ids?: readonly UUID[],
   ): Promise<DataStore["assetVendors"]> {
-    if (ids && !companyId) throw new Error("Filtered vendor loads require a company scope.");
+    assertScopedAssetLoad(companyId, ids, "vendor");
     if (ids?.length === 0) return [];
     const conditions = [
       ...(companyId ? ["company_id = $1"] : []),
-      ...(ids ? [`id = ANY($${companyId ? 2 : 1}::uuid[])`] : []),
+      ...(ids ? ["id = ANY($2::uuid[])"] : []),
     ];
     const parameters = [...(companyId ? [companyId] : []), ...(ids ? [[...ids]] : [])];
     const { rows } = await client.query(
@@ -3201,11 +3209,11 @@ class PostgresPersistence {
     companyId?: UUID,
     ids?: readonly UUID[],
   ): Promise<DataStore["assetRecoveryTickets"]> {
-    if (ids && !companyId) throw new Error("Filtered recovery loads require a company scope.");
+    assertScopedAssetLoad(companyId, ids, "recovery");
     if (ids?.length === 0) return [];
     const conditions = [
       ...(companyId ? ["company_id = $1"] : []),
-      ...(ids ? [`id = ANY($${companyId ? 2 : 1}::uuid[])`] : []),
+      ...(ids ? ["id = ANY($2::uuid[])"] : []),
     ];
     const parameters = [...(companyId ? [companyId] : []), ...(ids ? [[...ids]] : [])];
     const { rows } = await client.query(

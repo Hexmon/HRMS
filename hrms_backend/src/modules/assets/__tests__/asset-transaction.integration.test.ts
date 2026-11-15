@@ -1193,6 +1193,24 @@ describe("asset transaction boundary", () => {
     expect(report.assetReadMetadata?.report?.recoveryRows)
       .toContainEqual(expect.objectContaining({ asset_id: assetId, created_at: expect.any(String) }));
     await expect(read("assets.unsupported")).rejects.toThrow(/Unsupported bounded asset read operation/u);
+
+    if (!persistence.assetCommand) throw new Error("Expected PostgreSQL asset command persistence");
+    const runProjection = (actionKey: string, extra: Record<string, unknown>) => persistence.assetCommand!(
+      {
+        companyId,
+        actorUserId: seedIds.assetManager,
+        actionKey,
+        idempotencyKey: randomUUID(),
+        requestHash: randomUUID().replaceAll("-", "").padEnd(64, "0"),
+        ...extra,
+      },
+      () => undefined,
+      () => ({ ok: true }),
+    );
+    await runProjection("assets.requests.create", { requestAssetType: assetType });
+    await runProjection("assets.projection.related-asset", { relatedAssetId: assetId });
+    const vendorName = first.store.assetVendors[0]?.name;
+    if (vendorName) await runProjection("assets.vendors.create", { vendorName });
   });
 
   it("returns original-company recovery identity after an employee transfers to another company", async () => {

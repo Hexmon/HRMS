@@ -1714,6 +1714,10 @@ test("backend coverage measures unit and integration projects together", () => {
       args.includes("hrms_backend") && args.includes("--coverage") && args.includes("integration"));
     assert.ok(backend, "backend coverage command must include the integration project");
     assert.deepEqual(backend.args.filter((_argument, index) => backend.args[index - 1] === "--project"), ["unit", "integration"]);
+    const isolated = commands.find(({ args }) => args.includes("src/platform/__tests__/db-migrate-cli.unit.test.ts"));
+    assert.ok(isolated, "isolated coverage must execute the migration CLI test");
+    assert.ok(isolated.args.includes(join(root, "hrms_backend/scripts/db-migrate.ts")));
+    assert.ok(isolated.args.includes(join(root, "hrms_backend/scripts/db-migration-lib.ts")));
   } finally {
     if (previous === undefined) delete process.env.HRMS_COVERAGE_OUTPUT_DIR;
     else process.env.HRMS_COVERAGE_OUTPUT_DIR = previous;
