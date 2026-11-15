@@ -153,7 +153,7 @@ describe("core hierarchy", () => {
     const actorStore = createMemoryDataStore();
     const actor = actorStore.users.find((user) => user.id === seedIds.admin)!;
 
-    for (const action of ["patch-status", "deactivate", "disable-login", "remove-admin-role"] as const) {
+    for (const action of ["deactivate", "disable-login", "remove-admin-role"] as const) {
       const store = createMemoryDataStore();
       const service = new CoreService(store);
       addCompanyProfile(store, companyA);
@@ -167,11 +167,6 @@ describe("core hierarchy", () => {
 
       const run = () => {
         switch (action) {
-          case "patch-status":
-            return service.updateUser(actor, targetAdmin.id, {
-              expected_version: 1,
-              employment_status: "inactive"
-            });
           case "deactivate":
             return service.deactivateUser(actor, targetAdmin.id, {
               expected_version: 1,
@@ -214,6 +209,29 @@ describe("core hierarchy", () => {
 
     expect(result.employment_status).toBe("inactive");
     expect(store.userCredentials.find((credential) => credential.user_id === targetAdmin.id)?.status).toBe("revoked");
+  });
+
+  it("emits only a version-bound company reference for termination identity capture", () => {
+    const store = createMemoryDataStore();
+    const service = new CoreService(store);
+    const actor = store.users.find((user) => user.id === seedIds.admin)!;
+    const employee = store.users.find((user) => user.id === seedIds.employee1)!;
+    const companyId = store.userSessionPreferences.find((item) => item.user_id === actor.id)!.company_id!;
+
+    service.deactivateUser(actor, employee.id, {
+      expected_version: employee.version,
+      status: "terminated",
+    });
+
+    const event = store.outbox.find((candidate) => candidate.event_type === "core.user.terminated")!;
+    expect(event.payload).toMatchObject({
+      user_id: employee.id,
+      company_id: companyId,
+      employee_version: employee.version,
+      status: "terminated",
+    });
+    expect(event.payload).not.toHaveProperty("employee_full_name");
+    expect(event.payload).not.toHaveProperty("full_name");
   });
 
   it("fails closed for missing or stale active company context on export and import reads", async () => {

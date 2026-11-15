@@ -360,6 +360,7 @@ export interface DocumentMetadata {
 
 export interface AssetRecord {
   id: UUID;
+  company_id: UUID;
   asset_code: string;
   qr_hash: string;
   asset_type: string;

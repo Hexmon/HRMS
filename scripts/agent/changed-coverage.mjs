@@ -975,6 +975,8 @@ export function runFullCoverageWorker(root, outputRoot, expectedHead, tools, run
   execute("agent setup validation", tools.bash, ["scripts/agent/validate-agent-setup.sh"], {}, ["NODE_V8_COVERAGE"]);
   const includes = [
     "hrms_backend/scripts/lib.ts",
+    "hrms_backend/scripts/db-migrate.ts",
+    "hrms_backend/scripts/db-migration-lib.ts",
     "qa-artifacts/hrms/discovery-2026-11-09/admin-settings-cross-company-probe.ts",
     "qa-artifacts/hrms/discovery-2026-11-09/disposable-probe-guard.ts",
     "qa-artifacts/hrms/discovery-2026-11-09/multi-instance-asset-probe.ts",
@@ -982,6 +984,7 @@ export function runFullCoverageWorker(root, outputRoot, expectedHead, tools, run
   ];
   execute("isolated TypeScript tests", tools.pnpm, ["--dir", "hrms_backend", "exec", "vitest", "run", "--project", "unit",
     "src/__tests__/discovery-probes.unit.test.ts", "src/__tests__/disposable-probe-guard.unit.test.ts", "src/__tests__/walk-files.unit.test.ts",
+    "src/platform/__tests__/db-migration-staging.unit.test.ts", "src/platform/__tests__/db-migrate-cli.unit.test.ts",
     "--coverage", "--coverage.allowExternal=true", ...includes.flatMap((path) => ["--coverage.include", resolve(root, path)]),
     "--coverage.reporter=text", "--coverage.reporter=json", `--coverage.reportsDirectory=${typescriptReport}`], {}, ["NODE_V8_COVERAGE"]);
   execute("backend unit and integration coverage", tools.pnpm, ["--dir", "hrms_backend", "exec", "vitest", "run",
@@ -1489,7 +1492,43 @@ function validateQaCompose(path, content) {
   if (/APP_ENV:\s*prod(?:uction)?/i.test(content)) semanticFailure(path, "QA Compose must not use a production APP_ENV");
 }
 
+function stripSqlComments(content) {
+  let output = "";
+  let index = 0;
+  let quote = null;
+  let blockDepth = 0;
+  while (index < content.length) {
+    const pair = content.slice(index, index + 2);
+    if (blockDepth) {
+      if (pair === "/*") { blockDepth += 1; index += 2; continue; }
+      if (pair === "*/") { blockDepth -= 1; index += 2; continue; }
+      output += content[index] === "\n" ? "\n" : " ";
+      index += 1;
+      continue;
+    }
+    if (quote) {
+      output += content[index];
+      if (content[index] === quote) {
+        if (content[index + 1] === quote) { output += content[index + 1]; index += 2; continue; }
+        quote = null;
+      }
+      index += 1;
+      continue;
+    }
+    if (pair === "--") {
+      while (index < content.length && content[index] !== "\n") index += 1;
+      continue;
+    }
+    if (pair === "/*") { blockDepth = 1; index += 2; continue; }
+    if (content[index] === "'" || content[index] === '"') quote = content[index];
+    output += content[index];
+    index += 1;
+  }
+  return output;
+}
+
 function validateHolidayMigration(path, content) {
+  content = stripSqlComments(content);
   requireSemanticText(path, content, /BEGIN\s*;/i, "holiday migration must be transactional");
   requireSemanticText(path, content, /DROP\s+INDEX\s+IF\s+EXISTS\s+.*holiday/i, "holiday migration must remove the legacy global uniqueness rule");
   requireSemanticText(path, content, /CREATE\s+UNIQUE\s+INDEX/i, "holiday migration must create a unique index");
@@ -1500,6 +1539,7 @@ function validateHolidayMigration(path, content) {
 }
 
 function validateAssetTransactionFenceMigration(path, content) {
+  content = stripSqlComments(content);
   requireSemanticText(path, content, /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+assets\.require_transactional_writer\s*\(\)/i, "asset writer fence function is missing");
   requireSemanticText(path, content, /current_setting\s*\(\s*'hrms\.asset_writer_v2'\s*,\s*true\s*\)\s+IS\s+DISTINCT\s+FROM\s+'on'/i, "asset writer fence must require the transaction-local marker");
   requireSemanticText(path, content, /IF\s+TG_OP\s*=\s*'DELETE'[\s\S]*RETURN\s+OLD[\s\S]*RETURN\s+NEW/i, "asset writer fence must preserve DELETE and write trigger row semantics");
@@ -1518,6 +1558,7 @@ function validateAssetTransactionFenceMigration(path, content) {
 }
 
 function validateAssetRecoveryAssignmentMigration(path, content) {
+  content = stripSqlComments(content);
   requireSemanticText(path, content, /ALTER\s+TABLE\s+assets\.asset_recovery_tickets[\s\S]*ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+assignment_id\s+uuid/i, "recovery ticket assignment column is missing");
   requireSemanticText(path, content, /IF\s+NOT\s+EXISTS[\s\S]*asset_recovery_tickets_assignment_id_fkey[\s\S]*FOREIGN\s+KEY\s*\(assignment_id\)\s+REFERENCES\s+assets\.asset_assignments\s*\(id\)/i, "recovery assignment foreign key must be installed idempotently");
   requireSemanticText(path, content, /CREATE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+asset_recovery_tickets_assignment_idx[\s\S]*\(assignment_id\)/i, "recovery assignment lookup index is missing");
@@ -1526,6 +1567,119 @@ function validateAssetRecoveryAssignmentMigration(path, content) {
   requireSemanticText(path, content, /assignment\.assigned_at\s*<=\s*ticket\.created_at[\s\S]*assignment\.returned_at\s+IS\s+NULL\s+OR\s+assignment\.returned_at\s*>=\s*ticket\.created_at/i, "recovery backfill must match the ticket custody interval");
   requireSemanticText(path, content, /HAVING\s+count\s*\(\s*\*\s*\)\s*=\s*1/i, "recovery backfill must bind only a unique assignment");
   requireSemanticText(path, content, /UPDATE\s+assets\.asset_recovery_tickets[\s\S]*SET\s+assignment_id\s*=\s*unique_matches\.assignment_id/i, "recovery backfill update is missing");
+}
+
+function validateAssetTenantOwnershipMapMigration(path, content) {
+  content = stripSqlComments(content);
+  requireSemanticText(path, content, /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+assets\.asset_tenant_ownership_map/i, "verified asset ownership map is missing");
+  requireSemanticText(path, content, /PRIMARY\s+KEY\s*\(\s*resource_type\s*,\s*resource_id\s*\)/i, "ownership map must identify each root resource exactly once");
+  requireSemanticText(path, content, /resource_type\s+IN\s*\(\s*'asset'\s*,\s*'request'\s*,\s*'vendor'\s*\)/i, "ownership map must cover only verified root resource types");
+  requireSemanticText(path, content, /verification_note\s+text\s+NOT\s+NULL/i, "ownership map must retain operator verification evidence");
+  requireSemanticText(path, content, /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+assets\.validate_company_profile_reference/i, "cross-schema company validator is missing");
+  requireSemanticText(path, content, /FROM\s+platform\.company_profiles[\s\S]*FOR\s+KEY\s+SHARE/i, "company validation must lock the referenced company");
+  requireSemanticText(path, content, /BEFORE\s+INSERT\s+OR\s+UPDATE\s+OF\s+company_id/i, "ownership map company validation trigger is missing");
+  requireSemanticText(path, content, /BEFORE\s+DELETE\s+OR\s+UPDATE\s+OF\s+id\s+ON\s+platform\.company_profiles/i, "company deletion and identity mutation must be restricted");
+}
+
+function validateAssetTenantOwnershipMigration(path, content) {
+  content = stripSqlComments(content);
+  for (const table of [
+    "assets", "asset_assignments", "asset_state_events", "asset_requests",
+    "asset_acknowledgements", "asset_maintenance_records", "software_vendors",
+    "asset_recovery_tickets",
+  ]) {
+    requireSemanticText(path, content, new RegExp(`ALTER\\s+TABLE\\s+assets\\.${table}[\\s\\S]*?company_id`, "i"), `tenant ownership column or constraint is missing for ${table}`);
+    requireSemanticText(path, content, new RegExp(`ALTER\\s+TABLE\\s+assets\\.${table}\\s+ALTER\\s+COLUMN\\s+company_id\\s+SET\\s+NOT\\s+NULL`, "i"), `tenant ownership must be required for ${table}`);
+  }
+  requireSemanticText(path, content, /SET\s+LOCAL\s+hrms\.asset_writer_v2\s*=\s*'on'/i, "tenant backfill must use only the transaction-local writer marker");
+  requireSemanticText(path, content, /ownership\.resource_type\s*=\s*'asset'[\s\S]*ownership\.resource_id\s*=\s*target\.id/i, "asset roots must backfill only from verified ownership mappings");
+  requireSemanticText(path, content, /Asset tenant ownership mapping is incomplete/i, "migration must fail closed when verified ownership is missing");
+  requireSemanticText(path, content, /Asset tenant ownership relationships conflict/i, "migration must fail closed when related ownership conflicts");
+  requireSemanticText(path, content, /DISABLE\s+TRIGGER\s+assets_state_events_immutable_trg[\s\S]*ENABLE\s+TRIGGER\s+assets_state_events_immutable_trg/i, "immutable event trigger must be restored after the bounded backfill");
+  requireSemanticText(path, content, /assets_company_asset_code_uq[\s\S]*\(company_id\s*,\s*asset_code\)/i, "asset codes must be unique only within a company");
+  requireSemanticText(path, content, /asset_requests_company_request_code_uq[\s\S]*\(company_id\s*,\s*request_code\)/i, "request codes must be unique only within a company");
+  requireSemanticText(path, content, /software_vendors_company_name_uq[\s\S]*\(company_id\s*,\s*lower\(name\)\)[\s\S]*deleted_at\s+IS\s+NULL/i, "active vendor names must be case-insensitively unique within a company");
+  requireSemanticText(path, content, /FOREIGN\s+KEY\s*\(company_id\s*,\s*asset_id\)\s+REFERENCES\s+assets\.assets\s*\(company_id\s*,\s*id\)/i, "child asset references must include company ownership");
+  requireSemanticText(path, content, /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+assets\.prevent_company_ownership_change/i, "immutable tenant ownership function is missing");
+  requireSemanticText(path, content, /NEW\.company_id\s+IS\s+DISTINCT\s+FROM\s+OLD\.company_id/i, "ownership mutation must be rejected");
+  requireSemanticText(path, content, /CONSTRAINT\s*=\s*'assets_company_ownership_immutable'/i, "ownership mutation must expose a stable database constraint");
+  requireSemanticText(path, content, /'asset_command_results'/i, "durable command results must use the same company validation and immutability triggers");
+  requireSemanticText(path, content, /FROM\s+assets\.asset_command_results\s+WHERE\s+company_id\s*=\s*OLD\.id/i, "company deletion must retain durable command-result ownership");
+  forbidText(path, content, /REFERENCES\s+platform\.company_profiles/i, "asset migration must not create unsupported cross-schema foreign keys");
+}
+
+function validateAppliedAssetTenantOwnershipFinalizationMigration(path, content) {
+  const expectedChecksum = "0c4ea2b1a38a6d7dfcf27884ff27126618472d0ab3958876401b4492515b0f49";
+  const actualChecksum = createHash("sha256").update(content, "utf8").digest("hex");
+  if (actualChecksum !== expectedChecksum) {
+    throw new Error(`${path}: applied migration 0070 is immutable; create a new forward migration`);
+  }
+}
+
+function validateAssetTenantOwnershipFinalizationMigration(path, content) {
+  content = stripSqlComments(content);
+  requireSemanticText(path, content, /SET\s+LOCAL\s+hrms\.asset_writer_v2\s*=\s*'on'/i, "recovery identity backfill must use only the transaction-local writer marker");
+  requireSemanticText(path, content, /ALTER\s+TABLE\s+assets\.asset_recovery_tickets[\s\S]*ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+employee_full_name_snapshot\s+text[\s\S]*employee_code_snapshot\s+text/i, "historical recovery identity columns are missing");
+  requireSemanticText(path, content, /DROP\s+TRIGGER\s+IF\s+EXISTS\s+asset_recovery_identity_immutable_trg\s+ON\s+assets\.asset_recovery_tickets[\s\S]*UPDATE\s+assets\.asset_recovery_tickets\s+ticket[\s\S]*FROM\s+assets\.asset_recovery_identity_evidence/i, "verified recovery evidence cannot replace the applied 0070 snapshot safely");
+  requireSemanticText(path, content, /UPDATE\s+assets\.asset_recovery_tickets\s+ticket[\s\S]*employee_full_name_snapshot\s*=\s*evidence\.employee_full_name_snapshot[\s\S]*employee_code_snapshot\s*=\s*evidence\.employee_code_snapshot[\s\S]*FROM\s+assets\.asset_recovery_identity_evidence\s+evidence[\s\S]*evidence\.ticket_id\s*=\s*ticket\.id[\s\S]*evidence\.company_id\s*=\s*ticket\.company_id[\s\S]*evidence\.employee_user_id\s*=\s*ticket\.employee_user_id/i, "recovery identity must come only from ticket-bound original-company evidence");
+  requireSemanticText(path, content, /verified_by_user_id\s+IS\s+NULL[\s\S]*ERRCODE\s*=\s*'23502'/i, "unattributed ownership mappings must fail closed");
+  requireSemanticText(path, content, /NOT\s+EXISTS\s*\(\s*SELECT\s+1\s+FROM\s+core\.users\s+verifier[\s\S]*ERRCODE\s*=\s*'23503'/i, "unknown ownership verifiers must fail closed");
+  for (const [resourceType, table] of [["asset", "assets"], ["request", "asset_requests"], ["vendor", "software_vendors"]]) {
+    requireSemanticText(path, content, new RegExp(`WHEN\\s+'${resourceType}'\\s+THEN\\s+NOT\\s+EXISTS\\s*\\(\\s*SELECT\\s+1\\s+FROM\\s+assets\\.${table}\\s+root\\s+WHERE\\s+root\\.id\\s*=\\s*ownership\\.resource_id`, "i"), `orphan detection is missing for ${resourceType} roots`);
+    requireSemanticText(path, content, new RegExp(`WHEN\\s+'${resourceType}'\\s+THEN\\s+EXISTS\\s*\\([\\s\\S]*?FROM\\s+assets\\.${table}\\s+root[\\s\\S]*?root\\.company_id\\s*<>\\s*ownership\\.company_id`, "i"), `owner mismatch detection is missing for ${resourceType} roots`);
+  }
+  requireSemanticText(path, content, /orphan_count\s*>\s*0[\s\S]*ERRCODE\s*=\s*'23503'/i, "orphan ownership roots must fail with a stable foreign-key violation");
+  requireSemanticText(path, content, /NOT\s+EXISTS\s*\([\s\S]*asset_recovery_identity_evidence[\s\S]*ERRCODE\s*=\s*'23502'/i, "every legacy recovery ticket must have exactly one evidence row");
+  requireSemanticText(path, content, /invalid_recovery_evidence_count\s*>\s*0[\s\S]*ERRCODE\s*=\s*'23514'/i, "blank, extra, mismatched or unverified recovery evidence must fail closed");
+  requireSemanticText(path, content, /mismatch_count\s*>\s*0[\s\S]*ERRCODE\s*=\s*'23514'/i, "ownership mismatch must fail with a stable check violation");
+  requireSemanticText(path, content, /employee_full_name_snapshot\s+IS\s+NULL\s+OR\s+employee_code_snapshot\s+IS\s+NULL[\s\S]*ERRCODE\s*=\s*'23502'/i, "missing historical recovery identity must fail closed");
+  requireSemanticText(path, content, /ALTER\s+TABLE\s+assets\.asset_tenant_ownership_map[\s\S]*verified_by_user_id\s+SET\s+NOT\s+NULL/i, "ownership verifier attribution must be required after finalization");
+  requireSemanticText(path, content, /ALTER\s+TABLE\s+assets\.asset_recovery_tickets[\s\S]*employee_full_name_snapshot\s+SET\s+NOT\s+NULL[\s\S]*employee_code_snapshot\s+SET\s+NOT\s+NULL/i, "historical recovery identity must be required after finalization");
+  requireSemanticText(path, content, /CREATE\s+TRIGGER\s+asset_tenant_ownership_map_finalized_trg[\s\S]*BEFORE\s+INSERT\s+OR\s+UPDATE\s+OR\s+DELETE\s+ON\s+assets\.asset_tenant_ownership_map/i, "finalized ownership evidence must reject every map mutation");
+  requireSemanticText(path, content, /CREATE\s+TRIGGER\s+asset_tenant_ownership_map_finalized_trg[\s\S]*EXECUTE\s+FUNCTION\s+assets\.reject_finalized_asset_ownership_map_mutation\s*\(\s*\)/i, "ownership map trigger must bind the exact rejection function");
+  requireSemanticText(path, content, /CREATE\s+TRIGGER\s+asset_recovery_identity_evidence_finalized_trg[\s\S]*EXECUTE\s+FUNCTION\s+assets\.reject_finalized_asset_ownership_map_mutation\s*\(\s*\)/i, "recovery evidence trigger must bind the exact rejection function");
+  requireSemanticText(path, content, /TG_OP\s*=\s*'DELETE'\s+OR\s+NEW\.id\s+IS\s+DISTINCT\s+FROM\s+OLD\.id/i, "mapped roots must reject deletion and identity replacement");
+  for (const [trigger, table] of [["finalized_asset_root_identity_trg", "assets"], ["finalized_asset_request_root_identity_trg", "asset_requests"], ["finalized_asset_vendor_root_identity_trg", "software_vendors"]]) {
+    requireSemanticText(path, content, new RegExp(`CREATE\\s+TRIGGER\\s+${trigger}\\s+BEFORE\\s+UPDATE\\s+OR\\s+DELETE\\s+ON\\s+assets\\.${table}\\s+FOR\\s+EACH\\s+ROW\\s+EXECUTE\\s+FUNCTION\\s+assets\\.prevent_finalized_asset_root_orphaning\\s*\\(\\s*\\)`, "i"), `finalized root protection is missing or misbound for assets.${table}`);
+  }
+  for (const column of ["company_id", "employee_user_id", "employee_full_name_snapshot", "employee_code_snapshot", "asset_id", "assignment_id"]) {
+    requireSemanticText(path, content, new RegExp(`NEW\\.${column}\\s+IS\\s+DISTINCT\\s+FROM\\s+OLD\\.${column}`, "i"), `recovery identity immutability is missing ${column}`);
+  }
+  requireSemanticText(path, content, /TG_OP\s*=\s*'DELETE'[\s\S]*ERRCODE\s*=\s*'55000'[\s\S]*CREATE\s+TRIGGER\s+asset_recovery_identity_immutable_trg[\s\S]*BEFORE\s+UPDATE\s+OR\s+DELETE\s+ON\s+assets\.asset_recovery_tickets[\s\S]*EXECUTE\s+FUNCTION\s+assets\.reject_asset_recovery_identity_mutation\s*\(\s*\)/i, "recovery identity immutability trigger is missing, misbound, or permits deletion");
+  requireSemanticText(path, content, /REVOKE\s+INSERT\s*,\s*UPDATE\s*,\s*DELETE\s*,\s*TRUNCATE[\s\S]*ON\s+assets\.asset_tenant_ownership_map\s+FROM\s+PUBLIC/i, "PUBLIC ownership-map mutation privileges must be revoked");
+}
+
+function validateAssetRecoveryEvidencePrepMigration(path, content) {
+  content = stripSqlComments(content);
+  requireSemanticText(path, content, /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+assets\.asset_recovery_identity_evidence[\s\S]*ticket_id\s+uuid\s+PRIMARY\s+KEY[\s\S]*company_id\s+uuid\s+NOT\s+NULL[\s\S]*employee_user_id\s+uuid\s+NOT\s+NULL[\s\S]*source_reference\s+text\s+NOT\s+NULL[\s\S]*verified_by_user_id\s+uuid\s+NOT\s+NULL/i, "recovery evidence staging schema is incomplete");
+  requireSemanticText(path, content, /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+core\.user_termination_identity_evidence[\s\S]*lifecycle_event_id\s+uuid\s+PRIMARY\s+KEY[\s\S]*company_id\s+uuid\s+NOT\s+NULL[\s\S]*employee_user_id\s+uuid\s+NOT\s+NULL[\s\S]*employee_version\s+integer\s+NOT\s+NULL[\s\S]*source_reference\s+text\s+NOT\s+NULL[\s\S]*verified_by_user_id\s+uuid\s+NOT\s+NULL[\s\S]*approved_by_user_id\s+uuid\s+NOT\s+NULL[\s\S]*approved_by_user_id\s*<>\s*verified_by_user_id/i, "termination evidence staging schema is incomplete");
+  requireSemanticText(path, content, /REVOKE\s+INSERT\s*,\s*UPDATE\s*,\s*DELETE\s*,\s*TRUNCATE[\s\S]*asset_recovery_identity_evidence\s+FROM\s+PUBLIC/i, "PUBLIC recovery evidence mutation privileges must be revoked");
+  requireSemanticText(path, content, /REVOKE\s+SELECT\s*,\s*INSERT\s*,\s*UPDATE\s*,\s*DELETE\s*,\s*TRUNCATE[\s\S]*user_termination_identity_evidence\s+FROM\s+PUBLIC/i, "PUBLIC termination evidence read and mutation privileges must be revoked");
+}
+
+function validateAssetTerminationSnapshotMigration(path, content) {
+  content = stripSqlComments(content);
+  requireSemanticText(path, content, /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+core\.user_termination_identity_snapshots[\s\S]*lifecycle_event_id\s+uuid\s+PRIMARY\s+KEY[\s\S]*employee_version\s+integer\s+NOT\s+NULL/i, "termination identity snapshot schema is incomplete");
+  requireSemanticText(path, content, /LOCK\s+TABLE\s+core\.users\s*,\s*core\.roles\s*,\s*core\.user_roles\s*,\s*platform\.company_profiles\s*,\s*platform\.user_session_preferences\s*,\s*assets\.asset_assignments\s*,\s*assets\.asset_recovery_tickets\s*,\s*platform\.outbox_events\s*,\s*core\.user_termination_identity_evidence\s+IN\s+SHARE\s+ROW\s+EXCLUSIVE\s+MODE[\s\S]*invalid_legacy_evidence_count/i, "historical authority, ownership, event and evidence writers must be locked before validation in product write order");
+  requireSemanticText(path, content, /FULL\s+JOIN\s+platform\.outbox_events[\s\S]*event\.event_type\s*=\s*'core\.user\.terminated'[\s\S]*evidence\.employee_user_id\s*<>\s*event\.aggregate_id[\s\S]*verified_by_user_id[\s\S]*invalid_legacy_evidence_count\s*>\s*0[\s\S]*ERRCODE\s*=\s*'23514'/i, "historical termination evidence must be exact, complete and independently verified");
+  requireSemanticText(path, content, /event\.payload->>'user_id'\s+IS\s+DISTINCT\s+FROM\s+event\.aggregate_id::text[\s\S]*employee_code_snapshot\s+IS\s+DISTINCT\s+FROM\s+event\.payload->>'employee_code'[\s\S]*event\.idempotency_key[\s\S]*employee_version/i, "historical termination evidence must bind durable user, employee code and idempotency version");
+  requireSemanticText(path, content, /FROM\s+core\.users\s+verifier[\s\S]*preference\.company_id\s*=\s*evidence\.company_id[\s\S]*JOIN\s+core\.user_roles\s+reviewer_role[\s\S]*reviewer_role\.user_id\s*=\s*verifier\.id[\s\S]*reviewer_role\.role_key\s+IN\s*\(\s*'Admin'\s*,\s*'HR Manager'\s*\)[\s\S]*reviewer_role\.status\s*=\s*'active'[\s\S]*reviewer_role\.deleted_at\s+IS\s+NULL[\s\S]*reviewer_role\.effective_from\s*<=\s*current_date[\s\S]*reviewer_role\.effective_to\s+IS\s+NULL\s+OR\s+reviewer_role\.effective_to\s*>=\s*current_date[\s\S]*JOIN\s+core\.roles\s+role_definition[\s\S]*role_definition\.role_key\s*=\s*reviewer_role\.role_key[\s\S]*role_definition\.status\s*=\s*'active'[\s\S]*role_definition\.deleted_at\s+IS\s+NULL[\s\S]*verifier\.id\s*=\s*evidence\.verified_by_user_id/i, "historical termination verifier requires a current effective Admin or HR Manager grant in the evidence company");
+  requireSemanticText(path, content, /FROM\s+core\.users\s+approver[\s\S]*preference\.company_id\s*=\s*evidence\.company_id[\s\S]*JOIN\s+core\.user_roles\s+reviewer_role[\s\S]*reviewer_role\.user_id\s*=\s*approver\.id[\s\S]*reviewer_role\.role_key\s+IN\s*\(\s*'Admin'\s*,\s*'HR Manager'\s*\)[\s\S]*reviewer_role\.status\s*=\s*'active'[\s\S]*reviewer_role\.deleted_at\s+IS\s+NULL[\s\S]*reviewer_role\.effective_from\s*<=\s*current_date[\s\S]*reviewer_role\.effective_to\s+IS\s+NULL\s+OR\s+reviewer_role\.effective_to\s*>=\s*current_date[\s\S]*JOIN\s+core\.roles\s+role_definition[\s\S]*role_definition\.role_key\s*=\s*reviewer_role\.role_key[\s\S]*role_definition\.status\s*=\s*'active'[\s\S]*role_definition\.deleted_at\s+IS\s+NULL[\s\S]*approver\.id\s*=\s*evidence\.approved_by_user_id[\s\S]*approver\.id\s*<>\s*evidence\.verified_by_user_id/i, "historical termination evidence requires two distinct current authorized company reviewers");
+  if (/preference\.active_role\s+IN\s*\(\s*'Admin'\s*,\s*'HR Manager'\s*\)/iu.test(content)) {
+    semanticFailure(path, "selected session role must not authorize historical termination reviewers");
+  }
+  requireSemanticText(path, content, /asset_assignments[\s\S]*assigned_to_user_id\s*=\s*evidence\.employee_user_id[\s\S]*assigned_at\s*<=\s*event\.created_at[\s\S]*returned_at\s+IS\s+NULL\s+OR\s+assignment\.returned_at\s*>\s*event\.created_at[\s\S]*asset_recovery_tickets[\s\S]*employee_user_id\s*=\s*evidence\.employee_user_id[\s\S]*lifecycle_event_id\s*=\s*event\.event_id[\s\S]*count\s*\(\s*DISTINCT\s+ownership_source\.company_id\s*\)\s*<>\s*1[\s\S]*evidence\.company_id/i, "historical termination company must agree only with event-time assignments or event-linked recovery evidence");
+  requireSemanticText(path, content, /INSERT\s+INTO\s+core\.user_termination_identity_snapshots[\s\S]*FROM\s+core\.user_termination_identity_evidence[\s\S]*event\.aggregate_id\s*=\s*evidence\.employee_user_id/i, "verified historical termination evidence must be copied into immutable snapshots");
+  requireSemanticText(path, content, /event_type\s*=\s*'core\.user\.terminated'[\s\S]*NOT\s+EXISTS\s*\([\s\S]*core\.user_termination_identity_snapshots[\s\S]*snapshot\.lifecycle_event_id\s*=\s*event\.event_id[\s\S]*unresolved_legacy_termination_count\s*>\s*0[\s\S]*ERRCODE\s*=\s*'23514'/i, "migration must fail closed for every unresolved replayable pre-snapshot termination event");
+  requireSemanticText(path, content, /FUNCTION\s+core\.capture_user_termination_identity_snapshot\s*\(\s*\)[\s\S]*SECURITY\s+DEFINER[\s\S]*SET\s+search_path\s*=\s*pg_catalog\s*,\s*core\s*,\s*platform[\s\S]*REVOKE\s+ALL\s+ON\s+FUNCTION\s+core\.capture_user_termination_identity_snapshot\s*\(\s*\)\s+FROM\s+PUBLIC/i, "termination capture must use a fixed-search-path, non-public security-definer boundary");
+  requireSemanticText(path, content, /AFTER\s+INSERT\s+ON\s+platform\.outbox_events[\s\S]*EXECUTE\s+FUNCTION\s+core\.capture_user_termination_identity_snapshot\s*\(\s*\)/i, "termination snapshot trigger must bind the capture function");
+  requireSemanticText(path, content, /event_type\s*<>\s*'core\.user\.terminated'[\s\S]*payload_employee_version[\s\S]*u\.version\s*=\s*payload_employee_version/i, "termination capture must bind the exact durable employee version");
+  requireSemanticText(path, content, /JOIN\s+platform\.user_session_preferences\s+preference\s+ON\s+preference\.user_id\s*=\s*u\.id[\s\S]*preference\.company_id\s*=\s*payload_company_id[\s\S]*membership_count\s*<>\s*1[\s\S]*ERRCODE\s*=\s*'23514'/i, "termination capture must bind exactly one transition-time company membership");
+  requireSemanticText(path, content, /u\.employment_status\s*=\s*'terminated'[\s\S]*u\.terminated_on\s+IS\s+NOT\s+NULL[\s\S]*ERRCODE\s*=\s*'23514'/i, "termination capture must require a committed terminated employee state");
+  requireSemanticText(path, content, /NEW\.lifecycle_event_id\s+IS\s+DISTINCT\s+FROM\s+OLD\.lifecycle_event_id/i, "recovery lifecycle event identity must be immutable");
+  requireSemanticText(path, content, /TG_OP\s*=\s*'DELETE'[\s\S]*ERRCODE\s*=\s*'55000'[\s\S]*BEFORE\s+UPDATE\s+OR\s+DELETE\s+ON\s+assets\.asset_recovery_tickets/i, "recovery history deletion must be rejected by the finalized trigger");
+  requireSemanticText(path, content, /BEFORE\s+UPDATE\s+OR\s+DELETE\s+ON\s+core\.user_termination_identity_snapshots[\s\S]*EXECUTE\s+FUNCTION\s+core\.reject_user_termination_identity_snapshot_mutation\s*\(\s*\)/i, "termination snapshots must be immutable");
+  requireSemanticText(path, content, /BEFORE\s+INSERT\s+OR\s+UPDATE\s+OR\s+DELETE\s+ON\s+core\.user_termination_identity_evidence[\s\S]*EXECUTE\s+FUNCTION\s+core\.reject_user_termination_identity_snapshot_mutation\s*\(\s*\)/i, "historical termination evidence must be frozen after finalization");
 }
 
 function validateFrontendContractRouteCoverage(path, content) {
@@ -1569,6 +1723,71 @@ function validateQaSeedPhase(path, content) {
   requireSemanticText(path, content, /client\.end\(\)/, "QA seed phase must close its database client");
 }
 
+const coreLifecycleDeletionSnippets = new Map([
+  ["hrms_backend/src/modules/core/routes.ts", new Set([
+    "employment_status: employmentStatusSchema.optional(),",
+  ])],
+  ["hrms_backend/src/modules/core/service.ts", new Set([
+    'employment_status?: CoreUser["employment_status"];',
+    "terminated_on?: string | null;",
+    "if (input.employment_status !== undefined && input.employment_status !== EmploymentStatuses.Active) { this.requireOrgAdminRecoveryPath(user, { employmentStatus: input.employment_status }); }",
+    "if (input.employment_status !== undefined) { user.employment_status = input.employment_status; if (input.employment_status !== EmploymentStatuses.Terminated) { user.terminated_on = input.terminated_on ?? null; } }",
+    "if (input.terminated_on !== undefined) { user.terminated_on = input.terminated_on; }",
+  ])],
+  ["hrms_backend/src/platform/openapi.ts", new Set([
+    'employment_status: { type: "string", enum: ["active", "inactive", "terminated", "suspended"], example: "active", },',
+    'terminated_on: { ...date("Termination date"), nullable: true },',
+  ])],
+]);
+
+function normalizeSemanticSnippet(content) {
+  return content.replace(/\s+/gu, " ").trim();
+}
+
+export function validateDeletionSemanticContract(root, item, base, dependencies = {}) {
+  const match = /^(.*):@@ -(\d+)(?:,(\d+))? \+\d+(?:,\d+)? @@/.exec(item);
+  if (!match) return null;
+  const [, path, oldStartText, oldCountText] = match;
+  const allowed = coreLifecycleDeletionSnippets.get(path);
+  if (!allowed) return null;
+  const oldStart = Number(oldStartText);
+  const oldCount = oldCountText === undefined ? 1 : Number(oldCountText);
+  const gitCommand = dependencies.gitCommand ?? git;
+  const readCurrent = dependencies.readCurrent ?? ((candidatePath) => readFileSync(join(root, candidatePath), "utf8"));
+  const baseContent = gitCommand(root, "show", `${base}:${path}`);
+  const deleted = normalizeSemanticSnippet(baseContent.split("\n").slice(oldStart - 1, oldStart - 1 + oldCount).join("\n"));
+  if (!allowed.has(deleted)) return null;
+
+  const routes = readCurrent("hrms_backend/src/modules/core/routes.ts");
+  const service = readCurrent("hrms_backend/src/modules/core/service.ts");
+  const openapi = readCurrent("hrms_backend/src/platform/openapi.ts");
+  const regression = readCurrent("hrms_backend/src/modules/core/__tests__/core.integration.test.ts");
+  const updateSchema = /const updateUserSchema[\s\S]*?(?=const statusBodySchema)/u.exec(routes)?.[0] ?? "";
+  const updateInput = /export interface UserUpdateInput[\s\S]*?\n\}/u.exec(service)?.[0] ?? "";
+  const updateMethod = /\n  updateUser\([\s\S]*?(?=\n  async uploadProfilePhoto\()/u.exec(service)?.[0] ?? "";
+  const updateOpenapi = /const coreUserUpdateBodySchema[\s\S]*?(?=const coreProfilePhotoPolicySchema)/u.exec(openapi)?.[0] ?? "";
+
+  requireSemanticText(path, updateSchema, /\.strict\(\)/u, "generic user update schema must reject undocumented lifecycle fields");
+  forbidText(path, updateSchema, /employment_status|terminated_on/u, "generic user update schema still accepts lifecycle fields");
+  requireSemanticText(path, routes, /fastify\.post\("\/users\/:id\/activate"[\s\S]*fastify\.post\("\/users\/:id\/deactivate"/u, "dedicated lifecycle routes are missing");
+  requireSemanticText(path, updateInput, /export interface UserUpdateInput/u, "generic user update input contract is missing");
+  forbidText(path, updateInput, /employment_status|terminated_on/u, "generic user update input still exposes lifecycle fields");
+  requireSemanticText(path, updateMethod, /updateUser\(/u, "generic user update method is missing");
+  forbidText(path, updateMethod, /input\.(?:employment_status|terminated_on)/u, "generic user update still mutates lifecycle state");
+  requireSemanticText(path, service, /deactivateUser\([\s\S]*credential\.status\s*=\s*"revoked"[\s\S]*core\.user\.terminated/u, "dedicated lifecycle path must revoke credentials and emit termination evidence");
+  requireSemanticText(path, updateOpenapi, /const coreUserUpdateBodySchema/u, "generic user update OpenAPI contract is missing");
+  forbidText(path, updateOpenapi, /employment_status|terminated_on/u, "generic user update OpenAPI still advertises lifecycle fields");
+  requireSemanticText(path, regression, /employment_status:\s*"terminated"[\s\S]*terminated_on:\s*"2026-11-15"[\s\S]*toBe\(400\)[\s\S]*employment_status:\s*"active"[\s\S]*event_type\s*===\s*"core\.user\.terminated"[\s\S]*toBe\(false\)/u, "generic lifecycle bypass regression is incomplete");
+  return `${item}: semantic deletion contract passed`;
+}
+
+export function deletionSemanticDisposition(root, item, base, dependencies = {}) {
+  const semantic = validateDeletionSemanticContract(root, item, base, dependencies);
+  return semantic
+    ? { semantic: [semantic], uncovered: [], unmeasured: 0 }
+    : { semantic: [], uncovered: [`deletion-only ${item}: behavior requires explicit regression evidence`], unmeasured: 1 };
+}
+
 export function validateSemanticPath(root, path, content, base) {
   switch (path) {
     case ".github/workflows/branch-ci-cd.yml": validateWorkflow(path, content, false); break;
@@ -1586,6 +1805,12 @@ export function validateSemanticPath(root, path, content, base) {
     case "hrms_backend/src/db/migrations/0065_holiday_company_unique_constraint.sql": validateHolidayMigration(path, content); break;
     case "hrms_backend/src/db/migrations/0066_asset_transaction_fence.sql": validateAssetTransactionFenceMigration(path, content); break;
     case "hrms_backend/src/db/migrations/0067_asset_recovery_assignment_identity.sql": validateAssetRecoveryAssignmentMigration(path, content); break;
+    case "hrms_backend/src/db/migrations/0068_asset_tenant_ownership_map.sql": validateAssetTenantOwnershipMapMigration(path, content); break;
+    case "hrms_backend/src/db/migrations/0069_asset_tenant_ownership.sql": validateAssetTenantOwnershipMigration(path, content); break;
+    case "hrms_backend/src/db/migrations/0070_asset_tenant_ownership_finalization.sql": validateAppliedAssetTenantOwnershipFinalizationMigration(path, content); break;
+    case "hrms_backend/src/db/migrations/0071_asset_recovery_identity_evidence_prep.sql": validateAssetRecoveryEvidencePrepMigration(path, content); break;
+    case "hrms_backend/src/db/migrations/0072_asset_tenant_ownership_finalization.sql": validateAssetTenantOwnershipFinalizationMigration(path, content); break;
+    case "hrms_backend/src/db/migrations/0073_asset_termination_identity_snapshot.sql": validateAssetTerminationSnapshotMigration(path, content); break;
     case "hrms_backend/scripts/qa-seed-safety.ts": validateQaSeedSafety(path, content); break;
     case "hrms_backend/scripts/seed-qa.ts": validateQaSeedEntrypoint(path, content); break;
     case "hrms_backend/scripts/seed-qa-data.ts":
@@ -1611,6 +1836,12 @@ export const semanticCoveragePaths = new Set([
   "hrms_backend/src/db/migrations/0065_holiday_company_unique_constraint.sql",
   "hrms_backend/src/db/migrations/0066_asset_transaction_fence.sql",
   "hrms_backend/src/db/migrations/0067_asset_recovery_assignment_identity.sql",
+  "hrms_backend/src/db/migrations/0068_asset_tenant_ownership_map.sql",
+  "hrms_backend/src/db/migrations/0069_asset_tenant_ownership.sql",
+  "hrms_backend/src/db/migrations/0070_asset_tenant_ownership_finalization.sql",
+  "hrms_backend/src/db/migrations/0071_asset_recovery_identity_evidence_prep.sql",
+  "hrms_backend/src/db/migrations/0072_asset_tenant_ownership_finalization.sql",
+  "hrms_backend/src/db/migrations/0073_asset_termination_identity_snapshot.sql",
   "hrms_backend/scripts/qa-seed-safety.ts",
   "hrms_backend/scripts/seed-qa.ts",
   "hrms_backend/scripts/seed-qa-data.ts",
@@ -1627,15 +1858,17 @@ export function verify(root, base, head, suitePaths = fullSuitePaths(coverageOut
   const totals = { executable: 0, nonExecutable: 0, branches: 0, uncovered: [] };
   let uncoveredLines = 0;
   let uncoveredBranches = 0;
-  let unmeasuredCount = deletionOnly.length + removedRuntime.length;
+  let unmeasuredCount = removedRuntime.length;
   const semanticLines = [];
   const lines = [`Coverage diff ${mergeBase}..${resolvedHead}`];
   for (const path of testSource) lines.push(`TEST SOURCE ${path}: excluded from product line denominator; independent assertion-quality review required`);
   for (const risk of importRisks) lines.push(`IMPORT GRAPH ${risk}: changed in-source test files require review`);
   for (const path of excludedGenerated) lines.push(`EXCLUDED TYPE/GENERATED ${path}: no product line denominator; typecheck/build regeneration evidence required`);
   for (const item of deletionOnly) {
-    const message = `deletion-only ${item}: behavior requires explicit regression evidence`;
-    totals.uncovered.push(message);
+    const disposition = deletionSemanticDisposition(root, item, mergeBase);
+    semanticLines.push(...disposition.semantic);
+    totals.uncovered.push(...disposition.uncovered);
+    unmeasuredCount += disposition.unmeasured;
   }
   for (const item of removedRuntime) totals.uncovered.push(`removed runtime ${item}: replacement has no executable coverage target`);
   for (const path of outside) {

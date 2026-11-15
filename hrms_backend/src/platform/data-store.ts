@@ -155,6 +155,7 @@ export interface DocumentAccessLogRecord {
 
 export interface AssetAssignmentRecord {
   id: UUID;
+  company_id: UUID;
   asset_id: UUID;
   assigned_to_user_id: UUID;
   assigned_by_user_id: UUID;
@@ -254,6 +255,7 @@ export interface UserSessionPreferenceRecord {
 
 export interface AssetStateEventRecord {
   id: UUID;
+  company_id: UUID;
   asset_id: UUID;
   actor_user_id: UUID | null;
   event_type: string;
@@ -263,6 +265,7 @@ export interface AssetStateEventRecord {
 
 export interface AssetRequestRecord {
   id: UUID;
+  company_id: UUID;
   request_code: string;
   requester_user_id: UUID;
   request_type: "new" | "replacement" | "repair" | "return";
@@ -291,6 +294,7 @@ export interface AssetRequestRecord {
 
 export interface AssetAcknowledgementRecord {
   id: UUID;
+  company_id: UUID;
   asset_id: UUID;
   employee_user_id: UUID;
   assignment_id: UUID | null;
@@ -304,6 +308,7 @@ export interface AssetAcknowledgementRecord {
 
 export interface AssetMaintenanceRecord {
   id: UUID;
+  company_id: UUID;
   asset_id: UUID;
   maintenance_type:
     | "repair"
@@ -325,6 +330,7 @@ export interface AssetMaintenanceRecord {
 
 export interface AssetVendorRecord {
   id: UUID;
+  company_id: UUID;
   name: string;
   status: "active" | "inactive";
   contact_email: string | null;
@@ -344,7 +350,11 @@ export type AssetRecoverySettlementStatus =
 
 export interface AssetRecoveryTicketRecord {
   id: UUID;
+  company_id: UUID;
   employee_user_id: UUID;
+  employee_full_name_snapshot: string;
+  employee_code_snapshot: string;
+  lifecycle_event_id?: UUID | null;
   asset_id: UUID;
   assignment_id: UUID | null;
   status: string;
@@ -454,15 +464,65 @@ export interface DataStorePersistence {
   attendanceReadStore?(scope: { companyId: UUID; employeeUserIds?: UUID[]; includePendingOutbox?: boolean }): Promise<DataStore>;
   reportExportReadStore?(scope: { companyId?: UUID; exportId?: UUID }): Promise<DataStore>;
   auditReportReadContext?(userId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }>;
-  assetReadStore?(baseStore?: DataStore): Promise<DataStore>;
+  /** Request-local asset snapshot. Pass companyId for every authenticated tenant-owned read. */
+  assetReadStore?(
+    baseStore?: DataStore,
+    companyId?: UUID,
+    actorUserId?: UUID,
+    actionKey?: string,
+    query?: AssetReadQuery,
+  ): Promise<DataStore>;
   assetPublicScan?(qrHash: string): Promise<PublicAssetScan | null>;
   assetAssignees?(actorUserId: UUID, companyId: UUID, search?: string): Promise<{ items: Array<{ id: UUID; full_name: string }>; has_more: boolean }>;
   assetCommand?<T>(
     input: AssetCommandInput,
     authorize: (store: DataStore, actor: AuthUser, replayBody?: T) => void,
-    execute: (store: DataStore, actor: AuthUser) => T,
+    execute: (store: DataStore, actor: AuthUser, context: AssetCommandExecutionContext) => T,
   ): Promise<T>;
   close(): Promise<void>;
+}
+
+export interface AssetReadQuery {
+  page?: number;
+  pageSize?: number;
+  resourceId?: UUID;
+  userId?: UUID;
+  status?: string;
+  type?: string;
+  activeOnly?: boolean;
+  search?: string;
+  windowDays?: number;
+  includeExpired?: boolean;
+  assignedToUserId?: UUID;
+  licenseProductId?: UUID;
+  licenseFingerprintHash?: string;
+}
+
+export interface AssetReadMetadata {
+  operation: string;
+  total?: number;
+  queueCounts?: Record<string, number>;
+  recoveryTotals?: Record<string, number>;
+  alertCounts?: Record<string, number>;
+  assetMaintenanceTotals?: Record<UUID, number>;
+  dashboard?: {
+    assetsTotal: number;
+    assetsAssigned: number;
+    recoveryPending: number;
+  };
+  coreUser?: {
+    assignedAssets: number;
+    recoveryPending: number;
+  };
+  report?: {
+    totals: Record<string, number>;
+    statusBreakdown: Record<string, number>;
+    typeBreakdown: Record<string, number>;
+    maintenanceRows: Array<Record<string, unknown>>;
+    recoveryRows: Array<Record<string, unknown>>;
+    maintenanceTotal: number;
+    recoveryTotal: number;
+  };
 }
 
 export interface PublicAssetScan {
@@ -481,6 +541,26 @@ export interface AssetCommandInput {
   idempotencyKey: string;
   requestHash: string;
   assigneeUserId?: UUID;
+  lifecycleEventId?: UUID;
+  terminatedEmployeeUserId?: UUID;
+  resourceId?: UUID;
+  relatedAssetId?: UUID;
+  relatedVendorId?: UUID;
+  requestAssetType?: string;
+  vendorName?: string;
+  assetCode?: string;
+  licenseProductId?: UUID;
+  licenseEntitlementId?: UUID;
+  licenseFingerprintHash?: string;
+}
+
+export interface AssetCommandExecutionContext {
+  terminationIdentity?: {
+    employeeUserId: UUID;
+    fullName: string;
+    employeeCode: string;
+    employeeVersion: number;
+  };
 }
 
 export type PersistenceDomain =
@@ -575,6 +655,10 @@ export interface DataStore {
   assetMaintenanceRecords: AssetMaintenanceRecord[];
   assetVendors: AssetVendorRecord[];
   assetRecoveryTickets: AssetRecoveryTicketRecord[];
+  /** Request-local SQL read metadata. Never persist this transient projection. */
+  assetReadMetadata?: AssetReadMetadata;
+  /** Request-local SQL command allocation metadata. Never persist this projection. */
+  assetCommandMetadata?: { nextRequestNumber?: number };
   licenseEntitlements: LicenseEntitlement[];
   licenseActivations: LicenseActivation[];
   compromisedKeys: Array<{
@@ -2390,6 +2474,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     assets: [
       {
         id: firstAssetId,
+        company_id: defaultCompanyId,
         asset_code: "LAP-001",
         qr_hash: createQrHash("LAP-001"),
         asset_type: "Laptop",
@@ -2412,6 +2497,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     assetVendors: [
       {
         id: uuidFromName("asset-vendor-lenovo"),
+        company_id: defaultCompanyId,
         name: "Lenovo India",
         status: "active",
         contact_email: "support@lenovo.example.test",

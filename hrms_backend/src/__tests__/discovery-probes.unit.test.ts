@@ -81,12 +81,12 @@ describe("isolated historical discovery probes", () => {
     expect(() => requireSharedSettingsReproduction(false)).toThrow("Global settings sharing was not reproduced");
   });
 
-  it("reproduces tenant-boundary observations only through in-memory injection", async () => {
+  it("reports remediated asset fencing while preserving other tenant-boundary observations", async () => {
     const result = await runTenantBoundaryProbe();
     expect(result).toMatchObject({
       environment: expect.stringContaining("no external services"),
       company_b_asset_list_status: 200,
-      company_b_list_contains_company_a_asset: true,
+      company_b_list_contains_company_a_asset: false,
       company_b_company_a_helpdesk_detail_status: 200,
       company_b_company_a_project_detail_status: 200,
       company_b_shared_security_settings_status: 200,

@@ -2410,14 +2410,8 @@ const coreUserUpdateBodySchema = {
     department_id: uuid("Department UUID"),
     designation_id: uuid("Designation UUID"),
     manager_user_id: { ...uuid("Reporting manager user UUID"), nullable: true },
-    employment_status: {
-      type: "string",
-      enum: ["active", "inactive", "terminated", "suspended"],
-      example: "active",
-    },
     timezone: { type: "string", nullable: true, example: "Asia/Kolkata" },
     joined_on: { ...date("Joining date"), nullable: true },
-    terminated_on: { ...date("Termination date"), nullable: true },
   },
   additionalProperties: false,
 };
@@ -3055,9 +3049,10 @@ const expenseTimelineEventSchema = {
 
 const assetSchema = {
   type: "object",
-  required: ["id", "asset_code", "asset_type", "name", "status", "version"],
+  required: ["id", "company_id", "asset_code", "asset_type", "name", "status", "version"],
   properties: {
     id: uuid("Asset UUID"),
+    company_id: uuid("Owning company UUID"),
     asset_code: { type: "string", example: "LAP-001" },
     asset_type: { type: "string", example: "Laptop" },
     name: { type: "string", example: "ThinkPad T-Series" },
@@ -3065,6 +3060,17 @@ const assetSchema = {
     qr_hash: { type: "string", example: "release-qr-hash-lap-available" },
     status: { type: "string", example: "In Stock" },
     assigned_to_user_id: { ...uuid("Assigned employee UUID"), nullable: true },
+    maintenance_total: {
+      type: "integer",
+      minimum: 0,
+      description: "Total maintenance records for this asset, including records outside the bounded embedded projection.",
+      example: 3,
+    },
+    maintenance_has_more: {
+      type: "boolean",
+      description: "True when the embedded maintenance array is truncated; use the paginated maintenance endpoint for the complete history.",
+      example: false,
+    },
     version: { type: "integer", minimum: 1, example: 1 },
   },
   additionalProperties: true,
@@ -3108,6 +3114,7 @@ const assetRequestSchema = {
   type: "object",
   required: [
     "id",
+    "company_id",
     "request_code",
     "requester_user_id",
     "request_type",
@@ -3120,6 +3127,7 @@ const assetRequestSchema = {
   ],
   properties: {
     id: uuid("Asset request UUID"),
+    company_id: uuid("Owning company UUID"),
     request_code: { type: "string", example: "REQ-401" },
     requester_user_id: uuid("Requester user UUID"),
     requester_name: { type: "string", nullable: true, example: "Employee E1" },
@@ -3233,6 +3241,7 @@ const assetMaintenanceSchema = {
   type: "object",
   required: [
     "id",
+    "company_id",
     "asset_id",
     "maintenance_type",
     "started_on",
@@ -3241,6 +3250,7 @@ const assetMaintenanceSchema = {
   ],
   properties: {
     id: uuid("Maintenance record UUID"),
+    company_id: uuid("Owning company UUID"),
     asset_id: uuid("Asset UUID"),
     maintenance_type: {
       type: "string",
@@ -3270,9 +3280,10 @@ const assetMaintenanceSchema = {
 
 const assetVendorSchema = {
   type: "object",
-  required: ["id", "name", "status", "version"],
+  required: ["id", "company_id", "name", "status", "version"],
   properties: {
     id: uuid("Vendor UUID"),
+    company_id: uuid("Owning company UUID"),
     name: { type: "string", example: "Lenovo India" },
     status: { type: "string", enum: ["active", "inactive"], example: "active" },
     contact_email: {
@@ -3380,6 +3391,7 @@ const assetRecoveryTicketSchema = {
   type: "object",
   required: [
     "id",
+    "company_id",
     "employee_user_id",
     "asset_id",
     "assignment_id",
@@ -3391,6 +3403,7 @@ const assetRecoveryTicketSchema = {
   ],
   properties: {
     id: uuid("Recovery ticket UUID"),
+    company_id: uuid("Owning company UUID"),
     employee_user_id: uuid("Employee user UUID"),
     asset_id: uuid("Asset UUID"),
     assignment_id: { ...uuid("Custody assignment UUID"), nullable: true },
@@ -3416,7 +3429,18 @@ const assetRecoveryTicketSchema = {
     settled_by_user_id: { ...uuid("Settlement actor UUID"), nullable: true },
     settled_at: { ...dateTime("Settlement timestamp"), nullable: true },
     version: { type: "integer", minimum: 1, example: 1 },
-    employee: { type: "object", nullable: true, additionalProperties: true },
+    employee: {
+      type: "object",
+      nullable: true,
+      required: ["id", "full_name", "employee_code"],
+      properties: {
+        id: uuid("Historical employee user UUID"),
+        full_name: { type: "string", example: "Ananya Rao" },
+        employee_code: { type: "string", example: "EMP-001" },
+      },
+      additionalProperties: false,
+      description: "Original-company identity captured when recovery started; current profile and roles are never returned.",
+    },
     asset: { ...assetSchema, nullable: true },
     created_at: dateTime("Created timestamp"),
     updated_at: dateTime("Updated timestamp"),
@@ -7591,6 +7615,27 @@ const genericReportSummarySchema = {
     filters: { type: "object", additionalProperties: true },
   },
   additionalProperties: true,
+};
+
+const assetReportSummarySchema = {
+  ...genericReportSummarySchema,
+  properties: {
+    ...genericReportSummarySchema.properties,
+    status_breakdown: { type: "object", additionalProperties: { type: "integer", minimum: 0 } },
+    type_breakdown: { type: "object", additionalProperties: { type: "integer", minimum: 0 } },
+    maintenance_rows: {
+      type: "array",
+      description: "Bounded maintenance page selected by page/page_size.",
+      items: { type: "object", additionalProperties: true },
+    },
+    recovery_rows: {
+      type: "array",
+      description: "Bounded recovery page. Employee is the original-company name snapshot, not a mutable current profile.",
+      items: { type: "object", additionalProperties: true },
+    },
+    maintenance_total: { type: "integer", minimum: 0, example: 12 },
+    recovery_total: { type: "integer", minimum: 0, example: 3 },
+  },
 };
 
 const attendanceReportSummaryRowSchema = {
@@ -12318,7 +12363,7 @@ const routeDocs: Record<string, RouteSchema> = {
     "Asset report rows with inventory status, maintenance history, recovery queue, and type/status breakdowns.",
     {
       querystring: reportSummaryQuerySchema,
-      response200: genericReportSummarySchema,
+      response200: assetReportSummarySchema,
     },
   ),
   "GET /api/v1/reports/helpdesk/summary": operation(
@@ -12509,12 +12554,15 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/assets/events/employee-terminated": operation(
     "Outbox / Platform Events",
     "Consume employee terminated event",
-    "Protected local event consumer that moves assigned assets into recovery workflow when an employee is terminated.",
+    "Protected HR/Admin event consumer that moves assigned assets into recovery workflow only after validating the durable employee-termination event.",
     {
       body: {
         type: "object",
-        required: ["employee_user_id"],
-        properties: { employee_user_id: uuid("Terminated employee UUID") },
+        required: ["employee_user_id", "lifecycle_event_id"],
+        properties: {
+          employee_user_id: uuid("Terminated employee UUID"),
+          lifecycle_event_id: uuid("Durable core.user.terminated outbox event UUID"),
+        },
       },
       response200: { type: "object", additionalProperties: true },
     },

@@ -16,7 +16,14 @@ export const dashboardRoutes: FastifyPluginAsync = async (fastify) => {
     const attendanceStore = fastify.store.persistence?.attendanceReadStore
       ? await fastify.store.persistence.attendanceReadStore({ companyId: company.companyId, includePendingOutbox: true })
       : fastify.store;
-    const store = await fastify.store.persistence?.assetReadStore?.(attendanceStore) ?? attendanceStore;
-    return new DashboardService(store).summary(request.actor);
+    const store = await fastify.store.persistence?.assetReadStore?.(
+      attendanceStore,
+      company.companyId,
+      request.actor.id,
+      "dashboard.summary",
+    ) ?? attendanceStore;
+    const actor = store.users.find((user) => user.id === request.actor!.id);
+    if (!actor) throw unauthorized("User no longer exists");
+    return new DashboardService(store).summary(actor);
   });
 };

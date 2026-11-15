@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AssetStatuses, type AuthUser } from "#shared";
 import { errorsPlugin } from "../../../plugins/errors.js";
 import { createMemoryDataStore, seedIds } from "../../../platform/data-store.js";
+import { assertScopedAssetLoad } from "../../../platform/postgres-data-store.js";
 import { coreRoutes } from "../../core/routes.js";
 import { dashboardRoutes } from "../../dashboard/routes.js";
 import { reportRoutes } from "../../reports/routes.js";
@@ -58,5 +59,12 @@ describe("asset-backed cross-module memory reads", () => {
         assigned_to_user_id: seedIds.employee1,
       }),
     ]);
+  });
+
+  it("rejects filtered asset loads without a tenant and accepts scoped or unfiltered loads", () => {
+    expect(() => assertScopedAssetLoad(undefined, [crypto.randomUUID()], "asset"))
+      .toThrow("Filtered asset loads require a company scope.");
+    expect(() => assertScopedAssetLoad(crypto.randomUUID(), [crypto.randomUUID()], "asset")).not.toThrow();
+    expect(() => assertScopedAssetLoad(undefined, undefined, "asset")).not.toThrow();
   });
 });

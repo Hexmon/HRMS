@@ -9,6 +9,35 @@ function assetAuthHeader(token: string) {
   return { ...authHeader(token), "Idempotency-Key": randomUUID() };
 }
 
+async function recordDurableTermination(app: FastifyInstance, employeeUserId: string): Promise<string> {
+  const eventId = randomUUID();
+  const identity = await app.store.pgPool!.query<{ company_id: string; version: number }>(
+    `SELECT preference.company_id, employee.version
+       FROM core.users employee
+       JOIN platform.user_session_preferences preference ON preference.user_id = employee.id
+      WHERE employee.id = $1`,
+    [employeeUserId],
+  );
+  await app.store.pgPool!.query(
+    "UPDATE core.users SET employment_status = 'terminated', terminated_on = current_date WHERE id = $1",
+    [employeeUserId],
+  );
+  await app.store.pgPool!.query(
+    `INSERT INTO platform.outbox_events (
+       event_id, aggregate_type, aggregate_id, event_type, payload,
+       idempotency_key, status, retry_count, available_at, created_at
+     ) VALUES ($1, 'core.user', $2, 'core.user.terminated', $3::jsonb,
+       $4, 'pending', 0, now(), now())`,
+    [eventId, employeeUserId, JSON.stringify({
+      user_id: employeeUserId,
+      company_id: identity.rows[0]!.company_id,
+      employee_version: identity.rows[0]!.version,
+      status: "terminated",
+    }), `core.user.deactivated:${employeeUserId}:${eventId}`],
+  );
+  return eventId;
+}
+
 describe("assets and licenses", () => {
   let app: FastifyInstance;
 
@@ -23,6 +52,7 @@ describe("assets and licenses", () => {
 
   it("returns safe QR scan output and creates recovery tickets on termination", async () => {
     const assetManager = await loginAs(app, "AST");
+    const admin = await loginAs(app, "ADM");
     const list = await app.inject({
       method: "GET",
       url: "/api/v1/assets?page=1&page_size=10",
@@ -46,11 +76,12 @@ describe("assets and licenses", () => {
     expect(scan.json().id).toBeUndefined();
     expect(JSON.stringify(scan.json())).not.toContain("procurement_cost");
 
+    const lifecycleEventId = await recordDurableTermination(app, seedIds.employee1);
     const recovery = await app.inject({
       method: "POST",
       url: "/api/v1/assets/events/employee-terminated",
-      headers: assetAuthHeader(assetManager.token),
-      payload: { employee_user_id: seedIds.employee1 }
+      headers: assetAuthHeader(admin.token),
+      payload: { employee_user_id: seedIds.employee1, lifecycle_event_id: lifecycleEventId }
     });
     expect(recovery.statusCode).toBe(200);
     expect(recovery.json().recovery_tickets_created).toBe(1);
@@ -171,6 +202,7 @@ describe("assets and licenses", () => {
   it("supports asset requests, acknowledgement, maintenance, vendors, and recovery queue", async () => {
     const employee = await loginAs(app, "E1");
     const assetManager = await loginAs(app, "AST");
+    const admin = await loginAs(app, "ADM");
 
     const createRequest = await app.inject({
       method: "POST",
@@ -303,11 +335,12 @@ describe("assets and licenses", () => {
       version: 2
     });
 
+    const lifecycleEventId = await recordDurableTermination(app, seedIds.employee1);
     await app.inject({
       method: "POST",
       url: "/api/v1/assets/events/employee-terminated",
-      headers: assetAuthHeader(assetManager.token),
-      payload: { employee_user_id: seedIds.employee1 }
+      headers: assetAuthHeader(admin.token),
+      payload: { employee_user_id: seedIds.employee1, lifecycle_event_id: lifecycleEventId }
     });
     const recoveryQueue = await app.inject({
       method: "GET",

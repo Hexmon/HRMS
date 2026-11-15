@@ -16,6 +16,7 @@ import {
   changedLines,
   coverageDatabaseObjectCount,
   coverageArtifactPath,
+  deletionSemanticDisposition,
   instrumentableExternal,
   outsideExecutableOrConfig,
   prepareCoverageIntegrationServices,
@@ -35,6 +36,7 @@ import {
   selectPrepareCoverageServices,
   stampExternalReport,
   stampReport,
+  validateDeletionSemanticContract,
   validateTrustedExecutable,
   validateSemanticPath,
   verify,
@@ -75,6 +77,66 @@ test("semantic contracts validate supported non-line coverage paths and reject p
   const workflow = `name: test\non:\n  pull_request: {}\njobs:\n  changed-coverage:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: node scripts/agent/changed-coverage.mjs --run-full-suite --confirm-disposable-services --base "$COVERAGE_BASE" --head HEAD\n  deploy-backend:\n    needs: [changed-coverage]\n    runs-on: ubuntu-latest\n`;
   assert.match(validateSemanticPath(root, ".github/workflows/branch-ci-cd.yml", workflow, "base"), /semantic contract passed/);
   assert.throws(() => validateSemanticPath(root, ".github/workflows/branch-ci-cd.yml", workflow.replace("--head HEAD", "--head HEAD\n        continue-on-error: true"), "base"), /continue-on-error/);
+});
+
+test("generic user lifecycle deletions require the dedicated lifecycle semantic contract", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-lifecycle-deletion-"));
+  roots.push(root);
+  git(root, "init");
+  write(root, "hrms_backend/src/modules/core/routes.ts", `const updateUserSchema = expectedVersionSchema.extend({\n  employment_status: employmentStatusSchema.optional(),\n});\nconst statusBodySchema = {};\n`);
+  write(root, "hrms_backend/src/modules/core/service.ts", `export interface UserUpdateInput {\n  employment_status?: CoreUser["employment_status"];\n}\n`);
+  write(root, "hrms_backend/src/platform/openapi.ts", `const coreUserUpdateBodySchema = {\n  employment_status: { type: "string", enum: ["active", "inactive", "terminated", "suspended"], example: "active" },\n};\n`);
+  git(root, "add", ".");
+  git(root, "commit", "-m", "base");
+  const base = git(root, "rev-parse", "HEAD");
+
+  write(root, "hrms_backend/src/modules/core/routes.ts", `const updateUserSchema = expectedVersionSchema.extend({ expected_version: z.number() }).strict();\nconst statusBodySchema = {};\nfastify.post("/users/:id/activate", handler);\nfastify.post("/users/:id/deactivate", handler);\n`);
+  write(root, "hrms_backend/src/modules/core/service.ts", `export interface UserUpdateInput { expected_version: number; }\nclass CoreService {\n  updateUser(actor, id, input) { return input.expected_version; }\n  async uploadProfilePhoto() {}\n  deactivateUser(actor, id, input) { credential.status = "revoked"; event_type = "core.user.terminated"; }\n}\n`);
+  write(root, "hrms_backend/src/platform/openapi.ts", `const coreUserUpdateBodySchema = { properties: { expected_version: { type: "integer" } }, additionalProperties: false };\nconst coreProfilePhotoPolicySchema = {};\n`);
+  write(root, "hrms_backend/src/modules/core/__tests__/core.integration.test.ts", `payload = { employment_status: "terminated", terminated_on: "2026-11-15" };\nexpect(result).toBe(400);\nexpect(user).toMatchObject({ employment_status: "active" });\nexpect(event.event_type === "core.user.terminated").toBe(false);\n`);
+
+  const item = "hrms_backend/src/modules/core/routes.ts:@@ -2 +2,0 @@";
+  assert.match(validateDeletionSemanticContract(root, item, base), /semantic deletion contract passed/);
+  assert.equal(validateDeletionSemanticContract(root, "hrms_backend/src/modules/core/routes.ts:@@ -1 +1,0 @@", base), null);
+  assert.deepEqual(deletionSemanticDisposition(root, item, base), {
+    semantic: [`${item}: semantic deletion contract passed`], uncovered: [], unmeasured: 0,
+  });
+  assert.deepEqual(deletionSemanticDisposition(root, "unknown.ts:@@ -1 +1,0 @@", base), {
+    semantic: [],
+    uncovered: ["deletion-only unknown.ts:@@ -1 +1,0 @@: behavior requires explicit regression evidence"],
+    unmeasured: 1,
+  });
+
+  const currentFiles = new Map([
+    ["hrms_backend/src/modules/core/routes.ts", readFileSync(join(root, "hrms_backend/src/modules/core/routes.ts"), "utf8")],
+    ["hrms_backend/src/modules/core/service.ts", readFileSync(join(root, "hrms_backend/src/modules/core/service.ts"), "utf8")],
+    ["hrms_backend/src/platform/openapi.ts", readFileSync(join(root, "hrms_backend/src/platform/openapi.ts"), "utf8")],
+    ["hrms_backend/src/modules/core/__tests__/core.integration.test.ts", readFileSync(join(root, "hrms_backend/src/modules/core/__tests__/core.integration.test.ts"), "utf8")],
+  ]);
+  const injectedDependencies = {
+    gitCommand: () => `if (input.employment_status !== undefined && input.employment_status !== EmploymentStatuses.Active) {\n  this.requireOrgAdminRecoveryPath(user, {\n    employmentStatus: input.employment_status\n  });\n}\n\n`,
+    readCurrent: (path) => currentFiles.get(path) ?? "",
+  };
+  assert.match(validateDeletionSemanticContract(
+    root,
+    "hrms_backend/src/modules/core/service.ts:@@ -1,6 +1,0 @@",
+    base,
+    injectedDependencies,
+  ), /semantic deletion contract passed/);
+
+  const expectMissing = (path, replacement, message) => assert.throws(
+    () => validateDeletionSemanticContract(root, item, base, {
+      readCurrent: (candidatePath) => candidatePath === path ? replacement : currentFiles.get(candidatePath) ?? "",
+    }),
+    message,
+  );
+  expectMissing("hrms_backend/src/modules/core/routes.ts", "const statusBodySchema = {};", /generic user update schema/);
+  expectMissing("hrms_backend/src/modules/core/service.ts", String(currentFiles.get("hrms_backend/src/modules/core/service.ts")).replace(/export interface UserUpdateInput[\s\S]*?\n\}/u, ""), /input contract is missing/);
+  expectMissing("hrms_backend/src/modules/core/service.ts", String(currentFiles.get("hrms_backend/src/modules/core/service.ts")).replace("async uploadProfilePhoto", "uploadProfilePhoto"), /update method is missing/);
+  expectMissing("hrms_backend/src/platform/openapi.ts", "const coreProfilePhotoPolicySchema = {};", /OpenAPI contract is missing/);
+
+  write(root, "hrms_backend/src/modules/core/routes.ts", `const updateUserSchema = expectedVersionSchema.extend({ employment_status: z.string() }).strict();\nconst statusBodySchema = {};\nfastify.post("/users/:id/activate", handler);\nfastify.post("/users/:id/deactivate", handler);\n`);
+  assert.throws(() => validateDeletionSemanticContract(root, item, base), /still accepts lifecycle fields/);
 });
 
 test("semantic contracts fail closed for each workflow, manifest, lock, runner and shell invariant", () => {
@@ -961,6 +1023,106 @@ test("asset migrations use explicit fail-closed semantic contracts", () => {
   assert.throws(() => validateSemanticPath(repositoryRoot, recoveryPath, recovery.replace("assignment.assigned_at <= ticket.created_at", "TRUE"), "base"), /custody interval/);
 });
 
+test("asset tenant ownership migrations use explicit fail-closed semantic contracts", () => {
+  const repositoryRoot = process.cwd();
+  const mapPath = "hrms_backend/src/db/migrations/0068_asset_tenant_ownership_map.sql";
+  const ownershipPath = "hrms_backend/src/db/migrations/0069_asset_tenant_ownership.sql";
+  const map = readFileSync(join(repositoryRoot, mapPath), "utf8");
+  const ownership = readFileSync(join(repositoryRoot, ownershipPath), "utf8");
+
+  assert.match(validateSemanticPath(repositoryRoot, mapPath, map, "base"), /semantic contract passed/);
+  assert.match(validateSemanticPath(repositoryRoot, ownershipPath, ownership, "base"), /semantic contract passed/);
+  assert.match(validateSemanticPath(
+    repositoryRoot,
+    mapPath,
+    `/* outer comment\n /* nested comment */ still outer */\nSELECT 'it''s -- quoted /* text */', "a""b";\n${map}`,
+    "base",
+  ), /semantic contract passed/);
+
+  assert.throws(() => validateSemanticPath(repositoryRoot, mapPath, map.replace("verification_note text NOT NULL", "verification_note text"), "base"), /verification evidence/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, mapPath, map.replace(
+    "verification_note text NOT NULL,",
+    "verification_note text, -- verification_note text NOT NULL",
+  ), "base"), /verification evidence/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, mapPath, map.replace("FOR KEY SHARE", ""), "base"), /lock the referenced company/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, ownershipPath, ownership.replace("SET LOCAL hrms.asset_writer_v2", "SET hrms.asset_writer_v2"), "base"), /transaction-local writer marker/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, ownershipPath, ownership.replace("Asset tenant ownership mapping is incomplete", "Ownership warning"), "base"), /fail closed when verified ownership is missing/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, ownershipPath, ownership.replace("ALTER TABLE assets.asset_state_events ENABLE TRIGGER assets_state_events_immutable_trg", ""), "base"), /immutable event trigger/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, ownershipPath, ownership.replace("NEW.company_id IS DISTINCT FROM OLD.company_id", "FALSE"), "base"), /ownership mutation must be rejected/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, ownershipPath, ownership.replace("UNION ALL SELECT 1 FROM assets.asset_command_results WHERE company_id = OLD.id", ""), "base"), /command-result ownership/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, ownershipPath, `${ownership}\nALTER TABLE assets.assets ADD FOREIGN KEY (company_id) REFERENCES platform.company_profiles(id);`, "base"), /cross-schema foreign keys/);
+});
+
+test("asset tenant ownership finalization has an explicit immutable-evidence semantic contract", () => {
+  const repositoryRoot = process.cwd();
+  const path = "hrms_backend/src/db/migrations/0072_asset_tenant_ownership_finalization.sql";
+  const migration = readFileSync(join(repositoryRoot, path), "utf8");
+
+  assert.match(validateSemanticPath(repositoryRoot, path, migration, "base"), /semantic contract passed/);
+  for (const [needle, replacement, expected] of [
+    ["SET LOCAL hrms.asset_writer_v2", "SET hrms.asset_writer_v2", /transaction-local writer marker/],
+    ["verified_by_user_id IS NULL", "FALSE", /unattributed ownership mappings/],
+    ["FROM core.users verifier", "FROM core.users_missing verifier", /unknown ownership verifiers/],
+    ["DROP TRIGGER IF EXISTS asset_recovery_identity_immutable_trg", "DROP TRIGGER IF EXISTS asset_recovery_identity_missing_trg", /replace the applied 0070 snapshot/],
+    ["FROM assets.asset_requests root WHERE root.id = ownership.resource_id", "FROM assets.asset_requests root WHERE false", /orphan detection is missing for request/],
+    ["IF orphan_count > 0 THEN", "IF false THEN", /orphan ownership roots/],
+    ["FROM assets.software_vendors root\n        WHERE root.id = ownership.resource_id AND root.company_id <> ownership.company_id", "FROM assets.software_vendors root\n        WHERE false", /owner mismatch detection is missing for vendor/],
+    ["BEFORE INSERT OR UPDATE OR DELETE ON assets.asset_tenant_ownership_map", "BEFORE INSERT OR UPDATE ON assets.asset_tenant_ownership_map", /every map mutation/],
+    ["NEW.id IS DISTINCT FROM OLD.id", "FALSE", /deletion and identity replacement/],
+    ["CREATE TRIGGER finalized_asset_vendor_root_identity_trg", "CREATE TRIGGER finalized_asset_vendor_root_identity_missing_trg", /software_vendors/],
+    ["EXECUTE FUNCTION assets.prevent_finalized_asset_root_orphaning()", "EXECUTE FUNCTION assets.reject_finalized_asset_ownership_map_mutation()", /misbound/],
+    ["NEW.employee_full_name_snapshot IS DISTINCT FROM OLD.employee_full_name_snapshot", "FALSE", /employee_full_name_snapshot/],
+    ["BEFORE UPDATE OR DELETE ON assets.asset_recovery_tickets", "BEFORE UPDATE ON assets.asset_recovery_tickets", /permits deletion/],
+    ["REVOKE INSERT, UPDATE, DELETE, TRUNCATE", "REVOKE SELECT", /PUBLIC ownership-map mutation privileges/],
+  ]) {
+    assert.throws(
+      () => validateSemanticPath(repositoryRoot, path, migration.replace(needle, replacement), "base"),
+      expected,
+      needle,
+    );
+  }
+});
+
+test("asset recovery evidence staging and runtime termination snapshots have semantic contracts", () => {
+  const repositoryRoot = process.cwd();
+  const appliedPath = "hrms_backend/src/db/migrations/0070_asset_tenant_ownership_finalization.sql";
+  const prepPath = "hrms_backend/src/db/migrations/0071_asset_recovery_identity_evidence_prep.sql";
+  const runtimePath = "hrms_backend/src/db/migrations/0073_asset_termination_identity_snapshot.sql";
+  const applied = readFileSync(join(repositoryRoot, appliedPath), "utf8");
+  const prep = readFileSync(join(repositoryRoot, prepPath), "utf8");
+  const runtime = readFileSync(join(repositoryRoot, runtimePath), "utf8");
+  assert.match(validateSemanticPath(repositoryRoot, appliedPath, applied, "base"), /semantic contract passed/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, appliedPath, `${applied}\n-- mutation`, "base"), /immutable/);
+  assert.match(validateSemanticPath(repositoryRoot, prepPath, prep, "base"), /semantic contract passed/);
+  assert.match(validateSemanticPath(repositoryRoot, runtimePath, runtime, "base"), /semantic contract passed/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, prepPath, prep.replace("ticket_id uuid PRIMARY KEY", "ticket_id uuid"), "base"), /staging schema/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, prepPath, prep.replace("lifecycle_event_id uuid PRIMARY KEY", "lifecycle_event_id uuid"), "base"), /termination evidence staging schema/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, prepPath, prep.replace("approved_by_user_id uuid NOT NULL", "approved_by_user_id uuid"), "base"), /termination evidence staging schema/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, prepPath, prep.replace("REVOKE SELECT, INSERT, UPDATE, DELETE, TRUNCATE", "REVOKE INSERT, UPDATE, DELETE, TRUNCATE"), "base"), /read and mutation privileges/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replaceAll("u.version = payload_employee_version", "TRUE"), "base"), /exact durable employee version/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("IN SHARE ROW EXCLUSIVE MODE", "IN ACCESS SHARE MODE"), "base"), /writers must be locked/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("assets.asset_assignments, assets.asset_recovery_tickets,", "assets.asset_recovery_tickets,"), "base"), /authority, ownership, event and evidence writers/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("core.users, core.roles, core.user_roles,", "core.users, core.roles,"), "base"), /authority, ownership, event and evidence writers/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("event.payload->>'user_id' IS DISTINCT FROM event.aggregate_id::text", "FALSE"), "base"), /durable user/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("approver.id <> evidence.verified_by_user_id", "TRUE"), "base"), /two distinct current authorized/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("reviewer_role.status = 'active'", "reviewer_role.status = 'revoked'"), "base"), /current effective Admin or HR Manager/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("reviewer_role.effective_from <= current_date", "TRUE"), "base"), /current effective Admin or HR Manager/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("role_definition.status = 'active'", "TRUE"), "base"), /current effective Admin or HR Manager/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace(
+    "AND preference.company_id = evidence.company_id",
+    "AND preference.company_id = evidence.company_id\n           AND preference.active_role IN ('Admin', 'HR Manager')",
+  ), "base"), /selected session role/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("assignment.assigned_at <= event.created_at", "TRUE"), "base"), /event-time assignments/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("ticket.lifecycle_event_id = event.event_id", "TRUE"), "base"), /event-linked recovery/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("invalid_legacy_evidence_count > 0", "FALSE"), "base"), /historical termination evidence/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("unresolved_legacy_termination_count > 0", "FALSE"), "base"), /every unresolved replayable/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("BEFORE INSERT OR UPDATE OR DELETE ON core.user_termination_identity_evidence", "BEFORE UPDATE ON core.user_termination_identity_evidence"), "base"), /evidence must be frozen/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("SECURITY DEFINER", "SECURITY INVOKER"), "base"), /security-definer boundary/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("u.employment_status = 'terminated'", "TRUE"), "base"), /committed terminated employee state/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("BEFORE UPDATE OR DELETE ON assets.asset_recovery_tickets", "BEFORE UPDATE ON assets.asset_recovery_tickets"), "base"), /history deletion/);
+  assert.throws(() => validateSemanticPath(repositoryRoot, runtimePath, runtime.replace("NEW.lifecycle_event_id IS DISTINCT FROM OLD.lifecycle_event_id", "FALSE"), "base"), /lifecycle event identity/);
+});
+
 test("frontend contract route discovery excludes test modules without hiding runtime routes", () => {
   const repositoryRoot = process.cwd();
   const path = "hrms-client/scripts/frontend-contract-route-coverage.mjs";
@@ -999,7 +1161,6 @@ test("frontend contract route discovery excludes test modules without hiding run
     );
   }
 });
-
 test("semantic QA scripts are classified before generic external coverage", () => {
   const root = mkdtempSync(join(tmpdir(), "hrms-coverage-semantic-external-"));
   roots.push(root);
@@ -1639,6 +1800,10 @@ test("backend coverage measures unit and integration projects together", () => {
       args.includes("hrms_backend") && args.includes("--coverage") && args.includes("integration"));
     assert.ok(backend, "backend coverage command must include the integration project");
     assert.deepEqual(backend.args.filter((_argument, index) => backend.args[index - 1] === "--project"), ["unit", "integration"]);
+    const isolated = commands.find(({ args }) => args.includes("src/platform/__tests__/db-migrate-cli.unit.test.ts"));
+    assert.ok(isolated, "isolated coverage must execute the migration CLI test");
+    assert.ok(isolated.args.includes(join(root, "hrms_backend/scripts/db-migrate.ts")));
+    assert.ok(isolated.args.includes(join(root, "hrms_backend/scripts/db-migration-lib.ts")));
   } finally {
     if (previous === undefined) delete process.env.HRMS_COVERAGE_OUTPUT_DIR;
     else process.env.HRMS_COVERAGE_OUTPUT_DIR = previous;

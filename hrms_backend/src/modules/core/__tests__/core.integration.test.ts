@@ -367,6 +367,26 @@ describe("core hierarchy API", () => {
     });
     expect(forbiddenExport.statusCode).toBe(403);
 
+    const lifecycleBypass = await app.inject({
+      method: "PATCH",
+      url: `/api/v1/core/users/${create.json().id}`,
+      headers: authHeader(admin.token),
+      payload: {
+        employment_status: "terminated",
+        terminated_on: "2026-11-15",
+        expected_version: 6,
+      },
+    });
+    expect(lifecycleBypass.statusCode, lifecycleBypass.body).toBe(400);
+    expect(app.store.users.find((user) => user.id === create.json().id)).toMatchObject({
+      employment_status: "active",
+      terminated_on: null,
+      version: 6,
+    });
+    expect(app.store.outbox.some((event) =>
+      event.event_type === "core.user.terminated" && event.aggregate_id === create.json().id
+    )).toBe(false);
+
     const stalePatch = await app.inject({
       method: "PATCH",
       url: `/api/v1/core/users/${create.json().id}`,

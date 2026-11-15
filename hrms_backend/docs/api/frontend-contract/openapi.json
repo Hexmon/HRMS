@@ -14305,16 +14305,6 @@
                     "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
                     "nullable": true
                   },
-                  "employment_status": {
-                    "type": "string",
-                    "enum": [
-                      "active",
-                      "inactive",
-                      "terminated",
-                      "suspended"
-                    ],
-                    "example": "active"
-                  },
                   "timezone": {
                     "type": "string",
                     "nullable": true,
@@ -14324,13 +14314,6 @@
                     "type": "string",
                     "format": "date",
                     "description": "Joining date",
-                    "example": "2026-05-04",
-                    "nullable": true
-                  },
-                  "terminated_on": {
-                    "type": "string",
-                    "format": "date",
-                    "description": "Termination date",
                     "example": "2026-05-04",
                     "nullable": true
                   }
@@ -51159,6 +51142,46 @@
                     "filters": {
                       "type": "object",
                       "additionalProperties": true
+                    },
+                    "status_breakdown": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    },
+                    "type_breakdown": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "integer",
+                        "minimum": 0
+                      }
+                    },
+                    "maintenance_rows": {
+                      "type": "array",
+                      "description": "Bounded maintenance page selected by page/page_size.",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    },
+                    "recovery_rows": {
+                      "type": "array",
+                      "description": "Bounded recovery page. Employee is the original-company name snapshot, not a mutable current profile.",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": true
+                      }
+                    },
+                    "maintenance_total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 12
+                    },
+                    "recovery_total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "example": 3
                     }
                   },
                   "additionalProperties": true
@@ -54580,6 +54603,7 @@
                   "type": "object",
                   "required": [
                     "id",
+                    "company_id",
                     "asset_code",
                     "asset_type",
                     "name",
@@ -54591,6 +54615,12 @@
                       "type": "string",
                       "format": "uuid",
                       "description": "Asset UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "company_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Owning company UUID",
                       "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                     },
                     "asset_code": {
@@ -54624,6 +54654,17 @@
                       "description": "Assigned employee UUID",
                       "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
                       "nullable": true
+                    },
+                    "maintenance_total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Total maintenance records for this asset, including records outside the bounded embedded projection.",
+                      "example": 3
+                    },
+                    "maintenance_has_more": {
+                      "type": "boolean",
+                      "description": "True when the embedded maintenance array is truncated; use the paginated maintenance endpoint for the complete history.",
+                      "example": false
                     },
                     "version": {
                       "type": "integer",
@@ -54980,6 +55021,7 @@
                         "type": "object",
                         "required": [
                           "id",
+                          "company_id",
                           "asset_code",
                           "asset_type",
                           "name",
@@ -54991,6 +55033,12 @@
                             "type": "string",
                             "format": "uuid",
                             "description": "Asset UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "company_id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Owning company UUID",
                             "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                           },
                           "asset_code": {
@@ -55024,6 +55072,17 @@
                             "description": "Assigned employee UUID",
                             "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
                             "nullable": true
+                          },
+                          "maintenance_total": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "Total maintenance records for this asset, including records outside the bounded embedded projection.",
+                            "example": 3
+                          },
+                          "maintenance_has_more": {
+                            "type": "boolean",
+                            "description": "True when the embedded maintenance array is truncated; use the paginated maintenance endpoint for the complete history.",
+                            "example": false
                           },
                           "version": {
                             "type": "integer",
@@ -56673,6 +56732,7 @@
                       "type": "object",
                       "required": [
                         "id",
+                        "company_id",
                         "asset_code",
                         "asset_type",
                         "name",
@@ -56684,6 +56744,12 @@
                           "type": "string",
                           "format": "uuid",
                           "description": "Asset UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "company_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Owning company UUID",
                           "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                         },
                         "asset_code": {
@@ -56717,6 +56783,17 @@
                           "description": "Assigned employee UUID",
                           "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
                           "nullable": true
+                        },
+                        "maintenance_total": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "Total maintenance records for this asset, including records outside the bounded embedded projection.",
+                          "example": 3
+                        },
+                        "maintenance_has_more": {
+                          "type": "boolean",
+                          "description": "True when the embedded maintenance array is truncated; use the paginated maintenance endpoint for the complete history.",
+                          "example": false
                         },
                         "version": {
                           "type": "integer",
@@ -57177,6 +57254,7 @@
                   "type": "object",
                   "required": [
                     "id",
+                    "company_id",
                     "asset_code",
                     "asset_type",
                     "name",
@@ -57188,6 +57266,12 @@
                       "type": "string",
                       "format": "uuid",
                       "description": "Asset UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "company_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Owning company UUID",
                       "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                     },
                     "asset_code": {
@@ -57221,6 +57305,17 @@
                       "description": "Assigned employee UUID",
                       "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
                       "nullable": true
+                    },
+                    "maintenance_total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Total maintenance records for this asset, including records outside the bounded embedded projection.",
+                      "example": 3
+                    },
+                    "maintenance_has_more": {
+                      "type": "boolean",
+                      "description": "True when the embedded maintenance array is truncated; use the paginated maintenance endpoint for the complete history.",
+                      "example": false
                     },
                     "version": {
                       "type": "integer",
@@ -57579,6 +57674,7 @@
                   "type": "object",
                   "required": [
                     "id",
+                    "company_id",
                     "asset_code",
                     "asset_type",
                     "name",
@@ -57590,6 +57686,12 @@
                       "type": "string",
                       "format": "uuid",
                       "description": "Asset UUID",
+                      "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                    },
+                    "company_id": {
+                      "type": "string",
+                      "format": "uuid",
+                      "description": "Owning company UUID",
                       "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                     },
                     "asset_code": {
@@ -57623,6 +57725,17 @@
                       "description": "Assigned employee UUID",
                       "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
                       "nullable": true
+                    },
+                    "maintenance_total": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Total maintenance records for this asset, including records outside the bounded embedded projection.",
+                      "example": 3
+                    },
+                    "maintenance_has_more": {
+                      "type": "boolean",
+                      "description": "True when the embedded maintenance array is truncated; use the paginated maintenance endpoint for the complete history.",
+                      "example": false
                     },
                     "version": {
                       "type": "integer",
@@ -59279,7 +59392,7 @@
         "tags": [
           "Outbox / Platform Events"
         ],
-        "description": "Protected local event consumer that moves assigned assets into recovery workflow when an employee is terminated.",
+        "description": "Protected HR/Admin event consumer that moves assigned assets into recovery workflow only after validating the durable employee-termination event.",
         "requestBody": {
           "required": true,
           "content": {
@@ -59287,13 +59400,20 @@
               "schema": {
                 "type": "object",
                 "required": [
-                  "employee_user_id"
+                  "employee_user_id",
+                  "lifecycle_event_id"
                 ],
                 "properties": {
                   "employee_user_id": {
                     "type": "string",
                     "format": "uuid",
                     "description": "Terminated employee UUID",
+                    "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                  },
+                  "lifecycle_event_id": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Durable core.user.terminated outbox event UUID",
                     "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                   }
                 }
@@ -59723,6 +59843,7 @@
                       "type": "object",
                       "required": [
                         "id",
+                        "company_id",
                         "request_code",
                         "requester_user_id",
                         "request_type",
@@ -59738,6 +59859,12 @@
                           "type": "string",
                           "format": "uuid",
                           "description": "Asset request UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "company_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Owning company UUID",
                           "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                         },
                         "request_code": {
@@ -60219,6 +60346,7 @@
                         "type": "object",
                         "required": [
                           "id",
+                          "company_id",
                           "request_code",
                           "requester_user_id",
                           "request_type",
@@ -60234,6 +60362,12 @@
                             "type": "string",
                             "format": "uuid",
                             "description": "Asset request UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "company_id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Owning company UUID",
                             "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                           },
                           "request_code": {
@@ -60726,6 +60860,7 @@
                         "type": "object",
                         "required": [
                           "id",
+                          "company_id",
                           "request_code",
                           "requester_user_id",
                           "request_type",
@@ -60741,6 +60876,12 @@
                             "type": "string",
                             "format": "uuid",
                             "description": "Asset request UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "company_id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Owning company UUID",
                             "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                           },
                           "request_code": {
@@ -61263,6 +61404,7 @@
                       "type": "object",
                       "required": [
                         "id",
+                        "company_id",
                         "request_code",
                         "requester_user_id",
                         "request_type",
@@ -61278,6 +61420,12 @@
                           "type": "string",
                           "format": "uuid",
                           "description": "Asset request UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "company_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Owning company UUID",
                           "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                         },
                         "request_code": {
@@ -61406,6 +61554,7 @@
                       "type": "object",
                       "required": [
                         "id",
+                        "company_id",
                         "asset_code",
                         "asset_type",
                         "name",
@@ -61417,6 +61566,12 @@
                           "type": "string",
                           "format": "uuid",
                           "description": "Asset UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "company_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Owning company UUID",
                           "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                         },
                         "asset_code": {
@@ -61450,6 +61605,17 @@
                           "description": "Assigned employee UUID",
                           "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
                           "nullable": true
+                        },
+                        "maintenance_total": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "Total maintenance records for this asset, including records outside the bounded embedded projection.",
+                          "example": 3
+                        },
+                        "maintenance_has_more": {
+                          "type": "boolean",
+                          "description": "True when the embedded maintenance array is truncated; use the paginated maintenance endpoint for the complete history.",
+                          "example": false
                         },
                         "version": {
                           "type": "integer",
@@ -61824,6 +61990,7 @@
                       "type": "object",
                       "required": [
                         "id",
+                        "company_id",
                         "request_code",
                         "requester_user_id",
                         "request_type",
@@ -61839,6 +62006,12 @@
                           "type": "string",
                           "format": "uuid",
                           "description": "Asset request UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "company_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Owning company UUID",
                           "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                         },
                         "request_code": {
@@ -62830,6 +63003,7 @@
                         "type": "object",
                         "required": [
                           "id",
+                          "company_id",
                           "asset_id",
                           "maintenance_type",
                           "started_on",
@@ -62841,6 +63015,12 @@
                             "type": "string",
                             "format": "uuid",
                             "description": "Maintenance record UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "company_id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Owning company UUID",
                             "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                           },
                           "asset_id": {
@@ -63336,6 +63516,7 @@
                       "type": "object",
                       "required": [
                         "id",
+                        "company_id",
                         "asset_id",
                         "maintenance_type",
                         "started_on",
@@ -63347,6 +63528,12 @@
                           "type": "string",
                           "format": "uuid",
                           "description": "Maintenance record UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "company_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Owning company UUID",
                           "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                         },
                         "asset_id": {
@@ -63421,6 +63608,7 @@
                       "type": "object",
                       "required": [
                         "id",
+                        "company_id",
                         "asset_code",
                         "asset_type",
                         "name",
@@ -63432,6 +63620,12 @@
                           "type": "string",
                           "format": "uuid",
                           "description": "Asset UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "company_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Owning company UUID",
                           "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                         },
                         "asset_code": {
@@ -63465,6 +63659,17 @@
                           "description": "Assigned employee UUID",
                           "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
                           "nullable": true
+                        },
+                        "maintenance_total": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "Total maintenance records for this asset, including records outside the bounded embedded projection.",
+                          "example": 3
+                        },
+                        "maintenance_has_more": {
+                          "type": "boolean",
+                          "description": "True when the embedded maintenance array is truncated; use the paginated maintenance endpoint for the complete history.",
+                          "example": false
                         },
                         "version": {
                           "type": "integer",
@@ -63831,6 +64036,7 @@
                         "type": "object",
                         "required": [
                           "id",
+                          "company_id",
                           "name",
                           "status",
                           "version"
@@ -63840,6 +64046,12 @@
                             "type": "string",
                             "format": "uuid",
                             "description": "Vendor UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "company_id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Owning company UUID",
                             "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                           },
                           "name": {
@@ -64262,6 +64474,7 @@
                       "type": "object",
                       "required": [
                         "id",
+                        "company_id",
                         "name",
                         "status",
                         "version"
@@ -64271,6 +64484,12 @@
                           "type": "string",
                           "format": "uuid",
                           "description": "Vendor UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "company_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Owning company UUID",
                           "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                         },
                         "name": {
@@ -64700,6 +64919,7 @@
                       "type": "object",
                       "required": [
                         "id",
+                        "company_id",
                         "name",
                         "status",
                         "version"
@@ -64709,6 +64929,12 @@
                           "type": "string",
                           "format": "uuid",
                           "description": "Vendor UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "company_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Owning company UUID",
                           "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                         },
                         "name": {
@@ -65102,6 +65328,7 @@
                         "type": "object",
                         "required": [
                           "id",
+                          "company_id",
                           "employee_user_id",
                           "asset_id",
                           "assignment_id",
@@ -65116,6 +65343,12 @@
                             "type": "string",
                             "format": "uuid",
                             "description": "Recovery ticket UUID",
+                            "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                          },
+                          "company_id": {
+                            "type": "string",
+                            "format": "uuid",
+                            "description": "Owning company UUID",
                             "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                           },
                           "employee_user_id": {
@@ -65201,12 +65434,35 @@
                           "employee": {
                             "type": "object",
                             "nullable": true,
-                            "additionalProperties": true
+                            "required": [
+                              "id",
+                              "full_name",
+                              "employee_code"
+                            ],
+                            "properties": {
+                              "id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "Historical employee user UUID",
+                                "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                              },
+                              "full_name": {
+                                "type": "string",
+                                "example": "Ananya Rao"
+                              },
+                              "employee_code": {
+                                "type": "string",
+                                "example": "EMP-001"
+                              }
+                            },
+                            "additionalProperties": false,
+                            "description": "Original-company identity captured when recovery started; current profile and roles are never returned."
                           },
                           "asset": {
                             "type": "object",
                             "required": [
                               "id",
+                              "company_id",
                               "asset_code",
                               "asset_type",
                               "name",
@@ -65218,6 +65474,12 @@
                                 "type": "string",
                                 "format": "uuid",
                                 "description": "Asset UUID",
+                                "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                              },
+                              "company_id": {
+                                "type": "string",
+                                "format": "uuid",
+                                "description": "Owning company UUID",
                                 "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                               },
                               "asset_code": {
@@ -65251,6 +65513,17 @@
                                 "description": "Assigned employee UUID",
                                 "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
                                 "nullable": true
+                              },
+                              "maintenance_total": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "description": "Total maintenance records for this asset, including records outside the bounded embedded projection.",
+                                "example": 3
+                              },
+                              "maintenance_has_more": {
+                                "type": "boolean",
+                                "description": "True when the embedded maintenance array is truncated; use the paginated maintenance endpoint for the complete history.",
+                                "example": false
                               },
                               "version": {
                                 "type": "integer",
@@ -65673,6 +65946,7 @@
                       "type": "object",
                       "required": [
                         "id",
+                        "company_id",
                         "employee_user_id",
                         "asset_id",
                         "assignment_id",
@@ -65687,6 +65961,12 @@
                           "type": "string",
                           "format": "uuid",
                           "description": "Recovery ticket UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "company_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Owning company UUID",
                           "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                         },
                         "employee_user_id": {
@@ -65772,12 +66052,35 @@
                         "employee": {
                           "type": "object",
                           "nullable": true,
-                          "additionalProperties": true
+                          "required": [
+                            "id",
+                            "full_name",
+                            "employee_code"
+                          ],
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "description": "Historical employee user UUID",
+                              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                            },
+                            "full_name": {
+                              "type": "string",
+                              "example": "Ananya Rao"
+                            },
+                            "employee_code": {
+                              "type": "string",
+                              "example": "EMP-001"
+                            }
+                          },
+                          "additionalProperties": false,
+                          "description": "Original-company identity captured when recovery started; current profile and roles are never returned."
                         },
                         "asset": {
                           "type": "object",
                           "required": [
                             "id",
+                            "company_id",
                             "asset_code",
                             "asset_type",
                             "name",
@@ -65789,6 +66092,12 @@
                               "type": "string",
                               "format": "uuid",
                               "description": "Asset UUID",
+                              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                            },
+                            "company_id": {
+                              "type": "string",
+                              "format": "uuid",
+                              "description": "Owning company UUID",
                               "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                             },
                             "asset_code": {
@@ -65823,6 +66132,17 @@
                               "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
                               "nullable": true
                             },
+                            "maintenance_total": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "description": "Total maintenance records for this asset, including records outside the bounded embedded projection.",
+                              "example": 3
+                            },
+                            "maintenance_has_more": {
+                              "type": "boolean",
+                              "description": "True when the embedded maintenance array is truncated; use the paginated maintenance endpoint for the complete history.",
+                              "example": false
+                            },
                             "version": {
                               "type": "integer",
                               "minimum": 1,
@@ -65851,6 +66171,7 @@
                       "type": "object",
                       "required": [
                         "id",
+                        "company_id",
                         "asset_code",
                         "asset_type",
                         "name",
@@ -65862,6 +66183,12 @@
                           "type": "string",
                           "format": "uuid",
                           "description": "Asset UUID",
+                          "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+                        },
+                        "company_id": {
+                          "type": "string",
+                          "format": "uuid",
+                          "description": "Owning company UUID",
                           "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
                         },
                         "asset_code": {
@@ -65895,6 +66222,17 @@
                           "description": "Assigned employee UUID",
                           "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
                           "nullable": true
+                        },
+                        "maintenance_total": {
+                          "type": "integer",
+                          "minimum": 0,
+                          "description": "Total maintenance records for this asset, including records outside the bounded embedded projection.",
+                          "example": 3
+                        },
+                        "maintenance_has_more": {
+                          "type": "boolean",
+                          "description": "True when the embedded maintenance array is truncated; use the paginated maintenance endpoint for the complete history.",
+                          "example": false
                         },
                         "version": {
                           "type": "integer",

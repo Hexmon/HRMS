@@ -148,10 +148,8 @@ export interface UserUpdateInput {
   department_id?: UUID;
   designation_id?: UUID;
   manager_user_id?: UUID | null;
-  employment_status?: CoreUser["employment_status"];
   timezone?: string | null;
   joined_on?: string | null;
-  terminated_on?: string | null;
   expected_version: number;
 }
 
@@ -336,12 +334,6 @@ export class CoreService {
     requirePeopleManager(actor);
     const user = this.requireUserForWrite(actor, id);
     requireExpectedVersion(user, input.expected_version);
-    if (input.employment_status !== undefined && input.employment_status !== EmploymentStatuses.Active) {
-      this.requireOrgAdminRecoveryPath(user, {
-        employmentStatus: input.employment_status
-      });
-    }
-
     if (input.email !== undefined) {
       const email = normalizeEmail(input.email);
       const duplicate = this.store.users.find((candidate) => candidate.id !== user.id && normalizeEmail(candidate.email) === email && !candidate.deleted_at);
@@ -364,20 +356,11 @@ export class CoreService {
     if (input.manager_user_id !== undefined) {
       this.updateManager(actor, user, input.manager_user_id);
     }
-    if (input.employment_status !== undefined) {
-      user.employment_status = input.employment_status;
-      if (input.employment_status !== EmploymentStatuses.Terminated) {
-        user.terminated_on = input.terminated_on ?? null;
-      }
-    }
     if (input.timezone !== undefined) {
       user.timezone = normalizeOptional(input.timezone);
     }
     if (input.joined_on !== undefined) {
       user.joined_on = input.joined_on;
-    }
-    if (input.terminated_on !== undefined) {
-      user.terminated_on = input.terminated_on;
     }
     user.version += 1;
     appendCoreOutboxEvent(this.store, {
@@ -547,6 +530,10 @@ export class CoreService {
       payload: {
         user_id: user.id,
         employee_code: user.employee_code,
+        ...(nextStatus === EmploymentStatuses.Terminated ? {
+          company_id: this.activeCompanyIdForActor(actor, "core.users.deactivate"),
+          employee_version: user.version,
+        } : {}),
         actor_user_id: actor.id,
         status: nextStatus,
         reason: input.reason ?? null,
@@ -1042,6 +1029,9 @@ export class CoreService {
     const item = this.toListItem(user);
     const directReports = this.repository.listUsers().filter((candidate) => candidate.manager_user_id === user.id && !candidate.deleted_at);
     const documents = this.store.documents.filter((document) => document.owner_user_id === user.id && !document.deleted_at);
+    const assetMetadata = this.store.assetReadMetadata?.operation === "core.users.detail"
+      ? this.store.assetReadMetadata.coreUser
+      : undefined;
     const assignedAssets = this.store.assets.filter((asset) => asset.current_assigned_user_id === user.id && !asset.deleted_at);
     const recoveryTickets = this.store.assetRecoveryTickets.filter((ticket) => ticket.employee_user_id === user.id && ticket.status !== "closed");
     const submissions = this.store.timesheetSubmissions.filter((submission) => submission.employee_user_id === user.id && !submission.deleted_at);
@@ -1060,8 +1050,8 @@ export class CoreService {
         restricted: documents.filter((document) => document.classification !== "normal").length
       },
       assets_summary: {
-        assigned: assignedAssets.length,
-        recovery_pending: recoveryTickets.length
+        assigned: assetMetadata?.assignedAssets ?? assignedAssets.length,
+        recovery_pending: assetMetadata?.recoveryPending ?? recoveryTickets.length
       },
       attendance_summary: { status: "not_available" },
       leave_summary: {

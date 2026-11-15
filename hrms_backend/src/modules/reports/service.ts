@@ -676,6 +676,9 @@ export class ReportService {
 
   assetsSummary(actor: AuthUser, query: ReportSummaryQuery) {
     assertReportRole(actor, [Roles.AssetManager, Roles.Admin, Roles.Auditor]);
+    const bounded = this.store.assetReadMetadata?.operation === "reports.assets.summary"
+      ? this.store.assetReadMetadata
+      : undefined;
     const rows = this.store.assets
       .filter((asset) => !asset.deleted_at)
       .filter((asset) => !query.status || asset.status === query.status)
@@ -700,17 +703,17 @@ export class ReportService {
           updated_at: asset.updated_at
         };
       });
-    return pageWithMeta(rows, query.page, query.page_size, {
-      totals: {
+    const meta = {
+      totals: bounded?.report?.totals ?? {
         assets: rows.length,
         assigned: rows.filter((row) => row.status === AssetStatuses.Assigned).length,
         available: rows.filter((row) => row.status === AssetStatuses.InStock).length,
         repair: rows.filter((row) => row.status === AssetStatuses.InMaintenance).length,
         lost_or_damaged: rows.filter((row) => row.status === AssetStatuses.LostStolen).length
       },
-      status_breakdown: groupCount(rows, (row) => row.status),
-      type_breakdown: groupCount(rows, (row) => row.type),
-      maintenance_rows: this.store.assetMaintenanceRecords.filter((record) => !record.deleted_at).map((record) => {
+      status_breakdown: bounded?.report?.statusBreakdown ?? groupCount(rows, (row) => row.status),
+      type_breakdown: bounded?.report?.typeBreakdown ?? groupCount(rows, (row) => row.type),
+      maintenance_rows: bounded?.report?.maintenanceRows ?? this.store.assetMaintenanceRecords.filter((record) => !record.deleted_at).map((record) => {
         const asset = this.store.assets.find((candidate) => candidate.id === record.asset_id);
         const vendor = record.vendor_id ? this.store.assetVendors.find((candidate) => candidate.id === record.vendor_id) : null;
         return {
@@ -726,17 +729,23 @@ export class ReportService {
           notes: record.notes
         };
       }),
-      recovery_rows: this.store.assetRecoveryTickets.map((ticket) => ({
+      recovery_rows: bounded?.report?.recoveryRows ?? this.store.assetRecoveryTickets.map((ticket) => ({
         id: ticket.id,
         employee_user_id: ticket.employee_user_id,
-        employee: this.user(ticket.employee_user_id)?.full_name ?? ticket.employee_user_id,
+        employee: ticket.employee_full_name_snapshot,
         asset_id: ticket.asset_id,
         asset_code: this.store.assets.find((asset) => asset.id === ticket.asset_id)?.asset_code ?? ticket.asset_id,
         status: ticket.status,
         created_at: ticket.created_at
       })),
+      maintenance_total: bounded?.report?.maintenanceTotal ?? this.store.assetMaintenanceRecords.filter((record) => !record.deleted_at).length,
+      recovery_total: bounded?.report?.recoveryTotal ?? this.store.assetRecoveryTickets.length,
       filters: this.appliedSummaryFilters(query)
-    });
+    };
+    if (bounded?.total !== undefined) {
+      return { items: rows, page: query.page, page_size: query.page_size, total: bounded.total, ...meta };
+    }
+    return pageWithMeta(rows, query.page, query.page_size, meta);
   }
 
   helpdeskSummary(actor: AuthUser, query: ReportSummaryQuery) {

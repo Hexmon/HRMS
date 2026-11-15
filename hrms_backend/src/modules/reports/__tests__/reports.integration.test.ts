@@ -205,6 +205,7 @@ describe("non-expense reports", () => {
     const unscopedHelpdeskEventId = randomUUID();
     app.store.assetStateEvents.push({
       id: unscopedAssetEventId,
+      company_id: randomUUID(),
       asset_id: randomUUID(),
       actor_user_id: admin.user.id,
       event_type: "asset.test_unscoped",
