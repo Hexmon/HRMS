@@ -3071,6 +3071,40 @@ const assetSchema = {
   additionalProperties: true,
 };
 
+const employeeAssetSchema = {
+  type: "object",
+  required: [
+    "id",
+    "asset_code",
+    "asset_type",
+    "name",
+    "status",
+    "version",
+    "assigned_on",
+    "is_assigned_to_current_user",
+    "assignment_acknowledged",
+  ],
+  properties: {
+    id: uuid("Asset UUID"),
+    asset_code: { type: "string", example: "LAP-001" },
+    asset_type: { type: "string", example: "Laptop" },
+    name: { type: "string", example: "ThinkPad T-Series" },
+    serial_no: { type: "string", nullable: true, example: "SN-001" },
+    status: { type: "string", example: "Assigned" },
+    version: { type: "integer", minimum: 1, example: 2 },
+    category: { type: "string", nullable: true, example: "Computer" },
+    brand: { type: "string", nullable: true, example: "Lenovo" },
+    model: { type: "string", nullable: true, example: "T14" },
+    warranty_expiry: { type: "string", format: "date", nullable: true },
+    location: { type: "string", nullable: true, example: "Hyderabad" },
+    condition: { type: "string", nullable: true, example: "good" },
+    assigned_on: { ...dateTime("Current assignment timestamp"), nullable: true },
+    is_assigned_to_current_user: { type: "boolean", example: true },
+    assignment_acknowledged: { type: "boolean", example: false },
+  },
+  additionalProperties: false,
+};
+
 const assetRequestSchema = {
   type: "object",
   required: [
@@ -12362,8 +12396,8 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/assets/{id}": operation(
     "Assets",
     "Asset detail",
-    "Returns full asset details for Asset/Admin actors.",
-    { params: idParamSchema, response200: assetSchema },
+    "Returns full details to Asset/Admin actors and an allow-listed operational view to the assigned employee.",
+    { params: idParamSchema, response200: { anyOf: [assetSchema, employeeAssetSchema] } },
   ),
   "POST /api/v1/assets/{id}/assign": operation(
     "Assets",
@@ -12536,7 +12570,7 @@ const routeDocs: Record<string, RouteSchema> = {
     "Assets",
     "My assigned assets",
     "Lists only assets currently assigned to the authenticated employee.",
-    { querystring: paginationQuerySchema, response200: paginated(assetSchema) },
+    { querystring: paginationQuerySchema, response200: paginated(employeeAssetSchema) },
   ),
   "GET /api/v1/assets/assignees": operation(
     "Assets",
@@ -12645,7 +12679,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "POST /api/v1/assets/{id}/acknowledgements": operation(
     "Assets",
     "Acknowledge asset handover",
-    "Marks an assigned asset as received or returned by the assigned employee.",
+    "Marks an assigned asset as received by the assigned employee. Asset return uses the dedicated return workflow.",
     {
       params: idParamSchema,
       body: {
@@ -12654,7 +12688,7 @@ const routeDocs: Record<string, RouteSchema> = {
         properties: {
           acknowledgement_type: {
             type: "string",
-            enum: ["received", "returned"],
+            enum: ["received"],
             example: "received",
           },
           expected_version: { type: "integer", minimum: 1, example: 1 },
@@ -12665,8 +12699,18 @@ const routeDocs: Record<string, RouteSchema> = {
         type: "object",
         required: ["asset", "acknowledgement", "version"],
         properties: {
-          asset: assetSchema,
-          acknowledgement: { type: "object", additionalProperties: true },
+          asset: employeeAssetSchema,
+          acknowledgement: {
+            type: "object",
+            required: ["id", "acknowledgement_type", "status", "created_at"],
+            properties: {
+              id: uuid("Acknowledgement UUID"),
+              acknowledgement_type: { type: "string", enum: ["received"] },
+              status: { type: "string", enum: ["acknowledged"] },
+              created_at: dateTime("Acknowledgement timestamp"),
+            },
+            additionalProperties: false,
+          },
           version: { type: "integer", minimum: 1, example: 2 },
         },
         additionalProperties: false,
@@ -12676,7 +12720,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/assets/{id}/maintenance": operation(
     "Assets",
     "List asset maintenance",
-    "Lists maintenance records for an asset.",
+    "Lists maintenance records, including financial and internal notes, for Asset/Admin actors.",
     {
       params: idParamSchema,
       querystring: paginationQuerySchema,

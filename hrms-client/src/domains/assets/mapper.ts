@@ -30,17 +30,26 @@ export function mapApiAsset(value: unknown, fallback?: Partial<Asset>): Asset {
     : (fallback?.maintenance ?? []);
   const acknowledgement = asRecord(row.latest_acknowledgement);
   const activeAssignmentId = text(row.active_assignment_id);
-  const history: Asset["history"] = activeAssignmentId
+  const assignedOn = text(row.assigned_on, fallback?.assignedOn);
+  const isAssignedToCurrentUser = row.is_assigned_to_current_user === true;
+  let employeeAssignmentId = "";
+  if (isAssignedToCurrentUser && assignedOn) {
+    employeeAssignmentId = `${text(row.id, "asset")}:current-assignment`;
+  }
+  const historyId = activeAssignmentId || employeeAssignmentId;
+  const history: Asset["history"] = historyId
     ? [
         {
-          id: activeAssignmentId,
-          employee: text(row.assigned_to_name),
+          id: historyId,
+          employee: text(row.assigned_to_name, isAssignedToCurrentUser ? "You" : ""),
           employeeId: text(row.assigned_to_user_id),
-          assignedOn: text(row.assigned_on),
+          assignedOn,
           conditionAtHandover: text(row.condition, "good") as Asset["condition"],
           acknowledged:
-            text(acknowledgement.assignment_id) === activeAssignmentId &&
-            text(acknowledgement.status) === "acknowledged",
+            row.assignment_acknowledged === true ||
+            (Boolean(activeAssignmentId) &&
+              text(acknowledgement.assignment_id) === activeAssignmentId &&
+              text(acknowledgement.status) === "acknowledged"),
         },
       ]
     : [];
@@ -62,9 +71,9 @@ export function mapApiAsset(value: unknown, fallback?: Partial<Asset>): Asset {
     location: text(row.location, "—"),
     condition: (text(row.condition, "good") as Asset["condition"]) || "good",
     status: mapAssetStatus(row.status, fallback?.status),
-    assignedTo: text(row.assigned_to_name, fallback?.assignedTo),
+    assignedTo: text(row.assigned_to_name, isAssignedToCurrentUser ? "You" : fallback?.assignedTo),
     assignedToId: text(row.assigned_to_user_id, fallback?.assignedToId),
-    assignedOn: text(row.assigned_on, fallback?.assignedOn),
+    assignedOn,
     expectedReturn: text(row.expected_return, fallback?.expectedReturn),
     history,
     maintenance,

@@ -193,9 +193,9 @@ export function AssetDetail() {
         <TabsList className="w-full justify-start">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="history">Assignment History</TabsTrigger>
-          <TabsTrigger value="maintenance">Maintenance</TabsTrigger>
-          <TabsTrigger value="documents">Documents</TabsTrigger>
-          <TabsTrigger value="audit">Audit Trail</TabsTrigger>
+          {isAdmin && <TabsTrigger value="maintenance">Maintenance</TabsTrigger>}
+          {isAdmin && <TabsTrigger value="documents">Documents</TabsTrigger>}
+          {isAdmin && <TabsTrigger value="audit">Audit Trail</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="overview" className="mt-4">
@@ -207,11 +207,13 @@ export function AssetDetail() {
                 <Info k="Brand" v={asset.brand} />
                 <Info k="Model" v={asset.model} />
                 <Info k="Serial" v={asset.serial} />
-                <Info k="Vendor" v={asset.vendor} />
-                <Info k="Invoice #" v={asset.invoiceNumber} />
-                <Info k="Purchased" v={overview.purchaseDate} />
+                {isAdmin && <Info k="Vendor" v={asset.vendor} />}
+                {isAdmin && <Info k="Invoice #" v={asset.invoiceNumber} />}
+                {isAdmin && <Info k="Purchased" v={overview.purchaseDate} />}
                 <Info k="Warranty" v={overview.warranty} />
-                <Info k="Cost" v={overview.cost === null ? "—" : fmtMoney(overview.cost)} />
+                {isAdmin && (
+                  <Info k="Cost" v={overview.cost === null ? "—" : fmtMoney(overview.cost)} />
+                )}
                 <Info k="Location" v={asset.location} />
                 <Info k="Condition" v={<span className="uppercase">{asset.condition}</span>} />
               </dl>
@@ -289,11 +291,11 @@ export function AssetDetail() {
           </DataCard>
         </TabsContent>
 
-        <TabsContent value="maintenance" className="mt-4">
-          <DataCard
-            title="Maintenance & repair log"
-            actions={
-              isAdmin ? (
+        {isAdmin && (
+          <TabsContent value="maintenance" className="mt-4">
+            <DataCard
+              title="Maintenance & repair log"
+              actions={
                 <MaintenanceDialog
                   onAdd={(e) => {
                     void addMaintenance(asset.id, e)
@@ -301,86 +303,95 @@ export function AssetDetail() {
                       .catch((error) => toastApiError(error, "Maintenance could not be logged."));
                   }}
                 />
-              ) : undefined
-            }
-          >
-            {asset.maintenance.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No maintenance records yet.</p>
-            ) : (
-              <ul className="space-y-3">
-                {asset.maintenance.map((m) => (
-                  <li key={m.id} className="rounded-xl border p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <div>
-                        <p className="text-sm font-medium capitalize">
-                          {m.type}
-                          {m.vendor ? ` · ${m.vendor}` : ""}
-                        </p>
+              }
+            >
+              {asset.maintenance.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No maintenance records yet.</p>
+              ) : (
+                <ul className="space-y-3">
+                  {asset.maintenance.map((m) => (
+                    <li key={m.id} className="rounded-xl border p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-medium capitalize">
+                            {m.type}
+                            {m.vendor ? ` · ${m.vendor}` : ""}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {m.date}
+                            {m.cost ? ` · ${fmtMoney(m.cost)}` : ""}
+                          </p>
+                        </div>
+                        <Wrench className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                      {m.notes && <p className="mt-2 text-xs text-muted-foreground">{m.notes}</p>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </DataCard>
+          </TabsContent>
+        )}
+
+        {isAdmin && (
+          <TabsContent value="documents" className="mt-4">
+            <DataCard title="Documents">
+              {isApiBacked ? (
+                <p className="text-sm text-muted-foreground">
+                  Asset documents are not available in this view.
+                </p>
+              ) : asset.documents.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No documents uploaded for this asset.
+                </p>
+              ) : (
+                <ul className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                  {asset.documents.map((d) => (
+                    <li
+                      key={d.id}
+                      className="flex items-center gap-2 rounded-xl border p-3 text-sm"
+                    >
+                      <FileText className="h-4 w-4 text-primary" />
+                      <span className="flex-1 truncate">{d.name}</span>
+                      <span className="text-xs uppercase tracking-wider text-muted-foreground">
+                        {d.kind}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </DataCard>
+          </TabsContent>
+        )}
+
+        {isAdmin && (
+          <TabsContent value="audit" className="mt-4">
+            <DataCard title="Audit trail" padded={false}>
+              {isApiBacked ? (
+                <p className="px-5 py-6 text-sm text-muted-foreground">
+                  Asset audit history is not available in this view.
+                </p>
+              ) : (
+                <ul className="divide-y">
+                  {asset.audit.map((a) => (
+                    <li key={a.id} className="px-5 py-3 text-sm">
+                      <div className="flex items-center justify-between">
+                        <p className="font-medium">{a.action}</p>
                         <p className="text-xs text-muted-foreground">
-                          {m.date}
-                          {m.cost ? ` · ${fmtMoney(m.cost)}` : ""}
+                          {new Date(a.at).toLocaleString()}
                         </p>
                       </div>
-                      <Wrench className="h-4 w-4 text-muted-foreground" />
-                    </div>
-                    {m.notes && <p className="mt-2 text-xs text-muted-foreground">{m.notes}</p>}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </DataCard>
-        </TabsContent>
-
-        <TabsContent value="documents" className="mt-4">
-          <DataCard title="Documents">
-            {isApiBacked ? (
-              <p className="text-sm text-muted-foreground">
-                Asset documents are not available in this view.
-              </p>
-            ) : asset.documents.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No documents uploaded for this asset.</p>
-            ) : (
-              <ul className="grid grid-cols-1 gap-2 md:grid-cols-2">
-                {asset.documents.map((d) => (
-                  <li key={d.id} className="flex items-center gap-2 rounded-xl border p-3 text-sm">
-                    <FileText className="h-4 w-4 text-primary" />
-                    <span className="flex-1 truncate">{d.name}</span>
-                    <span className="text-xs uppercase tracking-wider text-muted-foreground">
-                      {d.kind}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </DataCard>
-        </TabsContent>
-
-        <TabsContent value="audit" className="mt-4">
-          <DataCard title="Audit trail" padded={false}>
-            {isApiBacked ? (
-              <p className="px-5 py-6 text-sm text-muted-foreground">
-                Asset audit history is not available in this view.
-              </p>
-            ) : (
-              <ul className="divide-y">
-                {asset.audit.map((a) => (
-                  <li key={a.id} className="px-5 py-3 text-sm">
-                    <div className="flex items-center justify-between">
-                      <p className="font-medium">{a.action}</p>
                       <p className="text-xs text-muted-foreground">
-                        {new Date(a.at).toLocaleString()}
+                        {a.actor}
+                        {a.remarks ? ` · ${a.remarks}` : ""}
                       </p>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      {a.actor}
-                      {a.remarks ? ` · ${a.remarks}` : ""}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </DataCard>
-        </TabsContent>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </DataCard>
+          </TabsContent>
+        )}
       </Tabs>
     </div>
   );

@@ -5,7 +5,7 @@ import type { MemoryDataStore } from "../../platform/data-store.js";
 import { nowIso } from "../../platform/data-store.js";
 import { badRequest, conflict, forbidden, notFound } from "../../platform/errors.js";
 import { appendOutboxEvent } from "../expenses/events.js";
-import { assertAssetManager } from "./policy.js";
+import { assertAssetManager, assertAssignedAssetEmployee } from "./policy.js";
 import { AssetRepository } from "./repository.js";
 import { assertAssetTransition } from "./state-machine.js";
 import { createRecoveryTicketsForTerminatedEmployee } from "./events.js";
@@ -35,7 +35,7 @@ export class AssetService {
     const companyId = this.companyId(actor, "assets.my");
     const items = this.repository.list(companyId)
       .filter((asset) => asset.current_assigned_user_id === actor.id)
-      .map((asset) => this.presentAsset(asset));
+      .map((asset) => this.presentEmployeeAsset(asset));
     const start = (pageNumber - 1) * pageSize;
     return { items: items.slice(start, start + pageSize), page: pageNumber, page_size: pageSize, total: items.length };
   }
@@ -101,7 +101,10 @@ export class AssetService {
   }
 
   detail(actor: AuthUser, id: UUID) {
-    return this.presentAsset(this.assertAssetVisible(actor, id, "assets.detail"));
+    const asset = this.assertAssetVisible(actor, id, "assets.detail");
+    return actor.roles.includes(Roles.AssetManager) || actor.roles.includes(Roles.Admin)
+      ? this.presentAsset(asset)
+      : this.presentEmployeeAsset(asset);
   }
 
   assign(actor: AuthUser, id: UUID, assignedToUserId: UUID, expectedVersion: number): AssetRecord {
@@ -266,20 +269,21 @@ export class AssetService {
     return { request: this.presentRequest(request), version: request.version };
   }
 
-  acknowledge(actor: AuthUser, id: UUID, input: { acknowledgement_type: "received" | "returned"; expected_version: number }) {
+  acknowledge(actor: AuthUser, id: UUID, input: { acknowledgement_type: "received"; expected_version: number }) {
     const companyId = this.companyId(actor, "assets.acknowledge");
     const asset = this.repository.find(id, companyId);
-    if (asset.current_assigned_user_id !== actor.id && !actor.roles.includes(Roles.Admin)) {
-      throw forbidden("Only the assigned employee can acknowledge this asset.");
-    }
+    assertAssignedAssetEmployee(asset.current_assigned_user_id, actor);
     const assignment = this.repository.activeAssignment(id, companyId);
+    if (!assignment || assignment.assigned_to_user_id !== actor.id) {
+      throw conflict("Asset acknowledgement requires one active employee assignment.", { id });
+    }
     const updated = this.repository.updateVersioned(id, companyId, input.expected_version, (candidate) => {
       candidate.updated_at = nowIso();
     });
     const acknowledgement = this.repository.createAcknowledgement(companyId, {
       asset_id: id,
       employee_user_id: actor.id,
-      assignment_id: assignment?.id ?? null,
+      assignment_id: assignment.id,
       acknowledgement_type: input.acknowledgement_type
     });
     this.appendAssetEvent(companyId, id, actor.id, "asset.acknowledged", {
@@ -287,13 +291,19 @@ export class AssetService {
       acknowledgement_type: acknowledgement.acknowledgement_type
     });
     return {
-      asset: this.presentAsset(updated),
-      acknowledgement,
+      asset: this.presentEmployeeAsset(updated),
+      acknowledgement: {
+        id: acknowledgement.id,
+        acknowledgement_type: acknowledgement.acknowledgement_type,
+        status: acknowledgement.status,
+        created_at: acknowledgement.created_at,
+      },
       version: updated.version
     };
   }
 
   listMaintenance(actor: AuthUser, id: UUID, query: { page: number; page_size: number; status?: string }) {
+    assertAssetManager(actor);
     const companyId = this.companyId(actor, "assets.maintenance.list");
     this.assertAssetVisible(actor, id, "assets.maintenance.list", companyId);
     const items = this.repository.listMaintenance(id, companyId, query.status).map((record) => this.presentMaintenance(record));
@@ -715,6 +725,42 @@ export class AssetService {
       operation,
       requireActiveEmployment: true,
     }).companyId;
+  }
+
+  /**
+   * Employee-facing asset data is deliberately allow-listed. Never spread the
+   * database record or metadata here: those objects contain QR credentials,
+   * procurement data, internal assignment identifiers, and maintenance costs.
+   */
+  private presentEmployeeAsset(asset: AssetRecord) {
+    const activeAssignment = this.repository.activeAssignment(asset.id, asset.company_id);
+    const acknowledged = this.store.assetAcknowledgements.some((item) =>
+      item.company_id === asset.company_id &&
+      item.asset_id === asset.id &&
+      item.assignment_id === activeAssignment?.id &&
+      item.employee_user_id === asset.current_assigned_user_id &&
+      item.acknowledgement_type === "received" &&
+      item.status === "acknowledged"
+    );
+    const metadata = asset.metadata ?? {};
+    return {
+      id: asset.id,
+      asset_code: asset.asset_code,
+      asset_type: asset.asset_type,
+      name: asset.name,
+      serial_no: asset.serial_no,
+      status: asset.status,
+      version: asset.version,
+      category: metadata.category,
+      brand: metadata.brand,
+      model: metadata.model,
+      warranty_expiry: metadata.warranty_expiry,
+      location: metadata.location,
+      condition: metadata.condition,
+      assigned_on: activeAssignment?.assigned_at ?? null,
+      is_assigned_to_current_user: asset.current_assigned_user_id !== null,
+      assignment_acknowledged: acknowledged,
+    };
   }
 
   private getWarrantyAlertWindowDays(): number {

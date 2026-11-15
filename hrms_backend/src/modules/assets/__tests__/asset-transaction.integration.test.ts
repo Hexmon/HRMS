@@ -145,6 +145,11 @@ describe("asset transaction boundary", () => {
       [asset.id],
     );
     expect(assignments.rows[0]?.count).toBe("1");
+    const assignmentEvents = await first.store.pgPool!.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM assets.asset_state_events WHERE asset_id = $1 AND event_type = 'asset.assigned'",
+      [asset.id],
+    );
+    expect(assignmentEvents.rows[0]?.count).toBe("1");
     const changed = await first.inject({ ...options, payload: { ...options.payload, assigned_to_user_id: seedIds.employee2 } });
     expect(changed.statusCode).toBe(409);
     await first.store.pgPool!.query("UPDATE core.users SET employment_status = 'inactive' WHERE id = $1", [seedIds.employee1]);
@@ -820,6 +825,11 @@ describe("asset transaction boundary", () => {
     expect([a.statusCode, b.statusCode].sort()).toEqual([200, 409]);
     const durable = await first.store.pgPool!.query<{ count: string }>("SELECT count(*)::text AS count FROM assets.asset_assignments WHERE asset_id = $1 AND status = 'active'", [asset.id]);
     expect(durable.rows[0]?.count).toBe("1");
+    const durableEvents = await first.store.pgPool!.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM assets.asset_state_events WHERE asset_id = $1 AND event_type = 'asset.assigned'",
+      [asset.id],
+    );
+    expect(durableEvents.rows[0]?.count).toBe("1");
   });
 
   it("keeps read-only POST routes out of command persistence and reads fresh state on a stale replica", async () => {
@@ -845,7 +855,23 @@ describe("asset transaction boundary", () => {
     const employee = await loginAs(second, "E1");
     const mine = await second.inject({ method: "GET", url: "/api/v1/assets/my", headers: authHeader(employee.token) });
     expect(mine.statusCode).toBe(200);
-    expect(mine.json().items.map((item: { id: string }) => item.id)).toContain(asset.id);
+    const employeeAsset = mine.json().items.find((item: { id: string }) => item.id === asset.id);
+    expect(employeeAsset).toMatchObject({
+      id: asset.id,
+      is_assigned_to_current_user: true,
+      assignment_acknowledged: false,
+    });
+    for (const protectedField of [
+      "qr_hash", "metadata", "purchase_date", "vendor", "invoice_no", "cost", "maintenance",
+      "current_assigned_user_id", "assigned_to_user_id", "assigned_to_name", "active_assignment_id",
+      "latest_acknowledgement", "created_at", "updated_at", "deleted_at",
+    ]) {
+      expect(employeeAsset).not.toHaveProperty(protectedField);
+    }
+    const ownDetail = await second.inject({ method: "GET", url: `/api/v1/assets/${asset.id}`, headers: authHeader(employee.token) });
+    expect(ownDetail.statusCode).toBe(200);
+    expect(ownDetail.json()).toEqual(employeeAsset);
+    expect(staleDetail.json()).toHaveProperty("qr_hash");
     const admin = await loginAs(second, "ADM");
     const coreDetail = await second.inject({ method: "GET", url: `/api/v1/core/users/${seedIds.employee1}`, headers: authHeader(admin.token) });
     expect(coreDetail.statusCode).toBe(200);
@@ -1121,7 +1147,7 @@ describe("asset transaction boundary", () => {
     expect(openTicket.rows[0]).toEqual({ status: "open", assignment_id: null });
   });
 
-  it("denies historical Admin acknowledgement replay after durable Admin role removal", async () => {
+  it("denies Admin acknowledgement on behalf of the assigned employee", async () => {
     const manager = await loginAs(first, "AST");
     const admin = await loginAs(first, "ADM");
     const inventory = await first.inject({ method: "GET", url: "/api/v1/assets", headers: authHeader(manager.token) });
@@ -1129,13 +1155,9 @@ describe("asset transaction boundary", () => {
     const assigned = await first.inject({ method: "POST", url: `/api/v1/assets/${asset.id}/assign`, headers: { ...authHeader(manager.token), "Idempotency-Key": randomUUID() }, payload: { assigned_to_user_id: seedIds.employee1, expected_version: asset.version } });
     expect(assigned.statusCode).toBe(200);
     const acknowledgement = { method: "POST" as const, url: `/api/v1/assets/${asset.id}/acknowledgements`, headers: { ...authHeader(admin.token), "Idempotency-Key": randomUUID() }, payload: { acknowledgement_type: "received", expected_version: assigned.json().version } };
-    const original = await first.inject(acknowledgement);
-    expect(original.statusCode).toBe(200);
-    expect((await first.inject(acknowledgement)).statusCode).toBe(200);
-    await first.store.pgPool!.query("UPDATE core.user_roles SET status = 'inactive' WHERE user_id = $1 AND role_key = $2", [seedIds.admin, Roles.Admin]);
     expect((await first.inject(acknowledgement)).statusCode).toBe(403);
     const durable = await first.store.pgPool!.query<{ count: string }>("SELECT count(*)::text AS count FROM assets.asset_acknowledgements WHERE asset_id = $1", [asset.id]);
-    expect(durable.rows[0]?.count).toBe("1");
+    expect(durable.rows[0]?.count).toBe("0");
   });
 
   it("replays a historical employee acknowledgement after reassignment without allowing a new one", async () => {
@@ -1150,6 +1172,11 @@ describe("asset transaction boundary", () => {
     const acknowledgement = { method: "POST" as const, url: `/api/v1/assets/${asset.id}/acknowledgements`, headers: { ...authHeader(employee.token), "Idempotency-Key": key }, payload: { acknowledgement_type: "received", expected_version: assigned.json().version } };
     const firstAck = await first.inject(acknowledgement);
     expect(firstAck.statusCode).toBe(200);
+    for (const protectedField of ["qr_hash", "metadata", "vendor", "invoice_no", "cost", "maintenance"]) {
+      expect(firstAck.json().asset).not.toHaveProperty(protectedField);
+    }
+    expect(firstAck.json().acknowledgement).not.toHaveProperty("assignment_id");
+    expect(firstAck.json().acknowledgement).not.toHaveProperty("employee_user_id");
     const returned = await first.inject({ method: "POST", url: `/api/v1/assets/${asset.id}/return`, headers: managerHeaders(), payload: { expected_version: firstAck.json().version } });
     expect(returned.statusCode).toBe(200);
     const maintenance = await first.inject({ method: "POST", url: `/api/v1/assets/${asset.id}/maintenance`, headers: managerHeaders(), payload: { maintenance_type: "inspection", started_on: "2026-11-11", status: "completed", expected_version: returned.json().version } });
@@ -1162,6 +1189,11 @@ describe("asset transaction boundary", () => {
     expect(fresh.statusCode).toBe(403);
     const durable = await first.store.pgPool!.query<{ count: string }>("SELECT count(*)::text AS count FROM assets.asset_acknowledgements WHERE asset_id = $1", [asset.id]);
     expect(durable.rows[0]?.count).toBe("1");
+    const acknowledgementEvents = await first.store.pgPool!.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM assets.asset_state_events WHERE asset_id = $1 AND event_type = 'asset.acknowledged'",
+      [asset.id],
+    );
+    expect(acknowledgementEvents.rows[0]?.count).toBe("1");
   });
 
   it("fails closed when command-only asset persistence is missing or removes a durable row", async () => {
@@ -1408,6 +1440,11 @@ describe("asset transaction boundary", () => {
       [seedIds.employee1],
     );
     expect(tickets.rows[0]?.count).toBe("0");
+    const recoveryEvents = await first.store.pgPool!.query<{ count: string }>(
+      "SELECT count(*)::text AS count FROM assets.asset_state_events WHERE asset_id = $1 AND event_type = 'asset.recovery_requested'",
+      [asset.id],
+    );
+    expect(recoveryEvents.rows[0]?.count).toBe("0");
   });
 
   it("validates command keys, escapes assignee search, and rejects malformed acknowledgement replay", async () => {

@@ -2,8 +2,15 @@ import { webcrypto } from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const apiRequest = vi.hoisted(() => vi.fn());
+const currentActorScope = vi.hoisted(() => ({
+  value: { userId: "employee-a", companyId: "company-a" } as {
+    userId: string;
+    companyId: string;
+  } | null,
+}));
 vi.mock("@/shared/api", () => ({
   apiRequest,
+  getApiActorScope: () => currentActorScope.value,
   ApiError: class ApiError extends Error {
     status: number;
     constructor(input: { status: number; message: string }) {
@@ -17,6 +24,7 @@ describe("asset command intent keys", () => {
   beforeEach(() => {
     vi.resetModules();
     apiRequest.mockReset();
+    currentActorScope.value = { userId: "employee-a", companyId: "company-a" };
     sessionStorage.clear();
     Object.defineProperty(globalThis, "crypto", { configurable: true, value: webcrypto });
   });
@@ -53,6 +61,36 @@ describe("asset command intent keys", () => {
     await Promise.all([first, second]);
   });
 
+  it("keeps a pending command identity scoped across A to B to A account changes", async () => {
+    const body = { asset_code: "S25-SCOPED", asset_type: "Laptop", name: "Scoped device" };
+    apiRequest.mockRejectedValueOnce(new Error("response lost after commit"));
+    const api = (await import("./api")).assetsApi;
+
+    await expect(api.create(body)).rejects.toThrow(/response lost/u);
+    const actorAKey = apiRequest.mock.calls[0]?.[1]?.headers?.["Idempotency-Key"];
+
+    currentActorScope.value = { userId: "employee-b", companyId: "company-a" };
+    apiRequest.mockResolvedValueOnce({ id: "asset-b" });
+    await api.create(body);
+    const actorBKey = apiRequest.mock.calls[1]?.[1]?.headers?.["Idempotency-Key"];
+    expect(actorBKey).not.toBe(actorAKey);
+
+    currentActorScope.value = { userId: "employee-a", companyId: "company-a" };
+    apiRequest.mockResolvedValueOnce({ id: "asset-a" });
+    await api.create(body);
+    expect(apiRequest.mock.calls[2]?.[1]?.headers?.["Idempotency-Key"]).toBe(actorAKey);
+  });
+
+  it("fails closed before an asset command when no active company scope exists", async () => {
+    currentActorScope.value = null;
+    const api = (await import("./api")).assetsApi;
+
+    await expect(api.create({ asset_code: "NO-SCOPE" })).rejects.toThrow(
+      "Asset changes require an active company session.",
+    );
+    expect(apiRequest).not.toHaveBeenCalled();
+  });
+
   it("routes every asset read and command through the intended API contract", async () => {
     apiRequest.mockResolvedValue({ items: [] });
     const { assetsApi } = await import("./api");
@@ -60,7 +98,8 @@ describe("asset command intent keys", () => {
     await assetsApi.list({ page: 2 });
     await assetsApi.myAssets();
     await assetsApi.assignees("A&B");
-    await assetsApi.get("asset-one");
+    const assetId = "00000000-0000-4000-8000-000000000001";
+    await assetsApi.get(assetId);
     await assetsApi.assign("asset-a", { expected_version: 1 });
     await assetsApi.returnAsset("asset-a", { expected_version: 2 });
     await assetsApi.scan("qr/value");
@@ -91,7 +130,7 @@ describe("asset command intent keys", () => {
       "/api/v1/assets/",
       "/api/v1/assets/my",
       "/api/v1/assets/assignees",
-      "/api/v1/assets/asset-one",
+      `/api/v1/assets/${assetId}`,
       "/api/v1/assets/asset-a/assign",
       "/api/v1/assets/asset-a/return",
       "/api/v1/assets/scan/qr%2Fvalue",

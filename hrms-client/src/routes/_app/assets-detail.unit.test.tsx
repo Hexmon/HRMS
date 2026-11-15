@@ -262,6 +262,77 @@ describe("asset detail boundaries", () => {
     ).toBeInTheDocument();
   });
 
+  it("reports maintenance success and failure only after the store boundary settles", async () => {
+    state.detail = { data: asset(), isError: false, isLoading: false, error: null };
+    let resolveMaintenance!: () => void;
+    state.addMaintenance.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        resolveMaintenance = resolve;
+      }),
+    );
+    render(<AssetDetail />);
+    const entry = {
+      id: "maintenance-a",
+      date: "2026-11-14",
+      type: "repair",
+      vendor: "Vendor A",
+      cost: 25,
+      notes: "Repaired",
+    };
+    state.buttonActions["Save"]?.();
+    // The dialog starts with its own form values; invoking the exposed callback
+    // proves the page awaits the mutation before reporting success.
+    await waitFor(() => expect(state.addMaintenance).toHaveBeenCalled());
+    expect(state.toast.success).not.toHaveBeenCalled();
+    resolveMaintenance();
+    await waitFor(() => expect(state.toast.success).toHaveBeenCalledWith("Maintenance logged"));
+    cleanup();
+
+    state.detail = {
+      data: asset({
+        maintenance: [
+          entry,
+          { id: "maintenance-b", date: "2026-11-15", type: "inspection", notes: "Checked" },
+        ],
+      }),
+      isError: false,
+      isLoading: false,
+      error: null,
+    };
+    state.addMaintenance.mockRejectedValueOnce(new Error("maintenance conflict"));
+    render(<AssetDetail />);
+    state.buttonActions["Save"]?.();
+    await waitFor(() =>
+      expect(state.toastApiError).toHaveBeenCalledWith(
+        expect.any(Error),
+        "Maintenance could not be logged.",
+      ),
+    );
+    expect(screen.getAllByText(/Vendor A/).length).toBeGreaterThan(0);
+    expect(screen.getByText(/\$25/)).toBeInTheDocument();
+    expect(screen.getAllByText("inspection").length).toBeGreaterThan(0);
+  });
+
+  it("hides procurement, maintenance, document and audit data from an employee", () => {
+    state.auth.activeRole = "employee";
+    state.detail = { data: asset(), isError: false, isLoading: false, error: null };
+    render(<AssetDetail />);
+
+    for (const label of [
+      "Vendor",
+      "Invoice #",
+      "Purchased",
+      "Cost",
+      "Maintenance",
+      "Documents",
+      "Audit Trail",
+    ]) {
+      expect(screen.queryByText(label)).not.toBeInTheDocument();
+    }
+    expect(screen.getByText("Warranty")).toBeInTheDocument();
+    expect(screen.getByText("Location")).toBeInTheDocument();
+  });
+
   it("executes API detail and assignee query functions with the current search", async () => {
     state.executeQueries = true;
     state.detail = { data: asset(), isError: false, isLoading: false, error: null };

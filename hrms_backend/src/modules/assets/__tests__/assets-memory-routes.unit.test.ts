@@ -6,6 +6,7 @@ import { errorsPlugin } from "../../../plugins/errors.js";
 import { createMemoryDataStore, nowIso, seedIds, type MemoryDataStore } from "../../../platform/data-store.js";
 import { assetRoutes } from "../routes.js";
 import { createRecoveryTicketsForTerminatedEmployee } from "../events.js";
+import { assertAssignedAssetEmployee } from "../policy.js";
 
 const actorHeader = "x-test-actor";
 
@@ -236,6 +237,162 @@ describe("asset routes with the memory persistence fallback", () => {
       payload: { product_id: seedIds.licenseProduct, hardware_fingerprint: "memory-device" },
     });
     expect(validation.statusCode).toBe(200);
+  });
+
+  it("enforces the assigned-employee acknowledgement policy directly", () => {
+    const employee = store.users.find((user) => user.id === seedIds.employee1)!;
+    expect(() => assertAssignedAssetEmployee(employee.id, employee)).not.toThrow();
+    expect(() => assertAssignedAssetEmployee(seedIds.employee2, employee)).toThrow(
+      "Only the assigned employee can acknowledge this asset.",
+    );
+    expect(() => assertAssignedAssetEmployee(null, employee)).toThrow(
+      "Only the assigned employee can acknowledge this asset.",
+    );
+  });
+
+  it("returns an allow-listed asset view to the assigned employee", async () => {
+    const asset = store.assets[0]!;
+    asset.metadata = {
+      category: "Computer",
+      brand: "Lenovo",
+      model: "T14",
+      warranty_expiry: "2027-11-01",
+      location: "Hyderabad",
+      condition: "good",
+      procurement_cost: "65000.00",
+      vendor: "Private vendor",
+      invoice_no: "INV-PRIVATE",
+      confidential_note: "never expose",
+    };
+    const assigned = await app.inject({
+      method: "POST",
+      url: `/assets/${asset.id}/assign`,
+      headers: commandHeaders(seedIds.assetManager),
+      payload: { assigned_to_user_id: seedIds.employee1, expected_version: asset.version },
+    });
+    expect(assigned.statusCode).toBe(200);
+
+    const deniedAdminAcknowledgement = await app.inject({
+      method: "POST",
+      url: `/assets/${asset.id}/acknowledgements`,
+      headers: commandHeaders(seedIds.admin),
+      payload: { acknowledgement_type: "received", expected_version: assigned.json().version },
+    });
+    expect(deniedAdminAcknowledgement.statusCode).toBe(403);
+
+    const invalidReturnedAcknowledgement = await app.inject({
+      method: "POST",
+      url: `/assets/${asset.id}/acknowledgements`,
+      headers: commandHeaders(seedIds.employee1),
+      payload: { acknowledgement_type: "returned", expected_version: assigned.json().version },
+    });
+    expect(invalidReturnedAcknowledgement.statusCode).toBe(400);
+
+    const employeeAcknowledgement = await app.inject({
+      method: "POST",
+      url: `/assets/${asset.id}/acknowledgements`,
+      headers: commandHeaders(seedIds.employee1),
+      payload: { acknowledgement_type: "received", expected_version: assigned.json().version },
+    });
+    expect(employeeAcknowledgement.statusCode).toBe(200);
+    expect(employeeAcknowledgement.json().acknowledgement).toEqual(expect.objectContaining({
+      acknowledgement_type: "received",
+      status: "acknowledged",
+    }));
+    expect(employeeAcknowledgement.json().acknowledgement).not.toHaveProperty("assignment_id");
+    expect(employeeAcknowledgement.json().acknowledgement).not.toHaveProperty("employee_user_id");
+    expect(employeeAcknowledgement.json().asset.assignment_acknowledged).toBe(true);
+    for (const protectedField of ["qr_hash", "metadata", "vendor", "invoice_no", "cost", "maintenance"]) {
+      expect(employeeAcknowledgement.json().asset).not.toHaveProperty(protectedField);
+    }
+
+    const employeeHeaders = { [actorHeader]: seedIds.employee1 };
+    const mine = await app.inject({ method: "GET", url: "/assets/my", headers: employeeHeaders });
+    const detail = await app.inject({ method: "GET", url: `/assets/${asset.id}`, headers: employeeHeaders });
+    const maintenance = await app.inject({ method: "GET", url: `/assets/${asset.id}/maintenance`, headers: employeeHeaders });
+    expect(mine.statusCode).toBe(200);
+    expect(detail.statusCode).toBe(200);
+    expect(maintenance.statusCode).toBe(403);
+    for (const employeeAsset of [mine.json().items[0], detail.json()]) {
+      expect(employeeAsset).toMatchObject({
+        id: asset.id,
+        brand: "Lenovo",
+        is_assigned_to_current_user: true,
+        assignment_acknowledged: true,
+      });
+      for (const protectedField of [
+        "qr_hash", "metadata", "purchase_date", "vendor", "invoice_no", "cost", "maintenance",
+        "current_assigned_user_id", "assigned_to_user_id", "assigned_to_name", "active_assignment_id",
+        "latest_acknowledgement", "created_at", "updated_at", "deleted_at",
+      ]) {
+        expect(employeeAsset).not.toHaveProperty(protectedField);
+      }
+    }
+
+    const managerDetail = await app.inject({
+      method: "GET",
+      url: `/assets/${asset.id}`,
+      headers: { [actorHeader]: seedIds.assetManager },
+    });
+    expect(managerDetail.json()).toMatchObject({
+      qr_hash: asset.qr_hash,
+      vendor: "Private vendor",
+      invoice_no: "INV-PRIVATE",
+      cost: "65000.00",
+    });
+  });
+
+  it("fails acknowledgement closed when custody has no matching active assignment", async () => {
+    const asset = store.assets[0]!;
+    const assigned = await app.inject({
+      method: "POST",
+      url: `/assets/${asset.id}/assign`,
+      headers: commandHeaders(seedIds.assetManager),
+      payload: { assigned_to_user_id: seedIds.employee1, expected_version: asset.version },
+    });
+    expect(assigned.statusCode).toBe(200);
+    const assignment = store.assetAssignments.find(
+      (candidate) => candidate.asset_id === asset.id && candidate.status === "active",
+    )!;
+
+    assignment.status = "returned";
+    const missingAssignment = await app.inject({
+      method: "POST",
+      url: `/assets/${asset.id}/acknowledgements`,
+      headers: commandHeaders(seedIds.employee1),
+      payload: { acknowledgement_type: "received", expected_version: assigned.json().version },
+    });
+    expect(missingAssignment.statusCode).toBe(409);
+
+    assignment.status = "active";
+    assignment.assigned_to_user_id = seedIds.employee2;
+    const mismatchedAssignment = await app.inject({
+      method: "POST",
+      url: `/assets/${asset.id}/acknowledgements`,
+      headers: commandHeaders(seedIds.employee1),
+      payload: { acknowledgement_type: "received", expected_version: assigned.json().version },
+    });
+    expect(mismatchedAssignment.statusCode).toBe(409);
+  });
+
+  it("keeps an incomplete employee projection safe when optional metadata and assignment are absent", async () => {
+    const asset = store.assets[0]!;
+    (asset as unknown as { metadata: Record<string, unknown> | null }).metadata = null;
+    asset.current_assigned_user_id = seedIds.employee1;
+    store.assetAssignments = store.assetAssignments.filter((candidate) => candidate.asset_id !== asset.id);
+
+    const mine = await app.inject({
+      method: "GET",
+      url: "/assets/my",
+      headers: { [actorHeader]: seedIds.employee1 },
+    });
+    expect(mine.statusCode).toBe(200);
+    expect(mine.json().items[0]).toMatchObject({
+      id: asset.id,
+      assigned_on: null,
+      assignment_acknowledged: false,
+    });
+    expect(mine.json().items[0]).not.toHaveProperty("metadata");
   });
 
   it("binds and settles one exact custody assignment in the memory lifecycle", async () => {

@@ -1,10 +1,16 @@
-import { apiRequest, ApiError } from "@/shared/api";
+import { apiRequest, ApiError, getApiActorScope } from "@/shared/api";
 import type { ApiRecord, ExpectedVersionBody, PageQuery, PaginatedResponse } from "@/shared/api";
 
 const pendingAssetCommands = new Map<string, { key: string }>();
 
 async function intentSlot(method: "POST" | "PATCH", path: string, body: unknown): Promise<string> {
-  const bytes = new TextEncoder().encode(JSON.stringify([method, path, body]));
+  const actorScope = getApiActorScope();
+  if (!actorScope) {
+    throw new Error("Asset changes require an active company session.");
+  }
+  const bytes = new TextEncoder().encode(
+    JSON.stringify([actorScope.userId, actorScope.companyId, method, path, body]),
+  );
   const digest = await crypto.subtle.digest("SHA-256", bytes);
   return `hrms.asset.intent.${Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, "0")).join("")}`;
 }
