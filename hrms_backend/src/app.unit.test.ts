@@ -208,6 +208,35 @@ describe("app persistence flushing", () => {
     }
   });
 
+  it("releases the actor-scoped Core mutation lock when company context is missing", async () => {
+    process.env.APP_ENV = "local";
+    const store = createMemoryDataStore();
+    const app = await buildApp({ dataStore: store, rateLimit: false });
+    await app.ready();
+    try {
+      const admin = await loginAs(app, "ADM");
+      const preference = store.userSessionPreferences.find((row) => row.user_id === admin.user.id)!;
+      const target = store.users.find((user) => user.employee_code === "E2")!;
+      preference.company_id = null;
+      const first = await app.inject({
+        method: "POST",
+        url: `/api/v1/core/users/${target.id}/deactivate`,
+        headers: authHeader(admin.token),
+        payload: { expected_version: target.version, status: "inactive" },
+      });
+      const second = await app.inject({
+        method: "POST",
+        url: `/api/v1/core/users/${target.id}/deactivate`,
+        headers: authHeader(admin.token),
+        payload: { expected_version: target.version, status: "inactive" },
+      });
+      expect(first.statusCode).toBe(400);
+      expect(second.statusCode).toBe(400);
+    } finally {
+      await app.close();
+    }
+  });
+
   it("keeps an observable full persistence fallback for unmapped mutation routes", async () => {
     process.env.APP_ENV = "local";
     const store = createMemoryDataStore();

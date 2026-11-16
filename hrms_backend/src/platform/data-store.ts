@@ -440,6 +440,12 @@ export interface ObjectStoragePort {
 
 export interface DataStorePersistence {
   flush(): Promise<void>;
+  acquireAuthMutationScope?(scope: {
+    userIds: readonly UUID[];
+    emails: readonly string[];
+    employeeCodes: readonly string[];
+    tokenHashes: readonly string[];
+  }): Promise<{ userIds: UUID[]; release: () => Promise<void> }>;
   flushAuth?(options?: AuthPersistenceFlushOptions): Promise<void>;
   flushCompanyBootstrap?(options?: AuthPersistenceFlushOptions): Promise<void>;
   flushCompanyLogo?(

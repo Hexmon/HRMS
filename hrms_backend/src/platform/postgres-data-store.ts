@@ -81,7 +81,7 @@ import { createValkeyClient } from "./valkey-client.js";
 import type { EmailDeliveryRecord, EmailEventRecord } from "./email/types.js";
 import { CloudinaryObjectStorage } from "./object-storage.js";
 import { normalizeAttendancePolicyConfig } from "../modules/attendance/policy-config.js";
-import { companyContextRequired, conflict, forbidden, notFound, unauthorized } from "./errors.js";
+import { badRequest, companyContextRequired, conflict, forbidden, notFound, unauthorized } from "./errors.js";
 import type {
   DepartmentCreateInput,
   DepartmentUpdateInput,
@@ -95,8 +95,28 @@ function optionalSet(
   return values?.length ? new Set(values) : undefined;
 }
 
+interface CoreMutationScopeSignatures {
+  users: string;
+  credentials: string;
+  authTokens: string;
+  preferences: string;
+  emailDeliveries: string;
+  companies: string;
+  outbox: string;
+}
+
+interface CompanyBootstrapScopeSignatures {
+  departments: string;
+  designations: string;
+  policies: string;
+}
+
 function normalizeAdminMasterCode(value: string): string {
-  return value.trim().toUpperCase().replace(/[^A-Z0-9]+/gu, "_").replace(/^_+|_+$/gu, "");
+  const normalized = value.trim().toUpperCase().replace(/[^A-Z0-9]+/gu, "_").replace(/^_+|_+$/gu, "").slice(0, 40);
+  if (!normalized) {
+    throw badRequest("Master data code must include at least one letter or number", { field: "code" });
+  }
+  return normalized;
 }
 
 function mapDepartmentRow(row: Record<string, unknown>): Department {
@@ -885,7 +905,7 @@ class PostgresPersistence {
         if (referenced.rows[0]) throw conflict("Cannot deactivate designation while active employees reference it.", { id });
       }
       const title = (input.title ?? input.name ?? existing?.title)?.trim();
-      if (!title) throw conflict("Designation title is required");
+      if (!title) throw badRequest("Designation title is required", { field: "title" });
       const codeSource = input.designation_code ?? input.code;
       const code = codeSource ? normalizeAdminMasterCode(codeSource) : existing?.designation_code ?? normalizeAdminMasterCode(title);
       if (designations.some((designation) => designation.id !== id && designation.designation_code.toLowerCase() === code.toLowerCase())) {
@@ -1260,6 +1280,20 @@ class PostgresPersistence {
   }
 
   async flushAuth(options: AuthPersistenceFlushOptions = {}): Promise<void> {
+    const recoveryScope = options.userIds?.length
+      ? {
+          userIds: new Set(options.userIds),
+          aggregateIds: new Set(options.userIds),
+          companyIds: new Set(options.companyIds ?? []),
+        }
+      : undefined;
+    const expectedScopeSignatures = recoveryScope
+      ? this.coreMutationScopeSignatures(
+          recoveryScope.userIds,
+          recoveryScope.aggregateIds,
+          recoveryScope.companyIds,
+        )
+      : undefined;
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -1268,28 +1302,182 @@ class PostgresPersistence {
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
+      if (recoveryScope && expectedScopeSignatures) {
+        try {
+          await this.reloadCoreMutationScope(
+            client,
+            recoveryScope.userIds,
+            recoveryScope.aggregateIds,
+            recoveryScope.companyIds,
+            expectedScopeSignatures,
+          );
+        } catch (recoveryError) {
+          throw new AggregateError(
+            [error, recoveryError],
+            "Auth mutation failed and its in-memory rollback reconciliation also failed.",
+          );
+        }
+      }
       throw error;
     } finally {
       client.release();
     }
   }
 
+  async acquireAuthMutationScope(scope: {
+    userIds: readonly UUID[];
+    emails: readonly string[];
+    employeeCodes: readonly string[];
+    tokenHashes: readonly string[];
+  }): Promise<{ userIds: UUID[]; release: () => Promise<void> }> {
+    const userIds = new Set(scope.userIds);
+    const emails = new Set(scope.emails.map((email) => email.trim().toLowerCase()));
+    const employeeCodes = new Set(scope.employeeCodes.map((code) => code.trim().toUpperCase()));
+    const tokenHashes = new Set(scope.tokenHashes);
+    const heldLockKeys: string[] = [];
+    const initialLockKeys = [
+      ...[...emails].map((email) => `auth-email:${email}`),
+      ...[...employeeCodes].map((code) => `auth-employee-code:${code}`),
+      ...[...tokenHashes].map((tokenHash) => `auth-token:${tokenHash}`),
+      ...[...userIds].map((userId) => `auth-user:${userId}`),
+    ].sort();
+    const client = await this.pool.connect();
+    let released = false;
+    const release = async () => {
+      if (released) return;
+      released = true;
+      try {
+        for (const key of [...heldLockKeys].reverse()) {
+          await client.query("SELECT pg_advisory_unlock(hashtext($1::text))", [key]);
+        }
+      } finally {
+        client.release();
+      }
+    };
+    try {
+      for (const key of initialLockKeys) {
+        await client.query("SELECT pg_advisory_lock(hashtext($1::text))", [key]);
+        heldLockKeys.push(key);
+      }
+      if (emails.size) {
+        const resolved = await client.query<{ id: string }>(
+          "SELECT id FROM core.users WHERE lower(email) = ANY($1::text[]) AND deleted_at IS NULL",
+          [[...emails]],
+        );
+        for (const row of resolved.rows) userIds.add(row.id);
+      }
+      if (employeeCodes.size) {
+        const resolved = await client.query<{ id: string }>(
+          "SELECT id FROM core.users WHERE upper(employee_code) = ANY($1::text[]) AND deleted_at IS NULL",
+          [[...employeeCodes]],
+        );
+        for (const row of resolved.rows) userIds.add(row.id);
+      }
+      if (tokenHashes.size) {
+        const resolved = await client.query<{ user_id: string | null }>(
+          "SELECT user_id FROM platform.auth_tokens WHERE token_hash = ANY($1::text[])",
+          [[...tokenHashes]],
+        );
+        for (const row of resolved.rows) {
+          if (row.user_id) userIds.add(row.user_id);
+        }
+      }
+      for (const key of [...userIds].sort().map((userId) => `auth-user:${userId}`)) {
+        if (heldLockKeys.includes(key)) continue;
+        await client.query("SELECT pg_advisory_lock(hashtext($1::text))", [key]);
+        heldLockKeys.push(key);
+      }
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const users = await this.loadUsers(client);
+      const credentials = await this.loadUserCredentials(client);
+      const tokens = await this.loadAuthTokens(client);
+      const preferences = await this.loadUserSessionPreferences(client);
+      const deliveries = await this.loadEmailDeliveries(client);
+      const companyIds = new Set([
+        ...preferences.filter((record) => userIds.has(record.user_id)).flatMap((record) => record.company_id ? [record.company_id] : []),
+        ...tokens.filter((record) => Boolean(record.user_id && userIds.has(record.user_id))).flatMap((record) => record.company_id ? [record.company_id] : []),
+      ]);
+      const companies = await this.loadCompanyProfiles(client);
+      await client.query("COMMIT");
+      this.store.users = this.replaceScopedRecords(this.store.users, users, (record) => userIds.has(record.id));
+      this.store.userCredentials = this.replaceScopedRecords(
+        this.store.userCredentials,
+        credentials,
+        (record) => userIds.has(record.user_id),
+      );
+      this.store.authTokens = this.replaceScopedRecords(
+        this.store.authTokens,
+        tokens,
+        (record) => Boolean(record.user_id && userIds.has(record.user_id)),
+      );
+      this.store.userSessionPreferences = this.replaceScopedRecords(
+        this.store.userSessionPreferences,
+        preferences,
+        (record) => userIds.has(record.user_id),
+      );
+      this.store.emailDeliveries = this.replaceScopedRecords(
+        this.store.emailDeliveries,
+        deliveries,
+        (record) => Boolean(record.user_id && userIds.has(record.user_id)),
+      );
+      this.store.companyProfiles = this.replaceScopedRecords(
+        this.store.companyProfiles,
+        companies,
+        (record) => companyIds.has(record.id),
+      );
+      return { userIds: [...userIds], release };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(Boolean);
+      await release();
+      throw error;
+    }
+  }
+
   async flushCompanyBootstrap(
     options: AuthPersistenceFlushOptions = {},
   ): Promise<void> {
+    const userIds = new Set(options.userIds ?? []);
+    const companyIds = new Set(options.companyIds ?? []);
+    const expectedCoreSignatures = userIds.size
+      ? this.coreMutationScopeSignatures(userIds, userIds, companyIds)
+      : undefined;
+    const expectedMasterSignatures = companyIds.size
+      ? this.companyBootstrapScopeSignatures(companyIds)
+      : undefined;
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      const companyIds = optionalSet(options.companyIds);
-      if (!companyIds?.size) {
+      if (!companyIds.size) {
         throw new Error("Company bootstrap persistence requires an explicit company id.");
       }
       await this.flushCoreMasterData(client, companyIds, false);
+      await this.flushCompanyBootstrapPolicies(client, companyIds);
       await this.flushAuthCore(client, options);
       await this.flushAuthPlatform(client, options);
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
+      if (expectedCoreSignatures && expectedMasterSignatures) {
+        try {
+          await this.reloadCoreMutationScope(
+            client,
+            userIds,
+            userIds,
+            companyIds,
+            expectedCoreSignatures,
+          );
+          await this.reloadCompanyBootstrapScope(
+            client,
+            companyIds,
+            expectedMasterSignatures,
+          );
+        } catch (recoveryError) {
+          throw new AggregateError(
+            [error, recoveryError],
+            "Company bootstrap failed and its in-memory rollback reconciliation also failed.",
+          );
+        }
+      }
       throw error;
     } finally {
       client.release();
@@ -1319,6 +1507,20 @@ class PostgresPersistence {
     domain: PersistenceDomain,
     options: DomainPersistenceFlushOptions = {},
   ): Promise<void> {
+    const coreRecoveryScope = domain === "core" && options.userIds?.length
+      ? {
+          userIds: new Set(options.userIds),
+          aggregateIds: new Set(options.aggregateIds ?? options.userIds),
+          companyIds: new Set(options.companyIds ?? []),
+        }
+      : undefined;
+    const expectedCoreScopeSignatures = coreRecoveryScope
+      ? this.coreMutationScopeSignatures(
+          coreRecoveryScope.userIds,
+          coreRecoveryScope.aggregateIds,
+          coreRecoveryScope.companyIds,
+        )
+      : undefined;
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -1386,11 +1588,181 @@ class PostgresPersistence {
       }
       await client.query("COMMIT");
     } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
+      await client.query("ROLLBACK").catch(Boolean);
+      if (coreRecoveryScope && expectedCoreScopeSignatures) {
+        try {
+          await this.reloadCoreMutationScope(
+            client,
+            coreRecoveryScope.userIds,
+            coreRecoveryScope.aggregateIds,
+            coreRecoveryScope.companyIds,
+            expectedCoreScopeSignatures,
+          );
+        } catch (recoveryError) {
+          throw new AggregateError(
+            [error, recoveryError],
+            "Core mutation failed and its in-memory rollback reconciliation also failed.",
+          );
+        }
+      }
       throw error;
     } finally {
       client.release();
     }
+  }
+
+  private async reloadCoreMutationScope(
+    client: PoolClient,
+    userIds: ReadonlySet<string>,
+    aggregateIds: ReadonlySet<string>,
+    companyIds: ReadonlySet<string>,
+    expectedScopeSignatures: CoreMutationScopeSignatures,
+  ): Promise<void> {
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const lockCompanyIds = new Set([
+        ...companyIds,
+        ...this.store.userSessionPreferences
+        .filter((record) => userIds.has(record.user_id) && record.company_id)
+        .map((record) => record.company_id!),
+      ]);
+      await this.lockMasterAssignments(client, lockCompanyIds);
+      const users = await this.loadUsers(client);
+      const credentials = await this.loadUserCredentials(client);
+      const authTokens = await this.loadAuthTokens(client);
+      const preferences = await this.loadUserSessionPreferences(client);
+      const emailDeliveries = await this.loadEmailDeliveries(client);
+      const companies = await this.loadCompanyProfiles(client);
+      const outbox = await this.loadOutbox(client);
+      await client.query("COMMIT");
+      const currentSignatures = this.coreMutationScopeSignatures(userIds, aggregateIds, companyIds);
+      if (currentSignatures.users === expectedScopeSignatures.users) {
+        this.store.users = this.replaceScopedRecords(
+          this.store.users,
+          users,
+          (record) => userIds.has(record.id),
+        );
+      }
+      if (currentSignatures.credentials === expectedScopeSignatures.credentials) {
+        this.store.userCredentials = this.replaceScopedRecords(
+          this.store.userCredentials,
+          credentials,
+          (record) => userIds.has(record.user_id),
+        );
+      }
+      if (currentSignatures.authTokens === expectedScopeSignatures.authTokens) {
+        this.store.authTokens = this.replaceScopedRecords(
+          this.store.authTokens,
+          authTokens,
+          (record) => Boolean(record.user_id && userIds.has(record.user_id)),
+        );
+      }
+      if (currentSignatures.preferences === expectedScopeSignatures.preferences) {
+        this.store.userSessionPreferences = this.replaceScopedRecords(
+          this.store.userSessionPreferences,
+          preferences,
+          (record) => userIds.has(record.user_id),
+        );
+      }
+      if (currentSignatures.emailDeliveries === expectedScopeSignatures.emailDeliveries) {
+        this.store.emailDeliveries = this.replaceScopedRecords(
+          this.store.emailDeliveries,
+          emailDeliveries,
+          (record) => Boolean(record.user_id && userIds.has(record.user_id)),
+        );
+      }
+      if (currentSignatures.companies === expectedScopeSignatures.companies) {
+        this.store.companyProfiles = this.replaceScopedRecords(
+          this.store.companyProfiles,
+          companies,
+          (record) => companyIds.has(record.id),
+        );
+      }
+      if (currentSignatures.outbox === expectedScopeSignatures.outbox) {
+        this.store.outbox = this.replaceScopedRecords(
+          this.store.outbox,
+          outbox,
+          (record) => aggregateIds.has(record.aggregate_id),
+        );
+      }
+    } catch (error) {
+      await client.query("ROLLBACK").catch(Boolean);
+      throw error;
+    }
+  }
+
+  private coreMutationScopeSignatures(
+    userIds: ReadonlySet<string>,
+    aggregateIds: ReadonlySet<string>,
+    companyIds: ReadonlySet<string> = new Set(),
+  ): CoreMutationScopeSignatures {
+    return {
+      users: JSON.stringify(this.store.users.filter((record) => userIds.has(record.id))),
+      credentials: JSON.stringify(this.store.userCredentials.filter((record) => userIds.has(record.user_id))),
+      authTokens: JSON.stringify(this.store.authTokens.filter((record) => Boolean(record.user_id && userIds.has(record.user_id)))),
+      preferences: JSON.stringify(this.store.userSessionPreferences.filter((record) => userIds.has(record.user_id))),
+      emailDeliveries: JSON.stringify(this.store.emailDeliveries.filter((record) => Boolean(record.user_id && userIds.has(record.user_id)))),
+      companies: JSON.stringify(this.store.companyProfiles.filter((record) => companyIds.has(record.id))),
+      outbox: JSON.stringify(this.store.outbox.filter((record) => aggregateIds.has(record.aggregate_id))),
+    };
+  }
+
+  private async reloadCompanyBootstrapScope(
+    client: PoolClient,
+    companyIds: ReadonlySet<string>,
+    expectedSignatures: CompanyBootstrapScopeSignatures,
+  ): Promise<void> {
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      await this.lockMasterAssignments(client, companyIds);
+      const departments = await this.loadDepartments(client);
+      const designations = await this.loadDesignations(client);
+      const policies = await this.loadAdminPolicies(client);
+      await client.query("COMMIT");
+      const currentSignatures = this.companyBootstrapScopeSignatures(companyIds);
+      if (currentSignatures.departments === expectedSignatures.departments) {
+        this.store.departments = this.replaceScopedRecords(
+          this.store.departments,
+          departments,
+          (record) => Boolean(record.company_id && companyIds.has(record.company_id)),
+        );
+      }
+      if (currentSignatures.designations === expectedSignatures.designations) {
+        this.store.designations = this.replaceScopedRecords(
+          this.store.designations,
+          designations,
+          (record) => Boolean(record.company_id && companyIds.has(record.company_id)),
+        );
+      }
+      if (currentSignatures.policies === expectedSignatures.policies) {
+        this.store.adminPolicies = this.replaceScopedRecords(
+          this.store.adminPolicies,
+          policies,
+          (record) => Boolean(record.company_id && companyIds.has(record.company_id)),
+        );
+      }
+    } catch (error) {
+      await client.query("ROLLBACK").catch(Boolean);
+      throw error;
+    }
+  }
+
+  private companyBootstrapScopeSignatures(
+    companyIds: ReadonlySet<string>,
+  ): CompanyBootstrapScopeSignatures {
+    return {
+      departments: JSON.stringify(this.store.departments.filter((record) => Boolean(record.company_id && companyIds.has(record.company_id)))),
+      designations: JSON.stringify(this.store.designations.filter((record) => Boolean(record.company_id && companyIds.has(record.company_id)))),
+      policies: JSON.stringify(this.store.adminPolicies.filter((record) => Boolean(record.company_id && companyIds.has(record.company_id)))),
+    };
+  }
+
+  private replaceScopedRecords<T>(
+    current: readonly T[],
+    durable: readonly T[],
+    inScope: (record: T) => boolean,
+  ): T[] {
+    return [...current.filter((record) => !inScope(record)), ...durable.filter(inScope)];
   }
 
   async close(): Promise<void> {
@@ -1447,7 +1819,7 @@ class PostgresPersistence {
         (!token.company_id || !companyIds.has(token.company_id))
       )
         continue;
-      await client.query(
+      const tokenWrite = await client.query<{ id: string }>(
         `INSERT INTO platform.auth_tokens (
           id, token_hash, token_type, user_id, email, company_id, status, expires_at, used_at,
           revoked_at, created_ip_hash, user_agent_hash, last_sent_at, send_count, created_at, metadata
@@ -1459,7 +1831,9 @@ class PostgresPersistence {
             revoked_at = EXCLUDED.revoked_at,
             last_sent_at = EXCLUDED.last_sent_at,
             send_count = EXCLUDED.send_count,
-            metadata = EXCLUDED.metadata`,
+            metadata = EXCLUDED.metadata
+        WHERE platform.auth_tokens.status = 'active'
+        RETURNING id`,
         [
           token.id,
           token.token_hash,
@@ -1479,6 +1853,51 @@ class PostgresPersistence {
           JSON.stringify(token.metadata),
         ],
       );
+      if (tokenWrite.rowCount === 0) {
+        const durable = await client.query<{ matches_snapshot: boolean }>(
+          `SELECT
+             (token_hash IS NOT DISTINCT FROM $2
+              AND token_type IS NOT DISTINCT FROM $3
+              AND user_id IS NOT DISTINCT FROM $4
+              AND email IS NOT DISTINCT FROM $5
+              AND company_id IS NOT DISTINCT FROM $6
+              AND status IS NOT DISTINCT FROM $7
+              AND expires_at IS NOT DISTINCT FROM $8
+              AND used_at IS NOT DISTINCT FROM $9
+              AND revoked_at IS NOT DISTINCT FROM $10
+              AND created_ip_hash IS NOT DISTINCT FROM $11
+              AND user_agent_hash IS NOT DISTINCT FROM $12
+              AND last_sent_at IS NOT DISTINCT FROM $13
+              AND send_count IS NOT DISTINCT FROM $14
+              AND metadata IS NOT DISTINCT FROM $15::jsonb) AS matches_snapshot
+           FROM platform.auth_tokens
+           WHERE id = $1
+           FOR UPDATE`,
+          [
+            token.id,
+            token.token_hash,
+            token.token_type,
+            token.user_id,
+            token.email,
+            token.company_id,
+            token.status,
+            token.expires_at,
+            token.used_at,
+            token.revoked_at,
+            token.created_ip_hash,
+            token.user_agent_hash,
+            token.last_sent_at,
+            token.send_count,
+            JSON.stringify(token.metadata),
+          ],
+        );
+        if (!durable.rows[0]?.matches_snapshot) {
+          throw conflict("Authentication token changed in another process. Retry the request.", {
+            token_id: token.id,
+            token_type: token.token_type,
+          });
+        }
+      }
     }
     for (const delivery of this.store.emailDeliveries) {
       if (userIds && (!delivery.user_id || !userIds.has(delivery.user_id)))
@@ -3334,6 +3753,41 @@ class PostgresPersistence {
     }
   }
 
+  private async flushCompanyBootstrapPolicies(
+    client: PoolClient,
+    companyIds: ReadonlySet<string>,
+  ): Promise<void> {
+    for (const policy of this.store.adminPolicies) {
+      if (!policy.company_id || !companyIds.has(policy.company_id)) continue;
+      await client.query(
+        `INSERT INTO platform.admin_policies (
+          id, company_id, policy_key, module, label, status, config, created_at, updated_at, deleted_at, version
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11)
+        ON CONFLICT (id) DO UPDATE
+        SET company_id = EXCLUDED.company_id,
+            policy_key = EXCLUDED.policy_key,
+            module = EXCLUDED.module, label = EXCLUDED.label, status = EXCLUDED.status,
+            config = EXCLUDED.config, updated_at = EXCLUDED.updated_at,
+            deleted_at = EXCLUDED.deleted_at, version = EXCLUDED.version`,
+        [
+          policy.id,
+          policy.company_id,
+          policy.policy_key,
+          policy.module,
+          policy.label,
+          policy.status,
+          JSON.stringify(policy.config),
+          policy.created_at,
+          policy.updated_at,
+          policy.deleted_at,
+          policy.version,
+        ],
+      );
+      await this.publishAttendanceAdminPolicyVersion(client, policy);
+    }
+  }
+
   private async flushAuthCore(
     client: PoolClient,
     options: AuthPersistenceFlushOptions,
@@ -3375,7 +3829,7 @@ class PostgresPersistence {
           }
         }
       }
-      await client.query(
+      const userWrite = await client.query<{ id: string }>(
         `INSERT INTO core.users (
           id, employee_code, email, full_name, department_id, designation_id, manager_user_id,
           hierarchy_path, employment_status, email_verified_at, email_verification_status,
@@ -3393,7 +3847,9 @@ class PostgresPersistence {
             profile_photo_url = EXCLUDED.profile_photo_url,
             timezone = EXCLUDED.timezone,
             joined_on = EXCLUDED.joined_on, terminated_on = EXCLUDED.terminated_on,
-            deleted_at = EXCLUDED.deleted_at, version = EXCLUDED.version, updated_at = now()`,
+            deleted_at = EXCLUDED.deleted_at, version = EXCLUDED.version, updated_at = now()
+        WHERE core.users.version = EXCLUDED.version - 1
+        RETURNING id`,
         [
           user.id,
           user.employee_code,
@@ -3415,6 +3871,66 @@ class PostgresPersistence {
           user.version,
         ],
       );
+      if (userWrite.rowCount === 0) {
+        const roles = [...user.roles].sort();
+        const durable = await client.query<{ version: number; matches_snapshot: boolean }>(
+          `SELECT u.version,
+             (u.employee_code IS NOT DISTINCT FROM $2
+              AND u.email IS NOT DISTINCT FROM $3
+              AND u.full_name IS NOT DISTINCT FROM $4
+              AND u.department_id IS NOT DISTINCT FROM $5
+              AND u.designation_id IS NOT DISTINCT FROM $6
+              AND u.manager_user_id IS NOT DISTINCT FROM $7
+              AND u.hierarchy_path::text IS NOT DISTINCT FROM $8
+              AND u.employment_status IS NOT DISTINCT FROM $9
+              AND u.email_verified_at IS NOT DISTINCT FROM $10
+              AND u.email_verification_status IS NOT DISTINCT FROM $11
+              AND u.profile_photo_document_id IS NOT DISTINCT FROM $12
+              AND u.profile_photo_url IS NOT DISTINCT FROM $13
+              AND u.timezone IS NOT DISTINCT FROM $14
+              AND u.joined_on IS NOT DISTINCT FROM $15
+              AND u.terminated_on IS NOT DISTINCT FROM $16
+              AND u.deleted_at IS NOT DISTINCT FROM $17
+              AND COALESCE(
+                (SELECT array_agg(ur.role_key::text ORDER BY ur.role_key::text)
+                 FROM core.user_roles ur WHERE ur.user_id = u.id AND ur.status = 'active'),
+                ARRAY[]::text[]
+              ) = $18::text[]
+             ) AS matches_snapshot
+           FROM core.users u
+           WHERE u.id = $1
+           FOR UPDATE`,
+          [
+            user.id,
+            user.employee_code,
+            user.email,
+            user.full_name,
+            user.department_id,
+            user.designation_id,
+            user.manager_user_id,
+            user.hierarchy_path,
+            user.employment_status,
+            user.email_verified_at,
+            user.email_verification_status ?? "unverified",
+            user.profile_photo_document_id ?? null,
+            user.profile_photo_url ?? null,
+            user.timezone,
+            user.joined_on,
+            user.terminated_on,
+            user.deleted_at,
+            roles,
+          ],
+        );
+        const durableUser = durable.rows[0];
+        if (!durableUser || durableUser.version !== user.version || !durableUser.matches_snapshot) {
+          throw conflict("Employee changed in another process. Refresh and retry.", {
+            user_id: user.id,
+            expected_version: user.version - 1,
+            current_version: durableUser?.version ?? null,
+          });
+        }
+        continue;
+      }
       await client.query("DELETE FROM core.user_roles WHERE user_id = $1", [
         user.id,
       ]);

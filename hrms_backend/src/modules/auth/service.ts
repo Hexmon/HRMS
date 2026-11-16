@@ -940,6 +940,7 @@ export class AuthService {
     if (!company) {
       return null;
     }
+    this.revokeActiveTokensForUser(user.id, "company_bootstrap");
     return this.createToken({
       type: "company_bootstrap",
       userId: user.id,

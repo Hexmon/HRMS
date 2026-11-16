@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createHash } from "node:crypto";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { getLocalDemoPassword } from "#auth";
 import { authHeader, loginAs } from "#testing";
@@ -145,7 +146,7 @@ describe("auth onboarding and password APIs", () => {
         }
       }
     });
-    expect(bootstrap.statusCode).toBe(200);
+    expect(bootstrap.statusCode, JSON.stringify(bootstrap.json())).toBe(200);
     expect(bootstrap.json().company).toMatchObject({
       company_name: "Acme HRMS India",
       status: "active",
@@ -177,7 +178,7 @@ describe("auth onboarding and password APIs", () => {
       url: "/api/v1/onboarding/company-bootstrap",
       payload: { bootstrap_token: bootstrapToken }
     });
-    expect(duplicateBootstrap.statusCode).toBe(409);
+    expect(duplicateBootstrap.statusCode).toBe(400);
 
     const adminLogin = await app.inject({
       method: "POST",
@@ -298,6 +299,205 @@ describe("auth onboarding and password APIs", () => {
       payload: { token: resetToken, password: "ResetPass999", confirm_password: "ResetPass999" }
     });
     expect(reusedReset.statusCode).toBe(409);
+  });
+
+  it("allows only one backend instance to consume a password-reset token", async () => {
+    const previousResetOverride = process.env.HRMS_ALLOW_DATABASE_URL_TEST_RESET;
+    process.env.HRMS_ALLOW_DATABASE_URL_TEST_RESET = "true";
+    const second = await buildRealApp({ reset: false });
+    await second.ready();
+    try {
+      const resetRequest = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/password-reset/request",
+        payload: { email: "e1@example.test" },
+      });
+      expect(resetRequest.statusCode).toBe(200);
+      const resetToken = resetRequest.json().dev_only.password_reset_token as string;
+      const passwords = ["FirstWinner@123", "SecondWinner@123"] as const;
+      const responses = await Promise.all([
+        app.inject({
+          method: "POST",
+          url: "/api/v1/auth/password-reset/confirm",
+          payload: { token: resetToken, password: passwords[0], confirm_password: passwords[0] },
+        }),
+        second.inject({
+          method: "POST",
+          url: "/api/v1/auth/password-reset/confirm",
+          payload: { token: resetToken, password: passwords[1], confirm_password: passwords[1] },
+        }),
+      ]);
+      expect(responses.map((response) => response.statusCode).sort()).toEqual([200, 409]);
+      const winner = responses[0]!.statusCode === 200 ? 0 : 1;
+      const winningLogin = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { email: "e1@example.test", password: passwords[winner] },
+      });
+      const losingLogin = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { email: "e1@example.test", password: passwords[1 - winner] },
+      });
+      expect(winningLogin.statusCode).toBe(200);
+      expect(losingLogin.statusCode).toBe(401);
+      await expect(
+        app.store.pgPool!.query(
+          "SELECT status, count(*)::int AS tokens FROM platform.auth_tokens WHERE token_hash = $1 GROUP BY status",
+          [createHash("sha256").update(resetToken).digest("hex")],
+        ),
+      ).resolves.toMatchObject({ rows: [{ status: "used", tokens: 1 }] });
+    } finally {
+      await second.close();
+      if (previousResetOverride === undefined) delete process.env.HRMS_ALLOW_DATABASE_URL_TEST_RESET;
+      else process.env.HRMS_ALLOW_DATABASE_URL_TEST_RESET = previousResetOverride;
+    }
+  });
+
+  it("serializes concurrent reset issuance and preserves enumeration-safe responses", async () => {
+    const previousResetOverride = process.env.HRMS_ALLOW_DATABASE_URL_TEST_RESET;
+    process.env.HRMS_ALLOW_DATABASE_URL_TEST_RESET = "true";
+    const second = await buildRealApp({ reset: false });
+    await second.ready();
+    try {
+      const responses = await Promise.all([
+        app.inject({
+          method: "POST",
+          url: "/api/v1/auth/password-reset/request",
+          payload: { email: "e1@example.test" },
+        }),
+        second.inject({
+          method: "POST",
+          url: "/api/v1/auth/password-reset/request",
+          payload: { email: "e1@example.test" },
+        }),
+      ]);
+      expect(responses.map((response) => response.statusCode)).toEqual([200, 200]);
+      for (const response of responses) {
+        expect(response.json()).toMatchObject({
+          accepted: true,
+          masked_email: "e1**@example.test",
+          retry_after_seconds: expect.any(Number),
+        });
+      }
+      expect(
+        responses.filter((response) => typeof response.json().dev_only.password_reset_token === "string"),
+      ).toHaveLength(1);
+      await expect(
+        app.store.pgPool!.query(
+          "SELECT count(*)::int AS tokens FROM platform.auth_tokens WHERE user_id = (SELECT id FROM core.users WHERE lower(email) = 'e1@example.test') AND token_type = 'password_reset' AND status = 'active'",
+        ),
+      ).resolves.toMatchObject({ rows: [{ tokens: 1 }] });
+    } finally {
+      await second.close();
+      if (previousResetOverride === undefined) delete process.env.HRMS_ALLOW_DATABASE_URL_TEST_RESET;
+      else process.env.HRMS_ALLOW_DATABASE_URL_TEST_RESET = previousResetOverride;
+    }
+  });
+
+  it("restores failed company bootstrap mutations before a safe retry", async () => {
+    const email = "rollback.founder@example.test";
+    const signup = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/signup",
+      payload: {
+        company_name: "Rollback HRMS",
+        full_name: "Rollback Founder",
+        email,
+        timezone: "Asia/Kolkata",
+      },
+    });
+    expect(signup.statusCode).toBe(200);
+    const verify = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/verify-email",
+      payload: { token: signup.json().dev_only.email_verification_token, email },
+    });
+    expect(verify.statusCode).toBe(200);
+    const bootstrapToken = verify.json().dev_only.company_bootstrap_token as string;
+    const setPassword = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/set-password",
+      payload: {
+        token: verify.json().dev_only.password_setup_token,
+        password: "RollbackPass123",
+        confirm_password: "RollbackPass123",
+      },
+    });
+    expect(setPassword.statusCode).toBe(200);
+
+    const founder = app.store.users.find((user) => user.email === email)!;
+    const companyId = app.store.authTokens.find(
+      (token) => token.user_id === founder.id && token.token_type === "company_bootstrap",
+    )!.company_id!;
+    const pool = app.store.pgPool!;
+    const originalConnect = pool.connect.bind(pool);
+    const restoreQueries: Array<() => void> = [];
+    const wrappedClients = new WeakSet<object>();
+    let injectedFailure = false;
+    const connectSpy = vi.spyOn(pool, "connect").mockImplementation(async () => {
+      const client = await originalConnect();
+      if (!wrappedClients.has(client)) {
+        wrappedClients.add(client);
+        const originalQuery = client.query.bind(client);
+        const querySpy = vi.spyOn(client, "query").mockImplementation(((query: unknown, values?: unknown[]) => {
+          if (
+            !injectedFailure &&
+            typeof query === "string" &&
+            query.includes("INSERT INTO platform.admin_policies")
+          ) {
+            injectedFailure = true;
+            return Promise.reject(new Error("synthetic bootstrap persistence failure"));
+          }
+          return values === undefined
+            ? originalQuery(query as string)
+            : originalQuery(query as string, values);
+        }) as typeof client.query);
+        restoreQueries.push(() => querySpy.mockRestore());
+      }
+      return client;
+    });
+
+    const payload = {
+      bootstrap_token: bootstrapToken,
+      company_profile: { company_name: "Rollback HRMS India" },
+      departments: ["Engineering"],
+      designations: ["Principal Engineer"],
+      first_admin_profile: { full_name: "Rollback Admin" },
+    };
+    try {
+      const failed = await app.inject({
+        method: "POST",
+        url: "/api/v1/onboarding/company-bootstrap",
+        payload,
+      });
+      expect(failed.statusCode).toBe(500);
+    } finally {
+      connectSpy.mockRestore();
+      for (const restore of restoreQueries) restore();
+    }
+
+    expect(injectedFailure).toBe(true);
+    expect(app.store.companyProfiles.find((company) => company.id === companyId)).toMatchObject({
+      status: "pending",
+      bootstrap_completed_at: null,
+    });
+    expect(app.store.users.find((user) => user.id === founder.id)?.roles).not.toContain("Admin");
+    expect(app.store.departments.filter((record) => record.company_id === companyId)).toEqual([]);
+    expect(app.store.designations.filter((record) => record.company_id === companyId)).toEqual([]);
+    expect(app.store.adminPolicies.filter((record) => record.company_id === companyId)).toEqual([]);
+    expect(
+      app.store.authTokens.find((token) => token.token_hash === createHash("sha256").update(bootstrapToken).digest("hex")),
+    ).toMatchObject({ status: "active", used_at: null });
+
+    const retry = await app.inject({
+      method: "POST",
+      url: "/api/v1/onboarding/company-bootstrap",
+      payload,
+    });
+    expect(retry.statusCode, JSON.stringify(retry.json())).toBe(200);
+    expect(retry.json().company).toMatchObject({ status: "active", company_name: "Rollback HRMS India" });
+    expect(retry.json().admin_user.roles).toContain("Admin");
   });
 });
 

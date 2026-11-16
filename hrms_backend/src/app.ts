@@ -1,4 +1,5 @@
 import "./platform/decorators.js";
+import { createHash } from "node:crypto";
 import Fastify, { type FastifyInstance, type FastifyReply } from "fastify";
 import cors from "@fastify/cors";
 import multipart from "@fastify/multipart";
@@ -98,6 +99,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     verificationResendDailyLimit: app.config.EMAIL_VERIFICATION_RESEND_DAILY_LIMIT
   }, options.emailProvider));
   const requestStartTimes = new WeakMap<object, bigint>();
+  const mutationLifecycleLock = createAsyncKeyedSerialLock();
+  const mutationLifecycleReleases = new WeakMap<object, () => Promise<void>>();
+  const mutationUserIds = new WeakMap<object, string[]>();
   app.addHook("onRequest", async (request) => {
     requestStartTimes.set(request, process.hrtime.bigint());
   });
@@ -110,7 +114,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       const flushTarget = persistenceFlushTarget(request.method, request.url, reply.statusCode);
       const startedAt = process.hrtime.bigint();
       if (flushTarget.kind === "auth" && app.store.persistence.flushAuth) {
-        await app.store.persistence.flushAuth(authPersistenceFlushOptions(payload));
+        const flushOptions = mergeAuthPersistenceFlushOptions(
+          authPersistenceFlushOptions(payload),
+          mutationUserIds.get(request),
+        );
+        if (flushOptions) await app.store.persistence.flushAuth(flushOptions);
         appendServerTiming(reply, "persistence.auth", startedAt);
       } else if (flushTarget.kind === "company-bootstrap" && app.store.persistence.flushCompanyBootstrap) {
         await app.store.persistence.flushCompanyBootstrap(authPersistenceFlushOptions(payload));
@@ -175,6 +183,50 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     await app.register(swaggerUi, { routePrefix: "/docs" });
   }
   await app.register(authPlugin);
+  app.addHook("preHandler", async (request) => {
+    const scope = mutationLifecycleLockScope(
+      request.method,
+      request.url,
+      request.actor?.id,
+      request.body,
+      app.store,
+    );
+    if (!scope.keys.length) return;
+    const releaseLocal = await mutationLifecycleLock.acquire(scope.keys);
+    try {
+      const distributedScope = scope.authMutation
+        ? await app.store.persistence?.acquireAuthMutationScope?.({
+            userIds: scope.userIds,
+            emails: scope.emails,
+            employeeCodes: scope.employeeCodes,
+            tokenHashes: scope.tokenHashes,
+          })
+        : undefined;
+      const resolvedUserIds = uniqueStrings([
+        ...scope.userIds,
+        ...(distributedScope?.userIds ?? []),
+      ]);
+      if (resolvedUserIds.length) mutationUserIds.set(request, resolvedUserIds);
+      mutationLifecycleReleases.set(request, async () => {
+        try {
+          await distributedScope?.release();
+        } finally {
+          releaseLocal();
+        }
+      });
+    } catch (error) {
+      releaseLocal();
+      throw error;
+    }
+  });
+  const releaseMutationLifecycle = (request: object) => {
+    const release = mutationLifecycleReleases.get(request);
+    if (!release) return;
+    mutationLifecycleReleases.delete(request);
+    return release();
+  };
+  app.addHook("onError", async (request) => releaseMutationLifecycle(request));
+  app.addHook("onResponse", async (request) => releaseMutationLifecycle(request));
   if (options.rateLimit !== false) {
     await app.register(rateLimitPlugin);
   }
@@ -205,13 +257,114 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   return app;
 }
 
+function createAsyncKeyedSerialLock() {
+  const tails = new Map<string, Promise<void>>();
+  return {
+    async acquire(keys: readonly string[]): Promise<() => void> {
+      const releases: Array<() => void> = [];
+      for (const key of [...new Set(keys)].sort()) {
+        releases.push(await acquireOne(key));
+      }
+      return () => {
+        for (const release of releases.reverse()) release();
+      };
+    },
+  };
+
+  async function acquireOne(key: string): Promise<() => void> {
+    let releaseNext!: () => void;
+    const next = new Promise<void>((resolve) => { releaseNext = resolve; });
+    const previous = tails.get(key) ?? Promise.resolve();
+    tails.set(key, next);
+    await previous;
+    return () => {
+      releaseNext();
+      if (tails.get(key) === next) tails.delete(key);
+    };
+  }
+}
+
+function mutationLifecycleLockScope(
+  method: string,
+  url: string,
+  actorUserId: string | undefined,
+  body: unknown,
+  store: DataStore,
+): {
+  keys: string[];
+  userIds: string[];
+  emails: string[];
+  employeeCodes: string[];
+  tokenHashes: string[];
+  authMutation: boolean;
+} {
+  const path = url.split("?", 1)[0]!;
+  const routeKey = `${method.toUpperCase()} ${path}`;
+  if (["GET", "HEAD", "OPTIONS"].includes(method) && routeKey !== "GET /api/v1/auth/me") {
+    return { keys: [], userIds: [], emails: [], employeeCodes: [], tokenHashes: [], authMutation: false };
+  }
+  const isCoreMutation = path === "/api/v1/core" || path.startsWith("/api/v1/core/");
+  const isAuthMutation = authOnlyMutationRoutes.has(routeKey) || companyBootstrapMutationRoutes.has(routeKey);
+  if (!isCoreMutation && !isAuthMutation) {
+    return { keys: [], userIds: [], emails: [], employeeCodes: [], tokenHashes: [], authMutation: false };
+  }
+
+  const userIds = new Set<string>();
+  const emails = new Set<string>();
+  const employeeCodes = new Set<string>();
+  const tokenHashes = new Set<string>();
+  const keys = new Set<string>();
+  const record = nestedPayloadRecord(body);
+  if (actorUserId) userIds.add(actorUserId);
+  const coreTarget = /^\/api\/v1\/core\/users\/([^/]+)(?:\/|$)/u.exec(path)?.[1];
+  if (coreTarget) userIds.add(coreTarget);
+  const email = firstString(record?.email)?.trim().toLowerCase();
+  const emailUser = email
+    ? store.users.find((user) => user.email.toLowerCase() === email && !user.deleted_at)
+    : undefined;
+  if (email) {
+    emails.add(email);
+    keys.add(`email:${email}`);
+  }
+  if (emailUser) userIds.add(emailUser.id);
+  const employeeCode = firstString(record?.employee_code)?.trim().toUpperCase();
+  if (employeeCode) {
+    employeeCodes.add(employeeCode);
+    keys.add(`employee-code:${employeeCode}`);
+    const employeeCodeUser = store.users.find(
+      (user) => user.employee_code?.toUpperCase() === employeeCode && !user.deleted_at,
+    );
+    if (employeeCodeUser) userIds.add(employeeCodeUser.id);
+  }
+  const rawToken = firstString(record?.token, record?.bootstrap_token);
+  if (rawToken) {
+    const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+    tokenHashes.add(tokenHash);
+    const token = store.authTokens.find((candidate) => candidate.token_hash === tokenHash);
+    if (token?.user_id) userIds.add(token.user_id);
+    keys.add(`token:${tokenHash}`);
+  }
+  for (const userId of userIds) {
+    keys.add(`user:${userId}`);
+    const companyId = store.userSessionPreferences.find((record) => record.user_id === userId)?.company_id;
+    if (companyId) keys.add(`company:${companyId}`);
+  }
+  return {
+    keys: [...keys],
+    userIds: [...userIds],
+    emails: [...emails],
+    employeeCodes: [...employeeCodes],
+    tokenHashes: [...tokenHashes],
+    authMutation: isAuthMutation,
+  };
+}
+
 function booleanFromEnv(value: string | undefined, fallback: boolean): boolean {
   if (value == null || value === "") return fallback;
   return ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
 }
 
 const sessionOnlyMutationRoutes = new Set([
-  "POST /api/v1/auth/login",
   "POST /api/v1/auth/logout"
 ]);
 
@@ -222,7 +375,9 @@ const authOnlyMutationRoutes = new Set([
   "POST /api/v1/auth/set-password",
   "POST /api/v1/auth/password-reset/request",
   "POST /api/v1/auth/password-reset/confirm",
-  "PATCH /api/v1/auth/session/preference"
+  "PATCH /api/v1/auth/session/preference",
+  "POST /api/v1/auth/login",
+  "GET /api/v1/auth/me"
 ]);
 
 const companyBootstrapMutationRoutes = new Set([
@@ -278,14 +433,14 @@ function isTransactionOwnedMutationRoute(routeKey: string): boolean {
 }
 
 function persistenceFlushTarget(method: string, url: string, statusCode: number): PersistenceFlushTarget {
-  if (["GET", "HEAD", "OPTIONS"].includes(method)) {
+  const path = url.split("?")[0] ?? url;
+  const routeKey = `${method.toUpperCase()} ${path}`;
+  if (["GET", "HEAD", "OPTIONS"].includes(method) && routeKey !== "GET /api/v1/auth/me") {
     return { kind: "none" };
   }
   if (statusCode < 200 || statusCode >= 400) {
     return { kind: "none" };
   }
-  const path = url.split("?")[0] ?? url;
-  const routeKey = `${method.toUpperCase()} ${path}`;
   if (sessionOnlyMutationRoutes.has(routeKey)) {
     return { kind: "none" };
   }
@@ -452,6 +607,22 @@ function authPersistenceFlushOptions(payload: unknown): AuthPersistenceFlushOpti
   return {
     ...(userIds.length ? { userIds } : {}),
     ...(companyIds.length ? { companyIds } : {})
+  };
+}
+
+function mergeAuthPersistenceFlushOptions(
+  payloadOptions: AuthPersistenceFlushOptions | undefined,
+  lockedUserIds: readonly string[] | undefined,
+): AuthPersistenceFlushOptions | undefined {
+  const userIds = uniqueStrings([
+    ...(payloadOptions?.userIds ?? []),
+    ...(lockedUserIds ?? []),
+  ]);
+  const companyIds = uniqueStrings(payloadOptions?.companyIds ?? []);
+  if (!userIds.length && !companyIds.length) return undefined;
+  return {
+    ...(userIds.length ? { userIds } : {}),
+    ...(companyIds.length ? { companyIds } : {}),
   };
 }
 

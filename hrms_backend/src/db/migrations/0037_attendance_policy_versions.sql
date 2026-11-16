@@ -104,6 +104,19 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
+  -- The migration backfill is replay-safe: its INSERT uses the
+  -- (policy_id, version_number) conflict target, but BEFORE triggers run before
+  -- PostgreSQL resolves that conflict. Let the existing unique constraint
+  -- handle this exact duplicate while retaining the overlap guard for every
+  -- genuinely new version.
+  IF TG_OP = 'INSERT' AND EXISTS (
+    SELECT 1
+    FROM attendance.policy_versions existing
+    WHERE existing.policy_id = NEW.policy_id
+      AND existing.version_number = NEW.version_number
+  ) THEN
+    RETURN NEW;
+  END IF;
   IF EXISTS (
     SELECT 1
     FROM attendance.policy_versions existing
