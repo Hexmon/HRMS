@@ -86,6 +86,18 @@ describe("app persistence flushing", () => {
       expect(authFlushCount).toBe(3);
       expect(fullFlushCount).toBe(0);
       expect(authFlushOptions[2]?.userIds).toContain(setPassword.json().user_id);
+
+      const session = await loginAs(app, "E1");
+      expect(authFlushCount).toBe(4);
+      expect(authFlushOptions[3]?.userIds).toContain(session.user.id);
+      const logout = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/logout",
+        headers: authHeader(session.token),
+      });
+      expect(logout.statusCode).toBe(200);
+      expect(authFlushCount).toBe(4);
+      expect(fullFlushCount).toBe(0);
     } finally {
       await app.close();
     }
@@ -232,6 +244,50 @@ describe("app persistence flushing", () => {
       });
       expect(first.statusCode).toBe(400);
       expect(second.statusCode).toBe(400);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("releases the local auth lock when distributed scope acquisition fails", async () => {
+    process.env.APP_ENV = "local";
+    const store = createMemoryDataStore();
+    let acquireAttempts = 0;
+    let distributedReleases = 0;
+    store.persistence = {
+      async flush() {},
+      async flushAuth() {},
+      async acquireAuthMutationScope(scope) {
+        acquireAttempts += 1;
+        expect(scope.employeeCodes).toEqual(["E1"]);
+        if (acquireAttempts === 1) throw new Error("synthetic distributed lock failure");
+        const user = store.users.find((candidate) => candidate.employee_code === "E1")!;
+        return {
+          userIds: [user.id],
+          release: async () => { distributedReleases += 1; },
+        };
+      },
+      async reload() {},
+      async close() {},
+    };
+    const app = await buildApp({ dataStore: store, rateLimit: false });
+    await app.ready();
+    try {
+      const failed = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { employee_code: "E1" },
+      });
+      expect(failed.statusCode).toBe(500);
+
+      const retry = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { employee_code: "E1" },
+      });
+      expect(retry.statusCode).toBe(200);
+      expect(acquireAttempts).toBe(2);
+      expect(distributedReleases).toBe(1);
     } finally {
       await app.close();
     }

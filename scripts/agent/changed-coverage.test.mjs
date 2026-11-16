@@ -931,6 +931,34 @@ test("QA holiday operational paths use explicit semantic contracts", () => {
   assert.throws(() => validateSemanticPath("", "hrms_backend/src/db/migrations/0065_holiday_company_unique_constraint.sql", migration.replace("company_id", "name"), "base"), /company_id/);
 });
 
+test("attendance policy migration replay keeps exact duplicates idempotent without weakening overlap denial", () => {
+  const migration = `
+    CREATE OR REPLACE FUNCTION attendance.reject_overlapping_policy_version()
+    RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      IF TG_OP = 'INSERT' AND EXISTS (
+        SELECT 1 FROM attendance.policy_versions existing
+        WHERE existing.policy_id = NEW.policy_id
+          AND existing.version_number = NEW.version_number
+      ) THEN RETURN NEW; END IF;
+      IF EXISTS (
+        SELECT 1 FROM attendance.policy_versions existing
+        WHERE existing.id <> NEW.id
+      ) THEN RAISE EXCEPTION 'overlapping attendance policy versions are not allowed'; END IF;
+      RETURN NEW;
+    END; $$;`;
+  const path = "hrms_backend/src/db/migrations/0037_attendance_policy_versions.sql";
+  assert.match(validateSemanticPath("", path, migration, "base"), /semantic contract passed/);
+  assert.throws(
+    () => validateSemanticPath("", path, migration.replace("existing.version_number = NEW.version_number", "true"), "base"),
+    /version_number/,
+  );
+  assert.throws(
+    () => validateSemanticPath("", path, migration.replace("existing.id <> NEW.id", "true"), "base"),
+    /genuine overlap/,
+  );
+});
+
 test("semantic QA scripts are classified before generic external coverage", () => {
   const root = mkdtempSync(join(tmpdir(), "hrms-coverage-semantic-external-"));
   roots.push(root);

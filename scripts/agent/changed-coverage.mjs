@@ -1499,6 +1499,15 @@ function validateHolidayMigration(path, content) {
   requireSemanticText(path, content, /COMMIT\s*;/i, "holiday migration must commit transactionally");
 }
 
+function validateAttendancePolicyVersionMigration(path, content) {
+  requireSemanticText(path, content, /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+attendance\.reject_overlapping_policy_version/i, "attendance policy migration must define the overlap guard");
+  requireSemanticText(path, content, /TG_OP\s*=\s*'INSERT'/i, "attendance policy migration must scope replay handling to inserts");
+  requireSemanticText(path, content, /existing\.policy_id\s*=\s*NEW\.policy_id/i, "attendance policy replay identity must include policy_id");
+  requireSemanticText(path, content, /existing\.version_number\s*=\s*NEW\.version_number/i, "attendance policy replay identity must include version_number");
+  requireSemanticText(path, content, /existing\.id\s*<>\s*NEW\.id/i, "attendance policy migration must retain genuine overlap detection");
+  requireSemanticText(path, content, /overlapping attendance policy versions are not allowed/i, "attendance policy migration must retain overlap rejection");
+}
+
 function validateQaSeedSafety(path, content) {
   requireSemanticText(path, content, /HRMS_QA_SEED_ALLOW/, "QA seed safety must require explicit opt-in");
   requireSemanticText(path, content, /only isolated local or QA/, "QA seed safety must reject non-isolated targets");
@@ -1533,6 +1542,7 @@ export function validateSemanticPath(root, path, content, base) {
     case "hrms_backend/vitest.config.ts": validateVitestConfig(path, content, false); break;
     case "scripts/agent/verify-change.sh": validateShellVerifier(root, path, content, base); break;
     case "hrms_backend/infra/docker/docker-compose.qa.yml": validateQaCompose(path, content); break;
+    case "hrms_backend/src/db/migrations/0037_attendance_policy_versions.sql": validateAttendancePolicyVersionMigration(path, content); break;
     case "hrms_backend/src/db/migrations/0065_holiday_company_unique_constraint.sql": validateHolidayMigration(path, content); break;
     case "hrms_backend/scripts/qa-seed-safety.ts": validateQaSeedSafety(path, content); break;
     case "hrms_backend/scripts/seed-qa.ts": validateQaSeedEntrypoint(path, content); break;
@@ -1555,6 +1565,7 @@ export const semanticCoveragePaths = new Set([
   "hrms_backend/vitest.config.ts",
   "scripts/agent/verify-change.sh",
   "hrms_backend/infra/docker/docker-compose.qa.yml",
+  "hrms_backend/src/db/migrations/0037_attendance_policy_versions.sql",
   "hrms_backend/src/db/migrations/0065_holiday_company_unique_constraint.sql",
   "hrms_backend/scripts/qa-seed-safety.ts",
   "hrms_backend/scripts/seed-qa.ts",

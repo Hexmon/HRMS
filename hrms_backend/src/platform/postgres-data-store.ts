@@ -1694,7 +1694,7 @@ class PostgresPersistence {
   private coreMutationScopeSignatures(
     userIds: ReadonlySet<string>,
     aggregateIds: ReadonlySet<string>,
-    companyIds: ReadonlySet<string> = new Set(),
+    companyIds: ReadonlySet<string>,
   ): CoreMutationScopeSignatures {
     return {
       users: JSON.stringify(this.store.users.filter((record) => userIds.has(record.id))),
@@ -3921,12 +3921,12 @@ class PostgresPersistence {
             roles,
           ],
         );
-        const durableUser = durable.rows[0];
-        if (!durableUser || durableUser.version !== user.version || !durableUser.matches_snapshot) {
+        const durableUser = durable.rows[0]!;
+        if (durableUser.version !== user.version || !durableUser.matches_snapshot) {
           throw conflict("Employee changed in another process. Refresh and retry.", {
             user_id: user.id,
             expected_version: user.version - 1,
-            current_version: durableUser?.version ?? null,
+            current_version: durableUser.version,
           });
         }
         continue;

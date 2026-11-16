@@ -365,8 +365,11 @@ function booleanFromEnv(value: string | undefined, fallback: boolean): boolean {
 }
 
 const sessionOnlyMutationRoutes = new Set([
+  "POST /api/v1/auth/login",
   "POST /api/v1/auth/logout"
 ]);
+// Login can rotate a durable bootstrap token, so it now uses the auth persistence path.
+sessionOnlyMutationRoutes.delete("POST /api/v1/auth/login");
 
 const authOnlyMutationRoutes = new Set([
   "POST /api/v1/auth/signup",
@@ -433,14 +436,15 @@ function isTransactionOwnedMutationRoute(routeKey: string): boolean {
 }
 
 function persistenceFlushTarget(method: string, url: string, statusCode: number): PersistenceFlushTarget {
-  const path = url.split("?")[0] ?? url;
-  const routeKey = `${method.toUpperCase()} ${path}`;
-  if (["GET", "HEAD", "OPTIONS"].includes(method) && routeKey !== "GET /api/v1/auth/me") {
+  const isAuthSessionRead = `${method.toUpperCase()} ${url.split("?")[0]}` === "GET /api/v1/auth/me";
+  if (["GET", "HEAD", "OPTIONS"].includes(method) && !isAuthSessionRead) {
     return { kind: "none" };
   }
   if (statusCode < 200 || statusCode >= 400) {
     return { kind: "none" };
   }
+  const path = url.split("?")[0] ?? url;
+  const routeKey = `${method.toUpperCase()} ${path}`;
   if (sessionOnlyMutationRoutes.has(routeKey)) {
     return { kind: "none" };
   }
@@ -620,10 +624,7 @@ function mergeAuthPersistenceFlushOptions(
   ]);
   const companyIds = uniqueStrings(payloadOptions?.companyIds ?? []);
   if (!userIds.length && !companyIds.length) return undefined;
-  return {
-    ...(userIds.length ? { userIds } : {}),
-    ...(companyIds.length ? { companyIds } : {}),
-  };
+  return { userIds, companyIds };
 }
 
 function companyLogoPersistenceFlushOptions(payload: unknown): CompanyLogoPersistenceFlushOptions | undefined {
