@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { Roles } from "#shared";
-import { createMemoryDataStore, seedIds } from "../../../platform/data-store.js";
+import {
+  createMemoryDataStore,
+  seedIds,
+  type DataStorePersistence,
+} from "../../../platform/data-store.js";
 import { AdminService } from "../service.js";
 
 describe("admin company-scoped master data", () => {
@@ -150,6 +154,36 @@ describe("admin company-scoped master data", () => {
     store.companyProfiles.find((company) => company.id === companyA)!.status = "inactive";
     await expect(service.createDepartment(admin, { name: "Blocked", code: "BLOCKED" })).rejects.toThrow();
     expect(store.departments.some((department) => department.department_code === "BLOCKED")).toBe(false);
+  });
+
+  it("fails closed when a PostgreSQL master-data adapter is unavailable", async () => {
+    const store = createMemoryDataStore();
+    const service = new AdminService(store);
+    const admin = store.users.find((user) => user.id === seedIds.admin)!;
+    store.persistence = {
+      flush: async () => undefined,
+      reload: async () => undefined,
+      close: async () => undefined,
+    } satisfies DataStorePersistence;
+
+    await expect(service.listDepartments(admin, { page: 1, page_size: 25 })).rejects.toThrowError(
+      "Admin department SQL read is unavailable.",
+    );
+    await expect(service.createDepartment(admin, { name: "Engineering" })).rejects.toThrowError(
+      "Admin department SQL write is unavailable.",
+    );
+    await expect(
+      service.updateDepartment(admin, "missing", { name: "Engineering", expected_version: 1 }),
+    ).rejects.toThrowError("Admin department SQL write is unavailable.");
+    await expect(service.listDesignations(admin, { page: 1, page_size: 25 })).rejects.toThrowError(
+      "Admin designation SQL read is unavailable.",
+    );
+    await expect(service.createDesignation(admin, { title: "Engineer" })).rejects.toThrowError(
+      "Admin designation SQL write is unavailable.",
+    );
+    await expect(
+      service.updateDesignation(admin, "missing", { title: "Engineer", expected_version: 1 }),
+    ).rejects.toThrowError("Admin designation SQL write is unavailable.");
   });
 });
 
