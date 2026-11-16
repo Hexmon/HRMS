@@ -482,7 +482,7 @@ export async function createPostgresDataStore(
       store.documentProcessing = documentProcessing;
     }
     store.persistence = new PostgresPersistence(pool, store);
-    await store.persistence.flush();
+    await (store.persistence as PostgresPersistence).flushSeedSnapshot();
     await store.persistence.reload();
   }
 
@@ -494,6 +494,18 @@ class PostgresPersistence {
     private readonly pool: Pool,
     private readonly store: DataStore,
   ) {}
+
+  private masterAssignmentLockKey(companyId: UUID): string {
+    return `core:master-assignment:${companyId}`;
+  }
+
+  private async lockMasterAssignments(client: PoolClient, companyIds: Iterable<UUID>): Promise<void> {
+    for (const companyId of [...new Set(companyIds)].sort()) {
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1::text))", [
+        this.masterAssignmentLockKey(companyId),
+      ]);
+    }
+  }
 
   private async holidayCompanyForActor(client: PoolClient, actorUserId: UUID, forWrite: boolean): Promise<UUID> {
     const lock = forWrite ? " FOR SHARE" : "";
@@ -578,6 +590,29 @@ class PostgresPersistence {
     operation: string,
     forWrite: boolean,
   ): Promise<UUID> {
+    let writeCompanyId: UUID | undefined;
+    if (forWrite) {
+      const candidate = await client.query<{
+        company_id: UUID | null;
+        employment_status: string;
+        deleted_at: Date | null;
+      }>(
+        `SELECT usp.company_id, u.employment_status, u.deleted_at
+         FROM core.users u
+         LEFT JOIN platform.user_session_preferences usp ON usp.user_id = u.id
+         WHERE u.id = $1`,
+        [actorUserId],
+      );
+      const candidateActor = candidate.rows[0];
+      if (!candidateActor || candidateActor.deleted_at || candidateActor.employment_status !== EmploymentStatuses.Active) {
+        throw unauthorized("User account is inactive or blocked");
+      }
+      if (!candidateActor.company_id) {
+        throw companyContextRequired({ user_id: actorUserId, operation });
+      }
+      writeCompanyId = candidateActor.company_id;
+      await this.lockMasterAssignments(client, [writeCompanyId]);
+    }
     const lock = forWrite ? " FOR SHARE" : "";
     const user = await client.query<{ employment_status: string; deleted_at: Date | null }>(
       `SELECT employment_status, deleted_at FROM core.users WHERE id = $1${lock}`,
@@ -587,8 +622,9 @@ class PostgresPersistence {
       throw unauthorized("User account is inactive or blocked");
     }
     const preference = await client.query<{ company_id: UUID | null; active_role: RoleKey }>(
-      `SELECT company_id, active_role FROM platform.user_session_preferences WHERE user_id = $1${lock}`,
-      [actorUserId],
+      `SELECT company_id, active_role FROM platform.user_session_preferences
+       WHERE user_id = $1${writeCompanyId ? " AND company_id = $2" : ""}${lock}`,
+      writeCompanyId ? [actorUserId, writeCompanyId] : [actorUserId],
     );
     const assignment = preference.rows[0];
     if (!assignment?.company_id) {
@@ -721,7 +757,7 @@ class PostgresPersistence {
       await client.query(
         `INSERT INTO platform.outbox_events (event_id, aggregate_type, aggregate_id, event_type, payload, idempotency_key)
          VALUES ($1, 'department', $2, 'admin.master_data.department.created', $3::jsonb, $4)`,
-        [randomUUID(), id, JSON.stringify({ actor_user_id: actorUserId, department_code: saved.department_code, name: saved.name }), `admin.department.created:${id}:1`],
+        [randomUUID(), id, JSON.stringify({ actor_user_id: actorUserId, company_id: companyId, department_code: saved.department_code, name: saved.name }), `admin.department.created:${id}:1`],
       );
       await client.query("COMMIT");
     } catch (error) {
@@ -787,7 +823,7 @@ class PostgresPersistence {
       await client.query(
         `INSERT INTO platform.outbox_events (event_id, aggregate_type, aggregate_id, event_type, payload, idempotency_key)
          VALUES ($1, 'department', $2, 'admin.master_data.department.updated', $3::jsonb, $4)`,
-        [randomUUID(), id, JSON.stringify({ actor_user_id: actorUserId, changed_fields: Object.keys(input).filter((field) => field !== "expected_version"), department_code: saved.department_code, name: saved.name }), `admin.department.updated:${id}:${saved.version}`],
+        [randomUUID(), id, JSON.stringify({ actor_user_id: actorUserId, company_id: companyId, changed_fields: Object.keys(input).filter((field) => field !== "expected_version"), department_code: saved.department_code, name: saved.name }), `admin.department.updated:${id}:${saved.version}`],
       );
       await client.query("COMMIT");
     } catch (error) {
@@ -872,8 +908,8 @@ class PostgresPersistence {
       saved = mapDesignationRow(result.rows[0]);
       const action = existing ? "updated" : "created";
       const payload = existing
-        ? { actor_user_id: actorUserId, changed_fields: Object.keys(input).filter((field) => field !== "expected_version"), designation_code: saved.designation_code, title: saved.title }
-        : { actor_user_id: actorUserId, designation_code: saved.designation_code, title: saved.title };
+        ? { actor_user_id: actorUserId, company_id: companyId, changed_fields: Object.keys(input).filter((field) => field !== "expected_version"), designation_code: saved.designation_code, title: saved.title }
+        : { actor_user_id: actorUserId, company_id: companyId, designation_code: saved.designation_code, title: saved.title };
       await client.query(
         `INSERT INTO platform.outbox_events (event_id, aggregate_type, aggregate_id, event_type, payload, idempotency_key)
          VALUES ($1, 'designation', $2, $3, $4::jsonb, $5)`,
@@ -1197,6 +1233,32 @@ class PostgresPersistence {
     }
   }
 
+  /** Initial empty-database seed only. Runtime snapshot flushes must never own master data. */
+  async flushSeedSnapshot(): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      await this.flushCoreMasterData(client, new Set(this.store.companyProfiles.map((company) => company.id)), true);
+      await this.flushCore(client);
+      await this.flushPlatform(client);
+      await this.flushExpenses(client);
+      await this.flushDocuments(client);
+      await this.flushAssets(client);
+      await this.flushTimesheets(client);
+      await this.flushProjects(client);
+      await this.flushHelpdesk(client);
+      await this.flushAttendance(client);
+      await this.flushLeaveWfh(client);
+      await this.flushEms(client);
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async flushAuth(options: AuthPersistenceFlushOptions = {}): Promise<void> {
     const client = await this.pool.connect();
     try {
@@ -1218,7 +1280,11 @@ class PostgresPersistence {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      await this.flushCoreMasterData(client);
+      const companyIds = optionalSet(options.companyIds);
+      if (!companyIds?.size) {
+        throw new Error("Company bootstrap persistence requires an explicit company id.");
+      }
+      await this.flushCoreMasterData(client, companyIds);
       await this.flushAuthCore(client, options);
       await this.flushAuthPlatform(client, options);
       await client.query("COMMIT");
@@ -3180,7 +3246,10 @@ class PostgresPersistence {
   }
 
   private async flushCore(client: PoolClient): Promise<void> {
-    await this.flushCoreMasterData(client);
+    await this.lockMasterAssignments(
+      client,
+      this.store.userSessionPreferences.flatMap((preference) => preference.company_id ? [preference.company_id] : []),
+    );
     for (const role of this.store.rbacRoles) {
       await client.query(
         `INSERT INTO core.roles (id, role_key, name, description, status, builtin, deleted_at, version)
@@ -3219,16 +3288,18 @@ class PostgresPersistence {
     await this.flushCoreUsersAndCredentials(client);
   }
 
-  private async flushCoreMasterData(client: PoolClient): Promise<void> {
+  private async flushCoreMasterData(
+    client: PoolClient,
+    companyIds: ReadonlySet<string>,
+    includeLegacyGlobal = false,
+  ): Promise<void> {
+    await this.lockMasterAssignments(client, companyIds);
     for (const designation of this.store.designations) {
+      if (designation.company_id ? !companyIds.has(designation.company_id) : !includeLegacyGlobal) continue;
       await client.query(
         `INSERT INTO core.designations (id, company_id, designation_code, title, level, status, deleted_at, version)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-         ON CONFLICT (id) DO UPDATE
-         SET company_id = EXCLUDED.company_id,
-             designation_code = EXCLUDED.designation_code, title = EXCLUDED.title, level = EXCLUDED.level,
-             status = EXCLUDED.status, deleted_at = EXCLUDED.deleted_at, version = EXCLUDED.version,
-             updated_at = now()`,
+         ON CONFLICT (id) DO NOTHING`,
         [
           designation.id,
           designation.company_id,
@@ -3242,17 +3313,11 @@ class PostgresPersistence {
       );
     }
     for (const department of this.store.departments) {
+      if (department.company_id ? !companyIds.has(department.company_id) : !includeLegacyGlobal) continue;
       await client.query(
         `INSERT INTO core.departments (id, company_id, department_code, name, cost_center, parent_department_id, director_user_id, status, deleted_at, version)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-         ON CONFLICT (id) DO UPDATE
-         SET company_id = EXCLUDED.company_id,
-             department_code = EXCLUDED.department_code, name = EXCLUDED.name,
-             cost_center = EXCLUDED.cost_center,
-             parent_department_id = EXCLUDED.parent_department_id,
-             director_user_id = EXCLUDED.director_user_id, status = EXCLUDED.status,
-             deleted_at = EXCLUDED.deleted_at, version = EXCLUDED.version,
-             updated_at = now()`,
+         ON CONFLICT (id) DO NOTHING`,
         [
           department.id,
           department.company_id,
@@ -3283,8 +3348,33 @@ class PostgresPersistence {
     client: PoolClient,
     userIds?: ReadonlySet<string>,
   ): Promise<void> {
+    const assignmentCompanyIds = this.store.userSessionPreferences
+      .filter((preference) => !userIds || userIds.has(preference.user_id))
+      .flatMap((preference) => preference.company_id ? [preference.company_id] : []);
+    await this.lockMasterAssignments(client, assignmentCompanyIds);
     for (const user of this.store.users) {
       if (userIds && !userIds.has(user.id)) continue;
+      if (user.employment_status === EmploymentStatuses.Active && !user.deleted_at) {
+        const companyId = this.store.userSessionPreferences.find(
+          (preference) => preference.user_id === user.id,
+        )?.company_id;
+        if (companyId) {
+          const validAssignment = await client.query<{ department_ok: boolean; designation_ok: boolean }>(
+            `SELECT
+               EXISTS (SELECT 1 FROM core.departments WHERE id = $2 AND (company_id = $1 OR company_id IS NULL) AND status = 'active' AND deleted_at IS NULL) AS department_ok,
+               EXISTS (SELECT 1 FROM core.designations WHERE id = $3 AND (company_id = $1 OR company_id IS NULL) AND status = 'active' AND deleted_at IS NULL) AS designation_ok`,
+            [companyId, user.department_id, user.designation_id],
+          );
+          if (!validAssignment.rows[0]?.department_ok || !validAssignment.rows[0]?.designation_ok) {
+            throw conflict("Active employee assignment requires active company master data.", {
+              user_id: user.id,
+              company_id: companyId,
+              department_id: user.department_id,
+              designation_id: user.designation_id,
+            });
+          }
+        }
+      }
       await client.query(
         `INSERT INTO core.users (
           id, employee_code, email, full_name, department_id, designation_id, manager_user_id,

@@ -49,15 +49,19 @@ describe("admin master data", () => {
       version: 1
     });
     const pool = app.store.pgPool!;
+    const companyId = (await pool.query<{ company_id: string }>(
+      "SELECT company_id FROM platform.user_session_preferences WHERE user_id = $1",
+      [admin.user.id],
+    )).rows[0]!.company_id;
     await expect(
       pool.query("SELECT name, version FROM core.departments WHERE id = $1", [create.json().department.id]),
     ).resolves.toMatchObject({ rows: [{ name: "Engineering", version: 1 }] });
     await expect(
       pool.query(
-        "SELECT event_type FROM platform.outbox_events WHERE aggregate_id = $1 ORDER BY id",
+        "SELECT event_type, payload->>'company_id' AS company_id FROM platform.outbox_events WHERE aggregate_id = $1 ORDER BY id",
         [create.json().department.id],
       ),
-    ).resolves.toMatchObject({ rows: [{ event_type: "admin.master_data.department.created" }] });
+    ).resolves.toMatchObject({ rows: [{ event_type: "admin.master_data.department.created", company_id: companyId }] });
 
     const duplicate = await app.inject({
       method: "POST",
@@ -116,14 +120,14 @@ describe("admin master data", () => {
     });
     expect(referenced.statusCode).toBe(409);
 
-    const durableEvents = await pool.query<{ event_type: string }>(
-      "SELECT event_type FROM platform.outbox_events WHERE aggregate_id = $1 ORDER BY id",
+    const durableEvents = await pool.query<{ event_type: string; company_id: string }>(
+      "SELECT event_type, payload->>'company_id' AS company_id FROM platform.outbox_events WHERE aggregate_id = $1 ORDER BY id",
       [create.json().department.id],
     );
-    expect(durableEvents.rows.map((event) => event.event_type)).toEqual([
-      "admin.master_data.department.created",
-      "admin.master_data.department.updated",
-      "admin.master_data.department.updated",
+    expect(durableEvents.rows).toEqual([
+      { event_type: "admin.master_data.department.created", company_id: companyId },
+      { event_type: "admin.master_data.department.updated", company_id: companyId },
+      { event_type: "admin.master_data.department.updated", company_id: companyId },
     ]);
 
     await app.close();
@@ -164,6 +168,9 @@ describe("admin master data", () => {
 
     await pool.query("UPDATE core.users SET employment_status = 'inactive' WHERE id = $1", [admin.user.id]);
     await expect(persistence.departmentsForActor!(admin.user.id)).rejects.toMatchObject({ statusCode: 401 });
+    await expect(
+      persistence.createDepartmentForActor!(admin.user.id, { name: "Forbidden Inactive User", code: "FORBIDDEN_INACTIVE_USER" }),
+    ).rejects.toMatchObject({ statusCode: 401 });
     await pool.query("UPDATE core.users SET employment_status = 'active' WHERE id = $1", [admin.user.id]);
 
     await pool.query("UPDATE core.user_roles SET status = 'inactive' WHERE user_id = $1 AND role_key = 'Admin'", [admin.user.id]);
@@ -195,6 +202,80 @@ describe("admin master data", () => {
       [companyId],
     );
     expect(after.rows).toEqual(before.rows);
+  });
+
+  it("fences Company A from Company B master data and permits an effective HR Manager", async () => {
+    const admin = await loginAs(app, "ADM");
+    const pool = app.store.pgPool!;
+    const persistence = app.store.persistence!;
+    const companyA = await pool.query<{ company_id: string }>(
+      "SELECT company_id FROM platform.user_session_preferences WHERE user_id = $1",
+      [admin.user.id],
+    );
+    const companyAId = companyA.rows[0]!.company_id;
+    const companyBId = randomUUID();
+    const foreignDepartmentId = randomUUID();
+    const foreignDesignationId = randomUUID();
+    await pool.query(
+      `INSERT INTO platform.company_profiles (id, company_name, company_slug, status, bootstrap_completed_at)
+       VALUES ($1, 'Company B', $2, 'active', now())`,
+      [companyBId, `company-b-${companyBId}`],
+    );
+    await pool.query(
+      `INSERT INTO core.departments (id, company_id, department_code, name, status, version)
+       VALUES ($1, $2, $3, 'Foreign Department', 'active', 1)`,
+      [foreignDepartmentId, companyBId, `FOREIGN_DEPT_${companyBId.slice(0, 8)}`],
+    );
+    await pool.query(
+      `INSERT INTO core.designations (id, company_id, designation_code, title, status, version)
+       VALUES ($1, $2, $3, 'Foreign Designation', 'active', 1)`,
+      [foreignDesignationId, companyBId, `FOREIGN_DESIG_${companyBId.slice(0, 8)}`],
+    );
+    const before = await pool.query(
+      `SELECT
+         (SELECT version FROM core.departments WHERE id = $1) AS department_version,
+         (SELECT version FROM core.designations WHERE id = $2) AS designation_version,
+         (SELECT count(*)::text FROM platform.outbox_events WHERE aggregate_id = ANY($3::uuid[])) AS events`,
+      [foreignDepartmentId, foreignDesignationId, [foreignDepartmentId, foreignDesignationId]],
+    );
+
+    expect((await persistence.departmentsForActor!(admin.user.id)).some((row) => row.id === foreignDepartmentId)).toBe(false);
+    expect((await persistence.designationsForActor!(admin.user.id)).some((row) => row.id === foreignDesignationId)).toBe(false);
+    await expect(
+      persistence.updateDepartmentForActor!(admin.user.id, foreignDepartmentId, { name: "Tenant Escape", expected_version: 1 }),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    await expect(
+      persistence.createDepartmentForActor!(admin.user.id, { name: "Foreign Parent", code: "FOREIGN_PARENT_DENIED", parent_id: foreignDepartmentId }),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    await expect(
+      persistence.updateDesignationForActor!(admin.user.id, foreignDesignationId, { title: "Tenant Escape", expected_version: 1 }),
+    ).rejects.toMatchObject({ statusCode: 404 });
+    const after = await pool.query(
+      `SELECT
+         (SELECT version FROM core.departments WHERE id = $1) AS department_version,
+         (SELECT version FROM core.designations WHERE id = $2) AS designation_version,
+         (SELECT count(*)::text FROM platform.outbox_events WHERE aggregate_id = ANY($3::uuid[])) AS events`,
+      [foreignDepartmentId, foreignDesignationId, [foreignDepartmentId, foreignDesignationId]],
+    );
+    expect(after.rows).toEqual(before.rows);
+
+    await pool.query(
+      `INSERT INTO core.user_roles (id, user_id, role_key, status, effective_from)
+       VALUES ($1, $2, 'HR Manager', 'active', CURRENT_DATE)`,
+      [randomUUID(), admin.user.id],
+    );
+    await pool.query("UPDATE core.user_roles SET status = 'inactive' WHERE user_id = $1 AND role_key = 'Admin'", [admin.user.id]);
+    await pool.query("UPDATE platform.user_session_preferences SET active_role = 'HR Manager' WHERE user_id = $1", [admin.user.id]);
+    const hrDepartment = await persistence.createDepartmentForActor!(admin.user.id, {
+      name: "HR Managed Department",
+      code: "HR_MANAGED_DEPARTMENT",
+    });
+    const hrDesignation = await persistence.createDesignationForActor!(admin.user.id, {
+      title: "HR Managed Designation",
+      code: "HR_MANAGED_DESIGNATION",
+    });
+    expect(hrDepartment.company_id).toBe(companyAId);
+    expect(hrDesignation.company_id).toBe(companyAId);
   });
 
   it("serializes concurrent reparenting so two instances cannot commit a cycle", async () => {
@@ -233,6 +314,157 @@ describe("admin master data", () => {
       );
       const byId = new Map(rows.rows.map((row) => [row.id, row.parent_department_id]));
       expect(!(byId.get(first.json().department.id) === other.json().department.id && byId.get(other.json().department.id) === first.json().department.id)).toBe(true);
+      const eventCount = await app.store.pgPool!.query<{ total: string; updates: string }>(
+        `SELECT count(*)::text AS total,
+                count(*) FILTER (WHERE event_type = 'admin.master_data.department.updated')::text AS updates
+         FROM platform.outbox_events WHERE aggregate_id = ANY($1::uuid[])`,
+        [[first.json().department.id, other.json().department.id]],
+      );
+      expect(eventCount.rows).toEqual([{ total: "3", updates: "1" }]);
+    } finally {
+      await second.close();
+      if (previousResetOverride === undefined) delete process.env.HRMS_ALLOW_DATABASE_URL_TEST_RESET;
+      else process.env.HRMS_ALLOW_DATABASE_URL_TEST_RESET = previousResetOverride;
+    }
+  });
+
+  it("does not let a stale second instance overwrite transaction-owned master data", async () => {
+    const admin = await loginAs(app, "ADM");
+    const previousResetOverride = process.env.HRMS_ALLOW_DATABASE_URL_TEST_RESET;
+    process.env.HRMS_ALLOW_DATABASE_URL_TEST_RESET = "true";
+    const stale = await buildRealApp({ reset: false });
+    await stale.ready();
+    try {
+      const created = await app.store.persistence!.createDepartmentForActor!(admin.user.id, {
+        name: "Durable New Name",
+        code: "STALE_FLUSH_GUARD",
+      });
+      const updated = await app.store.persistence!.updateDepartmentForActor!(admin.user.id, created.id, {
+        name: "Durable Updated Name",
+        expected_version: 1,
+      });
+      stale.store.departments.push({ ...created, name: "Stale Snapshot Name", version: 1 });
+
+      await stale.store.persistence!.flush();
+      await stale.store.persistence!.flushDomain!("core", { userIds: [] });
+      await stale.store.persistence!.flushCompanyBootstrap!({ companyIds: [created.company_id!] });
+
+      await expect(
+        app.store.pgPool!.query("SELECT name, version FROM core.departments WHERE id = $1", [created.id]),
+      ).resolves.toMatchObject({ rows: [{ name: updated.name, version: 2 }] });
+      await expect(
+        app.store.pgPool!.query(
+          "SELECT count(*)::text AS count FROM platform.outbox_events WHERE aggregate_id = $1",
+          [created.id],
+        ),
+      ).resolves.toMatchObject({ rows: [{ count: "2" }] });
+    } finally {
+      await stale.close();
+      if (previousResetOverride === undefined) delete process.env.HRMS_ALLOW_DATABASE_URL_TEST_RESET;
+      else process.env.HRMS_ALLOW_DATABASE_URL_TEST_RESET = previousResetOverride;
+    }
+  });
+
+  it("serializes active employee assignment against master-data deactivation", async () => {
+    const admin = await loginAs(app, "ADM");
+    const department = await app.store.persistence!.createDepartmentForActor!(admin.user.id, {
+      name: "Assignment Race Department",
+      code: "ASSIGNMENT_RACE_DEPARTMENT",
+    });
+    const previousResetOverride = process.env.HRMS_ALLOW_DATABASE_URL_TEST_RESET;
+    process.env.HRMS_ALLOW_DATABASE_URL_TEST_RESET = "true";
+    const second = await buildRealApp({ reset: false });
+    await second.ready();
+    try {
+      const secondAdmin = await loginAs(second, "ADM");
+      const employee = second.store.users.find((user) => user.employee_code === "E1")!;
+      const [assignment, deactivation] = await Promise.allSettled([
+        second.inject({
+          method: "PATCH",
+          url: `/api/v1/core/users/${employee.id}`,
+          headers: authHeader(secondAdmin.token),
+          payload: { department_id: department.id, expected_version: employee.version },
+        }),
+        app.store.persistence!.updateDepartmentForActor!(admin.user.id, department.id, {
+          status: "inactive",
+          expected_version: 1,
+        }),
+      ]);
+      const assignmentSucceeded = assignment.status === "fulfilled" && assignment.value.statusCode === 200;
+      const deactivationSucceeded = deactivation.status === "fulfilled";
+      expect(Number(assignmentSucceeded) + Number(deactivationSucceeded)).toBe(1);
+      expect(assignment.status).toBe("fulfilled");
+      if (assignment.status === "fulfilled") {
+        expect([200, 409]).toContain(assignment.value.statusCode);
+      }
+      if (deactivation.status === "rejected") {
+        expect(deactivation.reason).toMatchObject({ statusCode: 409 });
+      }
+      const invariant = await app.store.pgPool!.query<{ employment_status: string; department_status: string }>(
+        `SELECT u.employment_status, d.status AS department_status
+         FROM core.users u JOIN core.departments d ON d.id = u.department_id
+         WHERE u.id = $1`,
+        [employee.id],
+      );
+      expect(invariant.rows[0]).not.toEqual({ employment_status: "active", department_status: "inactive" });
+    } finally {
+      await second.close();
+      if (previousResetOverride === undefined) delete process.env.HRMS_ALLOW_DATABASE_URL_TEST_RESET;
+      else process.env.HRMS_ALLOW_DATABASE_URL_TEST_RESET = previousResetOverride;
+    }
+  });
+
+  it("serializes active employee creation against designation deactivation", async () => {
+    const admin = await loginAs(app, "ADM");
+    const designation = await app.store.persistence!.createDesignationForActor!(admin.user.id, {
+      title: "Creation Race Designation",
+      code: "CREATION_RACE_DESIGNATION",
+    });
+    const previousResetOverride = process.env.HRMS_ALLOW_DATABASE_URL_TEST_RESET;
+    process.env.HRMS_ALLOW_DATABASE_URL_TEST_RESET = "true";
+    const second = await buildRealApp({ reset: false });
+    await second.ready();
+    try {
+      const secondAdmin = await loginAs(second, "ADM");
+      const department = second.store.departments.find((row) => row.status === "active" && !row.deleted_at)!;
+      const employeeEmail = `race-${randomUUID()}@example.test`;
+      const [assignment, deactivation] = await Promise.allSettled([
+        second.inject({
+          method: "POST",
+          url: "/api/v1/core/users",
+          headers: authHeader(secondAdmin.token),
+          payload: {
+            employee_code: `RACE${randomUUID().replaceAll("-", "").slice(0, 8)}`,
+            email: employeeEmail,
+            full_name: "Concurrent Employee",
+            department_id: department.id,
+            designation_id: designation.id,
+            employment_status: "active",
+          },
+        }),
+        app.store.persistence!.updateDesignationForActor!(admin.user.id, designation.id, {
+          status: "inactive",
+          expected_version: 1,
+        }),
+      ]);
+      const assignmentSucceeded = assignment.status === "fulfilled" && assignment.value.statusCode === 200;
+      const deactivationSucceeded = deactivation.status === "fulfilled";
+      expect(Number(assignmentSucceeded) + Number(deactivationSucceeded)).toBe(1);
+      expect(assignment.status).toBe("fulfilled");
+      if (assignment.status === "fulfilled") {
+        expect([200, 409]).toContain(assignment.value.statusCode);
+      }
+      if (deactivation.status === "rejected") {
+        expect(deactivation.reason).toMatchObject({ statusCode: 409 });
+      }
+      const invariant = await app.store.pgPool!.query<{ violations: number }>(
+        `SELECT count(*)::int AS violations
+         FROM core.users u JOIN core.designations d ON d.id = u.designation_id
+         WHERE lower(u.email) = lower($1) AND u.employment_status = 'active'
+           AND u.deleted_at IS NULL AND d.status = 'inactive'`,
+        [employeeEmail],
+      );
+      expect(invariant.rows).toEqual([{ violations: 0 }]);
     } finally {
       await second.close();
       if (previousResetOverride === undefined) delete process.env.HRMS_ALLOW_DATABASE_URL_TEST_RESET;
@@ -358,6 +590,11 @@ describe("admin master data", () => {
 
   it("manages designation master data with OCC and duplicate-code protection", async () => {
     const admin = await loginAs(app, "ADM");
+    const pool = app.store.pgPool!;
+    const companyId = (await pool.query<{ company_id: string }>(
+      "SELECT company_id FROM platform.user_session_preferences WHERE user_id = $1",
+      [admin.user.id],
+    )).rows[0]!.company_id;
 
     const create = await app.inject({
       method: "POST",
@@ -373,17 +610,17 @@ describe("admin master data", () => {
       version: 1
     });
     await expect(
-      app.store.pgPool!.query(
+      pool.query(
         "SELECT title, version FROM core.designations WHERE id = $1",
         [create.json().designation.id],
       ),
     ).resolves.toMatchObject({ rows: [{ title: "Principal Engineer", version: 1 }] });
     await expect(
       app.store.pgPool!.query(
-        "SELECT event_type FROM platform.outbox_events WHERE aggregate_id = $1 ORDER BY id",
+        "SELECT event_type, payload->>'company_id' AS company_id FROM platform.outbox_events WHERE aggregate_id = $1 ORDER BY id",
         [create.json().designation.id],
       ),
-    ).resolves.toMatchObject({ rows: [{ event_type: "admin.master_data.designation.created" }] });
+    ).resolves.toMatchObject({ rows: [{ event_type: "admin.master_data.designation.created", company_id: companyId }] });
 
     const list = await app.inject({
       method: "GET",
@@ -422,6 +659,15 @@ describe("admin master data", () => {
     });
     expect(inactive.statusCode).toBe(200);
     expect(inactive.json().designation).toMatchObject({ status: "inactive", active: false, version: 3 });
+    const durableEvents = await pool.query<{ event_type: string; company_id: string }>(
+      "SELECT event_type, payload->>'company_id' AS company_id FROM platform.outbox_events WHERE aggregate_id = $1 ORDER BY id",
+      [create.json().designation.id],
+    );
+    expect(durableEvents.rows).toEqual([
+      { event_type: "admin.master_data.designation.created", company_id: companyId },
+      { event_type: "admin.master_data.designation.updated", company_id: companyId },
+      { event_type: "admin.master_data.designation.updated", company_id: companyId },
+    ]);
   });
 
   it("rejects invalid durable designation changes and active references", async () => {
@@ -429,6 +675,11 @@ describe("admin master data", () => {
     const employee = await loginAs(app, "E1");
     const pool = app.store.pgPool!;
     const persistence = app.store.persistence!;
+    const beforeInvalid = await pool.query(
+      `SELECT
+         (SELECT count(*)::text FROM core.designations) AS designations,
+         (SELECT count(*)::text FROM platform.outbox_events WHERE aggregate_type = 'designation') AS events`,
+    );
 
     await expect(
       persistence.updateDesignationForActor!(admin.user.id, randomUUID(), { title: "Missing", expected_version: 1 }),
@@ -436,9 +687,21 @@ describe("admin master data", () => {
     await expect(
       persistence.createDesignationForActor!(admin.user.id, { code: "MISSING_TITLE" }),
     ).rejects.toMatchObject({ statusCode: 409 });
+    const afterInvalid = await pool.query(
+      `SELECT
+         (SELECT count(*)::text FROM core.designations) AS designations,
+         (SELECT count(*)::text FROM platform.outbox_events WHERE aggregate_type = 'designation') AS events`,
+    );
+    expect(afterInvalid.rows).toEqual(beforeInvalid.rows);
 
     const nameOnly = await persistence.createDesignationForActor!(admin.user.id, { name: "Solutions Architect" });
     expect(nameOnly).toMatchObject({ designation_code: "SOLUTIONS_ARCHITECT", level: null, status: "active" });
+    const beforeDeniedUpdates = await pool.query(
+      `SELECT title, status, version,
+              (SELECT count(*)::text FROM platform.outbox_events WHERE aggregate_id = $1) AS events
+       FROM core.designations WHERE id = $1`,
+      [nameOnly.id],
+    );
     await expect(
       persistence.updateDesignationForActor!(admin.user.id, nameOnly.id, { title: "Stale", expected_version: 9 }),
     ).rejects.toMatchObject({ statusCode: 409 });
@@ -447,6 +710,13 @@ describe("admin master data", () => {
     await expect(
       persistence.updateDesignationForActor!(admin.user.id, nameOnly.id, { status: "inactive", expected_version: 1 }),
     ).rejects.toMatchObject({ statusCode: 409 });
+    const afterDeniedUpdates = await pool.query(
+      `SELECT title, status, version,
+              (SELECT count(*)::text FROM platform.outbox_events WHERE aggregate_id = $1) AS events
+       FROM core.designations WHERE id = $1`,
+      [nameOnly.id],
+    );
+    expect(afterDeniedUpdates.rows).toEqual(beforeDeniedUpdates.rows);
   });
 
   it("translates durable designation constraint and OCC failures and preserves a newer snapshot", async () => {
@@ -493,6 +763,64 @@ describe("admin master data", () => {
     });
     expect(saved).toMatchObject({ designation_code: "DESIGNATION_PROBE_V2", version: 2 });
     expect(snapshot).toMatchObject({ title: "Newer Snapshot", version: 99 });
+  });
+
+  it("rolls back every master-data business write when its outbox insert fails", async () => {
+    const admin = await loginAs(app, "ADM");
+    const pool = app.store.pgPool!;
+    const persistence = app.store.persistence!;
+    const department = await persistence.createDepartmentForActor!(admin.user.id, {
+      name: "Rollback Department",
+      code: "ROLLBACK_DEPARTMENT",
+    });
+    const designation = await persistence.createDesignationForActor!(admin.user.id, {
+      title: "Rollback Designation",
+      code: "ROLLBACK_DESIGNATION",
+    });
+
+    await pool.query(`CREATE OR REPLACE FUNCTION public.test_admin_outbox_failure() RETURNS trigger
+      LANGUAGE plpgsql AS $$ BEGIN
+        IF NEW.event_type LIKE 'admin.master_data.%' THEN
+          RAISE EXCEPTION 'synthetic outbox failure';
+        END IF;
+        RETURN NEW;
+      END $$`);
+    await pool.query(`CREATE TRIGGER test_admin_outbox_failure
+      BEFORE INSERT ON platform.outbox_events FOR EACH ROW EXECUTE FUNCTION public.test_admin_outbox_failure()`);
+    try {
+      await expect(
+        persistence.createDepartmentForActor!(admin.user.id, { name: "Rolled Back Create", code: "ROLLED_BACK_CREATE" }),
+      ).rejects.toThrow("synthetic outbox failure");
+      await expect(
+        persistence.updateDepartmentForActor!(admin.user.id, department.id, { name: "Rolled Back Update", expected_version: 1 }),
+      ).rejects.toThrow("synthetic outbox failure");
+      await expect(
+        persistence.createDesignationForActor!(admin.user.id, { title: "Rolled Back Designation Create", code: "ROLLED_BACK_DESIG_CREATE" }),
+      ).rejects.toThrow("synthetic outbox failure");
+      await expect(
+        persistence.updateDesignationForActor!(admin.user.id, designation.id, { title: "Rolled Back Designation Update", expected_version: 1 }),
+      ).rejects.toThrow("synthetic outbox failure");
+    } finally {
+      await pool.query("DROP TRIGGER IF EXISTS test_admin_outbox_failure ON platform.outbox_events");
+      await pool.query("DROP FUNCTION IF EXISTS public.test_admin_outbox_failure()");
+    }
+
+    await expect(
+      pool.query("SELECT name, version FROM core.departments WHERE id = $1", [department.id]),
+    ).resolves.toMatchObject({ rows: [{ name: "Rollback Department", version: 1 }] });
+    await expect(
+      pool.query("SELECT title, version FROM core.designations WHERE id = $1", [designation.id]),
+    ).resolves.toMatchObject({ rows: [{ title: "Rollback Designation", version: 1 }] });
+    await expect(
+      pool.query(
+        `SELECT
+           (SELECT count(*)::text FROM core.departments WHERE department_code = 'ROLLED_BACK_CREATE') AS departments,
+           (SELECT count(*)::text FROM core.designations WHERE designation_code = 'ROLLED_BACK_DESIG_CREATE') AS designations,
+           (SELECT count(*)::text FROM platform.outbox_events
+              WHERE aggregate_id = ANY($1::uuid[])) AS events`,
+        [[department.id, designation.id]],
+      ),
+    ).resolves.toMatchObject({ rows: [{ departments: "0", designations: "0", events: "2" }] });
   });
 
   it("manages extended master-data groups for visible Admin Settings tabs", async () => {
