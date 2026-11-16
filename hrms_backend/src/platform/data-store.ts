@@ -438,6 +438,14 @@ export interface ObjectStoragePort {
   removeObject(key: string): Promise<void>;
 }
 
+export interface AuthMutationScopeHandle {
+  userIds: UUID[];
+  signupEmployeeCode?: string;
+  flushAuth(options: AuthPersistenceFlushOptions): Promise<void>;
+  flushCompanyBootstrap(options: AuthPersistenceFlushOptions): Promise<void>;
+  release(): Promise<void>;
+}
+
 export interface DataStorePersistence {
   flush(): Promise<void>;
   acquireAuthMutationScope?(scope: {
@@ -445,7 +453,8 @@ export interface DataStorePersistence {
     emails: readonly string[];
     employeeCodes: readonly string[];
     tokenHashes: readonly string[];
-  }): Promise<{ userIds: UUID[]; release: () => Promise<void> }>;
+    companySlugs?: readonly string[];
+  }): Promise<AuthMutationScopeHandle>;
   flushAuth?(options?: AuthPersistenceFlushOptions): Promise<void>;
   flushCompanyBootstrap?(options?: AuthPersistenceFlushOptions): Promise<void>;
   flushCompanyLogo?(

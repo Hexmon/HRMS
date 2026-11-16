@@ -947,7 +947,7 @@ test("attendance policy migration replay keeps exact duplicates idempotent witho
       ) THEN RAISE EXCEPTION 'overlapping attendance policy versions are not allowed'; END IF;
       RETURN NEW;
     END; $$;`;
-  const path = "hrms_backend/src/db/migrations/0037_attendance_policy_versions.sql";
+  const path = "hrms_backend/src/db/migrations/0066_attendance_policy_version_replay_guard.sql";
   assert.match(validateSemanticPath("", path, migration, "base"), /semantic contract passed/);
   assert.throws(
     () => validateSemanticPath("", path, migration.replace("existing.version_number = NEW.version_number", "true"), "base"),
@@ -956,6 +956,27 @@ test("attendance policy migration replay keeps exact duplicates idempotent witho
   assert.throws(
     () => validateSemanticPath("", path, migration.replace("existing.id <> NEW.id", "true"), "base"),
     /genuine overlap/,
+  );
+});
+
+test("signup employee-code allocation uses a runner-owned sequence isolated from hostile tenant codes", () => {
+  const migration = `
+    CREATE SEQUENCE platform.signup_employee_code_seq AS bigint NO CYCLE;
+    SELECT setval(
+      'platform.signup_employee_code_seq',
+      COALESCE((SELECT MAX(substring(employee_code FROM 4)::bigint) + 1
+        FROM core.users WHERE employee_code ~ '^ONB[0-9]{1,9}$'), 1),
+      false
+    );`;
+  const path = "hrms_backend/src/db/migrations/0067_signup_employee_code_sequence.sql";
+  assert.match(validateSemanticPath("", path, migration, "base"), /semantic contract passed/);
+  assert.throws(
+    () => validateSemanticPath("", path, migration.replace("{1,9}", "+"), "base"),
+    /oversized ONB/,
+  );
+  assert.throws(
+    () => validateSemanticPath("", path, `BEGIN;\n${migration}\nCOMMIT;`, "base"),
+    /transaction ownership/,
   );
 });
 

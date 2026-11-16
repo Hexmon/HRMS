@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Pool, type PoolClient } from "pg";
 import { ValkeySessionStore } from "#auth";
 import { EmploymentStatuses, Roles, type AuthUser, type RoleKey } from "#shared";
@@ -418,14 +418,14 @@ function copyData(target: DataStore, source: DataStore): void {
   target.nextOutboxId = source.nextOutboxId;
 }
 
-function migrationSql(): string {
+function migrationSql(excludedFiles: ReadonlySet<string> = new Set()): string {
   const directories = ["src/db/migrations", "dist/src/db/migrations"];
   for (const directory of directories) {
     if (!existsSync(directory)) {
       continue;
     }
     const files = readdirSync(directory)
-      .filter((file) => file.endsWith(".sql"))
+      .filter((file) => file.endsWith(".sql") && !excludedFiles.has(file))
       .sort();
     if (files.length > 0) {
       return files
@@ -449,7 +449,27 @@ export async function resetPostgresDatabase(
       "SELECT pg_advisory_lock(hashtext('hrms_postgres_schema_reset'))",
     );
     schemaLockAcquired = true;
-    await client.query(migrationSql());
+    // Integration resets deliberately replay the historical idempotent bundle.
+    // Migration 0037 replaces its trigger before its backfill and therefore
+    // cannot be replayed over an existing policy-version table. It is already
+    // applied in that case, so omit it exactly as the production migration
+    // ledger does; fresh databases still execute the complete ordered chain.
+    const appliedState = await client.query<{
+      attendance_schema_present: boolean;
+      signup_sequence_present: boolean;
+    }>(`
+      SELECT
+        to_regnamespace('attendance') IS NOT NULL AS attendance_schema_present,
+        to_regclass('platform.signup_employee_code_seq') IS NOT NULL AS signup_sequence_present
+    `);
+    const alreadyApplied = new Set<string>();
+    if (appliedState.rows[0]?.attendance_schema_present) {
+      alreadyApplied.add("0037_attendance_policy_versions.sql");
+    }
+    if (appliedState.rows[0]?.signup_sequence_present) {
+      alreadyApplied.add("0067_signup_employee_code_sequence.sql");
+    }
+    await client.query(migrationSql(alreadyApplied));
     await client.query("BEGIN");
     await client.query(`TRUNCATE ${resetTables.join(", ")} RESTART IDENTITY`);
     await client.query("COMMIT");
@@ -1280,6 +1300,15 @@ class PostgresPersistence {
   }
 
   async flushAuth(options: AuthPersistenceFlushOptions = {}): Promise<void> {
+    const client = await this.pool.connect();
+    await this.flushAuthWithClient(client, options, true);
+  }
+
+  private async flushAuthWithClient(
+    client: PoolClient,
+    options: AuthPersistenceFlushOptions,
+    releaseClient: boolean,
+  ): Promise<void> {
     const recoveryScope = options.userIds?.length
       ? {
           userIds: new Set(options.userIds),
@@ -1294,7 +1323,6 @@ class PostgresPersistence {
           recoveryScope.companyIds,
         )
       : undefined;
-    const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
       await this.flushAuthCore(client, options);
@@ -1320,7 +1348,7 @@ class PostgresPersistence {
       }
       throw error;
     } finally {
-      client.release();
+      if (releaseClient) client.release();
     }
   }
 
@@ -1329,16 +1357,20 @@ class PostgresPersistence {
     emails: readonly string[];
     employeeCodes: readonly string[];
     tokenHashes: readonly string[];
-  }): Promise<{ userIds: UUID[]; release: () => Promise<void> }> {
+    companySlugs?: readonly string[];
+  }) {
     const userIds = new Set(scope.userIds);
     const emails = new Set(scope.emails.map((email) => email.trim().toLowerCase()));
     const employeeCodes = new Set(scope.employeeCodes.map((code) => code.trim().toUpperCase()));
     const tokenHashes = new Set(scope.tokenHashes);
+    const companySlugs = new Set((scope.companySlugs ?? []).map((slug) => slug.trim().toLowerCase()));
+    const companyIds = new Set<UUID>();
     const heldLockKeys: string[] = [];
     const initialLockKeys = [
       ...[...emails].map((email) => `auth-email:${email}`),
       ...[...employeeCodes].map((code) => `auth-employee-code:${code}`),
       ...[...tokenHashes].map((tokenHash) => `auth-token:${tokenHash}`),
+      ...[...companySlugs].map((slug) => `auth-company-slug:${createHash("sha256").update(slug).digest("hex")}`),
       ...[...userIds].map((userId) => `auth-user:${userId}`),
     ].sort();
     const client = await this.pool.connect();
@@ -1347,11 +1379,11 @@ class PostgresPersistence {
       if (released) return;
       released = true;
       try {
-        for (const key of [...heldLockKeys].reverse()) {
-          await client.query("SELECT pg_advisory_unlock(hashtext($1::text))", [key]);
-        }
-      } finally {
+        await client.query("SELECT pg_advisory_unlock_all()");
         client.release();
+      } catch (error) {
+        client.release(true);
+        throw error;
       }
     };
     try {
@@ -1382,6 +1414,16 @@ class PostgresPersistence {
           if (row.user_id) userIds.add(row.user_id);
         }
       }
+      if (companySlugs.size) {
+        const resolved = await client.query<{ id: UUID }>(
+          "SELECT id FROM platform.company_profiles WHERE lower(company_slug) = ANY($1::text[])",
+          [[...companySlugs]],
+        );
+        for (const row of resolved.rows) companyIds.add(row.id);
+      }
+      const signupEmployeeCode = companySlugs.size
+        ? await this.nextSignupEmployeeCode(client)
+        : undefined;
       for (const key of [...userIds].sort().map((userId) => `auth-user:${userId}`)) {
         if (heldLockKeys.includes(key)) continue;
         await client.query("SELECT pg_advisory_lock(hashtext($1::text))", [key]);
@@ -1393,10 +1435,10 @@ class PostgresPersistence {
       const tokens = await this.loadAuthTokens(client);
       const preferences = await this.loadUserSessionPreferences(client);
       const deliveries = await this.loadEmailDeliveries(client);
-      const companyIds = new Set([
+      for (const companyId of [
         ...preferences.filter((record) => userIds.has(record.user_id)).flatMap((record) => record.company_id ? [record.company_id] : []),
         ...tokens.filter((record) => Boolean(record.user_id && userIds.has(record.user_id))).flatMap((record) => record.company_id ? [record.company_id] : []),
-      ]);
+      ]) companyIds.add(companyId);
       const companies = await this.loadCompanyProfiles(client);
       await client.query("COMMIT");
       this.store.users = this.replaceScopedRecords(this.store.users, users, (record) => userIds.has(record.id));
@@ -1425,7 +1467,13 @@ class PostgresPersistence {
         companies,
         (record) => companyIds.has(record.id),
       );
-      return { userIds: [...userIds], release };
+      return {
+        userIds: [...userIds],
+        ...(signupEmployeeCode ? { signupEmployeeCode } : {}),
+        flushAuth: (options: AuthPersistenceFlushOptions) => this.flushAuthWithClient(client, options, false),
+        flushCompanyBootstrap: (options: AuthPersistenceFlushOptions) => this.flushCompanyBootstrapWithClient(client, options, false),
+        release,
+      };
     } catch (error) {
       await client.query("ROLLBACK").catch(Boolean);
       await release();
@@ -1433,8 +1481,25 @@ class PostgresPersistence {
     }
   }
 
+  private async nextSignupEmployeeCode(client: PoolClient): Promise<string> {
+    const result = await client.query<{ next_index: string }>(`
+      SELECT nextval('platform.signup_employee_code_seq')::text AS next_index
+    `);
+    const nextIndex = result.rows[0]!.next_index;
+    return `ONB${nextIndex.padStart(4, "0")}`;
+  }
+
   async flushCompanyBootstrap(
     options: AuthPersistenceFlushOptions = {},
+  ): Promise<void> {
+    const client = await this.pool.connect();
+    await this.flushCompanyBootstrapWithClient(client, options, true);
+  }
+
+  private async flushCompanyBootstrapWithClient(
+    client: PoolClient,
+    options: AuthPersistenceFlushOptions,
+    releaseClient: boolean,
   ): Promise<void> {
     const userIds = new Set(options.userIds ?? []);
     const companyIds = new Set(options.companyIds ?? []);
@@ -1444,7 +1509,6 @@ class PostgresPersistence {
     const expectedMasterSignatures = companyIds.size
       ? this.companyBootstrapScopeSignatures(companyIds)
       : undefined;
-    const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
       if (!companyIds.size) {
@@ -1480,7 +1544,7 @@ class PostgresPersistence {
       }
       throw error;
     } finally {
-      client.release();
+      if (releaseClient) client.release();
     }
   }
 

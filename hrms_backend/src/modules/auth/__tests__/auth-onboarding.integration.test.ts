@@ -846,6 +846,323 @@ describe("auth onboarding and password APIs", () => {
     }
   });
 
+  it("uses the auth scope connection for login persistence instead of checking out a second client", async () => {
+    const pool = app.store.pgPool!;
+    const connectSpy = vi.spyOn(pool, "connect");
+    try {
+      const login = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { employee_code: "E1" },
+      });
+      expect(login.statusCode).toBe(200);
+      expect(connectSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      connectSpy.mockRestore();
+    }
+  });
+
+  it("does not persist an unrelated company during an ordinary login", async () => {
+    const source = app.store.companyProfiles[0]!;
+    const foreignId = randomUUID();
+    app.store.companyProfiles.push({
+      ...source,
+      id: foreignId,
+      company_name: "Foreign durable company",
+      company_slug: `foreign-${foreignId}`,
+      version: 1,
+    });
+    await app.store.persistence!.flushAuth!({ companyIds: [foreignId] });
+    app.store.companyProfiles.find((company) => company.id === foreignId)!.company_name = "Stale in-memory overwrite";
+
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: { employee_code: "E1" },
+    });
+    expect(login.statusCode).toBe(200);
+    const durable = await app.store.pgPool!.query<{ company_name: string }>(
+      "SELECT company_name FROM platform.company_profiles WHERE id = $1",
+      [foreignId],
+    );
+    expect(durable.rows[0]?.company_name).toBe("Foreign durable company");
+  });
+
+  it("serializes two backend signups for the same company slug", async () => {
+    const activeDatabaseUrl = process.env.DATABASE_URL;
+    let second: FastifyInstance;
+    try {
+      delete process.env.DATABASE_URL;
+      second = await buildRealApp({ reset: false });
+    } finally {
+      if (activeDatabaseUrl) process.env.DATABASE_URL = activeDatabaseUrl;
+    }
+    await second.ready();
+    try {
+      const payload = (email: string) => ({
+        company_name: "Concurrent Slug Company",
+        company_slug: "concurrent-slug-company",
+        full_name: email.startsWith("one") ? "Founder One" : "Founder Two",
+        email,
+        timezone: "Asia/Kolkata",
+      });
+      const [firstResponse, secondResponse] = await Promise.all([
+        app.inject({ method: "POST", url: "/api/v1/auth/signup", payload: payload("one@example.test") }),
+        second.inject({ method: "POST", url: "/api/v1/auth/signup", payload: payload("two@example.test") }),
+      ]);
+      expect([firstResponse.statusCode, secondResponse.statusCode].sort()).toEqual([200, 409]);
+      const durable = await app.store.pgPool!.query<{ companies: string; founders: string }>(
+        `SELECT
+           (SELECT count(*)::text FROM platform.company_profiles WHERE company_slug = 'concurrent-slug-company') AS companies,
+           (SELECT count(*)::text FROM core.users WHERE email IN ('one@example.test', 'two@example.test')) AS founders`,
+      );
+      expect(durable.rows[0]).toEqual({ companies: "1", founders: "1" });
+    } finally {
+      await second.close();
+    }
+  });
+
+  it("allocates distinct employee codes for concurrent signups of different companies", async () => {
+    const activeDatabaseUrl = process.env.DATABASE_URL;
+    let second: FastifyInstance;
+    try {
+      delete process.env.DATABASE_URL;
+      second = await buildRealApp({ reset: false });
+    } finally {
+      if (activeDatabaseUrl) process.env.DATABASE_URL = activeDatabaseUrl;
+    }
+    await second.ready();
+    try {
+      const [firstResponse, secondResponse] = await Promise.all([
+        app.inject({
+          method: "POST",
+          url: "/api/v1/auth/signup",
+          payload: {
+            company_name: "Distinct Company One",
+            company_slug: "distinct-company-one",
+            full_name: "Distinct Founder One",
+            email: "distinct.one@example.test",
+            timezone: "Asia/Kolkata",
+          },
+        }),
+        second.inject({
+          method: "POST",
+          url: "/api/v1/auth/signup",
+          payload: {
+            company_name: "Distinct Company Two",
+            company_slug: "distinct-company-two",
+            full_name: "Distinct Founder Two",
+            email: "distinct.two@example.test",
+            timezone: "Asia/Kolkata",
+          },
+        }),
+      ]);
+      expect([firstResponse.statusCode, secondResponse.statusCode]).toEqual([200, 200]);
+      const durable = await app.store.pgPool!.query<{ email: string; employee_code: string }>(
+        `SELECT email, employee_code
+         FROM core.users
+         WHERE email IN ('distinct.one@example.test', 'distinct.two@example.test')
+         ORDER BY email`,
+      );
+      expect(durable.rows).toHaveLength(2);
+      expect(new Set(durable.rows.map((row) => row.employee_code)).size).toBe(2);
+      expect(durable.rows.every((row) => /^ONB\d+$/u.test(row.employee_code))).toBe(true);
+    } finally {
+      await second.close();
+    }
+  });
+
+  it("does not let a paused Company A signup scope block Company B", async () => {
+    const activeDatabaseUrl = process.env.DATABASE_URL;
+    let second: FastifyInstance;
+    try {
+      delete process.env.DATABASE_URL;
+      second = await buildRealApp({ reset: false });
+    } finally {
+      if (activeDatabaseUrl) process.env.DATABASE_URL = activeDatabaseUrl;
+    }
+    await second.ready();
+
+    const persistence = app.store.persistence!;
+    const originalAcquire = persistence.acquireAuthMutationScope!.bind(persistence);
+    let signalPaused!: () => void;
+    let resumeCompanyA!: () => void;
+    const companyAPaused = new Promise<void>((resolve) => { signalPaused = resolve; });
+    const companyAResume = new Promise<void>((resolve) => { resumeCompanyA = resolve; });
+    const acquireSpy = vi.spyOn(persistence, "acquireAuthMutationScope").mockImplementation(async (scope) => {
+      const handle = await originalAcquire(scope);
+      if (scope.companySlugs?.includes("paused-company-a")) {
+        signalPaused();
+        await companyAResume;
+      }
+      return handle;
+    });
+
+    let companyASettled = false;
+    const companyARequest = app.inject({
+      method: "POST",
+      url: "/api/v1/auth/signup",
+      payload: {
+        company_name: "Paused Company A",
+        company_slug: "paused-company-a",
+        full_name: "Paused Founder A",
+        email: "paused.a@example.test",
+        timezone: "Asia/Kolkata",
+      },
+    }).finally(() => { companyASettled = true; });
+
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await companyAPaused;
+      const companyBRequest = second.inject({
+        method: "POST",
+        url: "/api/v1/auth/signup",
+        payload: {
+          company_name: "Independent Company B",
+          company_slug: "independent-company-b",
+          full_name: "Independent Founder B",
+          email: "independent.b@example.test",
+          timezone: "Asia/Kolkata",
+        },
+      });
+      const companyBResponse = await Promise.race([
+        companyBRequest,
+        new Promise<never>((_resolve, reject) => {
+          timeout = setTimeout(() => reject(new Error("Company B signup was blocked by Company A")), 20_000);
+        }),
+      ]);
+      expect(companyBResponse.statusCode).toBe(200);
+      expect(companyASettled).toBe(false);
+    } finally {
+      if (timeout) clearTimeout(timeout);
+      resumeCompanyA();
+      await companyARequest;
+      acquireSpy.mockRestore();
+      await second.close();
+    }
+  });
+
+  it("keeps signup available while Core rejects a maximum-length reserved ONB code", async () => {
+    const admin = await loginAs(app, "ADM");
+    const activeDatabaseUrl = process.env.DATABASE_URL;
+    let second: FastifyInstance;
+    try {
+      delete process.env.DATABASE_URL;
+      second = await buildRealApp({ reset: false });
+    } finally {
+      if (activeDatabaseUrl) process.env.DATABASE_URL = activeDatabaseUrl;
+    }
+    await second.ready();
+    const hostileCode = `ONB${"9".repeat(29)}`;
+    try {
+      const [coreResponse, signupResponse] = await Promise.all([
+        app.inject({
+          method: "POST",
+          url: "/api/v1/core/users",
+          headers: authHeader(admin.token),
+          payload: {
+            employee_code: hostileCode,
+            email: "reserved.onb@example.test",
+            full_name: "Reserved Namespace",
+            department_id: admin.user.department_id,
+            designation_id: admin.user.designation_id,
+            roles: ["Employee"],
+          },
+        }),
+        second.inject({
+          method: "POST",
+          url: "/api/v1/auth/signup",
+          payload: {
+            company_name: "Sequence Protected Company",
+            company_slug: "sequence-protected-company",
+            full_name: "Sequence Protected Founder",
+            email: "sequence.protected@example.test",
+            timezone: "Asia/Kolkata",
+          },
+        }),
+      ]);
+      expect(coreResponse.statusCode).toBe(400);
+      expect(signupResponse.statusCode).toBe(200);
+      const durable = await app.store.pgPool!.query<{ employee_code: string }>(
+        "SELECT employee_code FROM core.users WHERE email = 'sequence.protected@example.test'",
+      );
+      expect(durable.rows).toHaveLength(1);
+      expect(durable.rows[0]?.employee_code).toMatch(/^ONB\d+$/u);
+      expect(durable.rows[0]?.employee_code).not.toBe(hostileCode);
+      expect(app.store.users.some((user) => user.employee_code === hostileCode)).toBe(false);
+    } finally {
+      await second.close();
+    }
+  });
+
+  it("serializes punctuation-only company names under the shared hrms slug fallback", async () => {
+    const activeDatabaseUrl = process.env.DATABASE_URL;
+    let second: FastifyInstance;
+    try {
+      delete process.env.DATABASE_URL;
+      second = await buildRealApp({ reset: false });
+    } finally {
+      if (activeDatabaseUrl) process.env.DATABASE_URL = activeDatabaseUrl;
+    }
+    await second.ready();
+    try {
+      const payload = (email: string) => ({
+        company_name: "!!",
+        full_name: email.startsWith("fallback.one") ? "Fallback Founder One" : "Fallback Founder Two",
+        email,
+        timezone: "Asia/Kolkata",
+      });
+      const [firstResponse, secondResponse] = await Promise.all([
+        app.inject({ method: "POST", url: "/api/v1/auth/signup", payload: payload("fallback.one@example.test") }),
+        second.inject({ method: "POST", url: "/api/v1/auth/signup", payload: payload("fallback.two@example.test") }),
+      ]);
+      expect([firstResponse.statusCode, secondResponse.statusCode].sort()).toEqual([200, 409]);
+      const durable = await app.store.pgPool!.query<{ companies: string; founders: string }>(
+        `SELECT
+           (SELECT count(*)::text FROM platform.company_profiles WHERE company_slug = 'hrms') AS companies,
+           (SELECT count(*)::text FROM core.users WHERE email IN ('fallback.one@example.test', 'fallback.two@example.test')) AS founders`,
+      );
+      expect(durable.rows[0]).toEqual({ companies: "1", founders: "1" });
+    } finally {
+      await second.close();
+    }
+  });
+
+  it("destroys an auth lock connection when advisory unlock fails", async () => {
+    const pool = app.store.pgPool!;
+    const originalConnect = pool.connect.bind(pool);
+    let releaseSpy: ReturnType<typeof vi.spyOn> | undefined;
+    let querySpy: ReturnType<typeof vi.spyOn> | undefined;
+    const connectSpy = vi.spyOn(pool, "connect").mockImplementation(async () => {
+      const client = await originalConnect();
+      const originalQuery = client.query.bind(client);
+      querySpy = vi.spyOn(client, "query").mockImplementation(((query: unknown, values?: unknown[]) => {
+        if (query === "SELECT pg_advisory_unlock_all()") {
+          return Promise.reject(new Error("synthetic advisory unlock failure"));
+        }
+        return values === undefined
+          ? originalQuery(query as string)
+          : originalQuery(query as string, values);
+      }) as typeof client.query);
+      releaseSpy = vi.spyOn(client, "release");
+      return client;
+    });
+    try {
+      const scope = await app.store.persistence!.acquireAuthMutationScope!({
+        userIds: [],
+        emails: ["unknown@example.test"],
+        employeeCodes: [],
+        tokenHashes: [],
+      });
+      await expect(scope.release()).rejects.toThrow("synthetic advisory unlock failure");
+      expect(releaseSpy).toHaveBeenCalledWith(true);
+    } finally {
+      connectSpy.mockRestore();
+      querySpy?.mockRestore();
+      releaseSpy?.mockRestore();
+    }
+  });
+
   it("persists the unverified fallback for a legacy user without a loaded status", async () => {
     const employee = await loginAs(app, "E2");
     await app.store.pgPool!.query(

@@ -643,15 +643,20 @@ describe("admin master data", () => {
     const resetToken = resetRequest.json().dev_only.password_reset_token as string;
     expect(resetToken).toBeTypeOf("string");
     const persistence = app.store.persistence!;
-    const originalFlushAuth = persistence.flushAuth!.bind(persistence);
+    const originalAcquireAuthScope = persistence.acquireAuthMutationScope!.bind(persistence);
     let flushStarted!: () => void;
     let allowFlush!: () => void;
     const started = new Promise<void>((resolve) => { flushStarted = resolve; });
     const allowed = new Promise<void>((resolve) => { allowFlush = resolve; });
-    persistence.flushAuth = async (options) => {
-      flushStarted();
-      await allowed;
-      return originalFlushAuth(options);
+    persistence.acquireAuthMutationScope = async (scope) => {
+      const handle = await originalAcquireAuthScope(scope);
+      const scopedFlushAuth = handle.flushAuth!.bind(handle);
+      handle.flushAuth = async (options) => {
+        flushStarted();
+        await allowed;
+        return scopedFlushAuth(options);
+      };
+      return handle;
     };
     const originalName = employee.full_name;
     try {
@@ -680,7 +685,7 @@ describe("admin master data", () => {
       expect((await pendingCore).statusCode).toBe(200);
     } finally {
       allowFlush();
-      persistence.flushAuth = originalFlushAuth;
+      persistence.acquireAuthMutationScope = originalAcquireAuthScope;
     }
   });
 

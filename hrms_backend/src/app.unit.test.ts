@@ -103,6 +103,59 @@ describe("app persistence flushing", () => {
     }
   });
 
+  it("uses standalone company-bootstrap persistence when scoped persistence is unavailable", async () => {
+    process.env.APP_ENV = "local";
+    const store = createMemoryDataStore();
+    let bootstrapFlushCount = 0;
+    const bootstrapFlushOptions: Parameters<NonNullable<DataStorePersistence["flushCompanyBootstrap"]>>[0][] = [];
+    store.persistence = {
+      async flush() {},
+      async flushAuth() {},
+      async flushCompanyBootstrap(options) {
+        bootstrapFlushCount += 1;
+        bootstrapFlushOptions.push(options);
+      },
+      async reload() {},
+      async close() {},
+    };
+
+    const app = await buildApp({ dataStore: store, rateLimit: false });
+    await app.ready();
+    try {
+      const signup = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/signup",
+        payload: {
+          company_name: "Standalone Bootstrap",
+          full_name: "Standalone Founder",
+          email: "standalone.founder@example.test",
+          timezone: "Asia/Kolkata",
+        },
+      });
+      expect(signup.statusCode).toBe(200);
+
+      const verify = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/verify-email",
+        payload: { token: signup.json().dev_only.email_verification_token },
+      });
+      expect(verify.statusCode).toBe(200);
+
+      const bootstrap = await app.inject({
+        method: "POST",
+        url: "/api/v1/onboarding/company-bootstrap",
+        payload: { bootstrap_token: verify.json().dev_only.company_bootstrap_token },
+      });
+      expect(bootstrap.statusCode).toBe(200);
+      expect(bootstrapFlushCount).toBe(1);
+      expect(bootstrapFlushOptions[0]?.userIds).toContain(signup.json().signup_id);
+      expect(bootstrapFlushOptions[0]?.companyIds).toEqual([bootstrap.json().company.id]);
+      expect(bootstrap.headers["server-timing"]).toContain("persistence.company_bootstrap");
+    } finally {
+      await app.close();
+    }
+  });
+
   it("uses EMS domain persistence for profile-change request and decision mutations", async () => {
     process.env.APP_ENV = "local";
     const store = createMemoryDataStore();
@@ -264,6 +317,8 @@ describe("app persistence flushing", () => {
         const user = store.users.find((candidate) => candidate.employee_code === "E1")!;
         return {
           userIds: [user.id],
+          async flushAuth(options) { await store.persistence!.flushAuth!(options); },
+          async flushCompanyBootstrap(options) { await store.persistence!.flushCompanyBootstrap!(options); },
           release: async () => { distributedReleases += 1; },
         };
       },

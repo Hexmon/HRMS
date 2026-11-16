@@ -7,6 +7,7 @@ import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import type {
   AuthPersistenceFlushOptions,
+  AuthMutationScopeHandle,
   CompanyLogoPersistenceFlushOptions,
   DataStore,
   DomainPersistenceFlushOptions,
@@ -46,6 +47,7 @@ import locationsModule from "./modules/locations/index.js";
 import notificationsModule from "./modules/notifications/index.js";
 import adminModule from "./modules/admin/index.js";
 import webhooksModule from "./modules/webhooks/index.js";
+import { normalizeCompanySlug } from "./modules/auth/company-slug.js";
 
 export interface BuildAppOptions {
   logger?: boolean;
@@ -102,6 +104,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   const mutationLifecycleLock = createAsyncKeyedSerialLock();
   const mutationLifecycleReleases = new WeakMap<object, () => Promise<void>>();
   const mutationUserIds = new WeakMap<object, string[]>();
+  const authMutationScopes = new WeakMap<object, AuthMutationScopeHandle>();
   app.addHook("onRequest", async (request) => {
     requestStartTimes.set(request, process.hrtime.bigint());
   });
@@ -117,11 +120,25 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         const flushOptions = mergeAuthPersistenceFlushOptions(
           authPersistenceFlushOptions(payload),
           mutationUserIds.get(request),
+          app.store,
         );
-        if (flushOptions) await app.store.persistence.flushAuth(flushOptions);
+        if (flushOptions) {
+          const scope = authMutationScopes.get(request);
+          await (scope
+            ? scope.flushAuth(flushOptions)
+            : app.store.persistence.flushAuth(flushOptions));
+        }
         appendServerTiming(reply, "persistence.auth", startedAt);
       } else if (flushTarget.kind === "company-bootstrap" && app.store.persistence.flushCompanyBootstrap) {
-        await app.store.persistence.flushCompanyBootstrap(authPersistenceFlushOptions(payload));
+        const flushOptions = mergeAuthPersistenceFlushOptions(
+          authPersistenceFlushOptions(payload),
+          mutationUserIds.get(request),
+          app.store,
+        );
+        const scope = authMutationScopes.get(request);
+        await (scope
+          ? scope.flushCompanyBootstrap(flushOptions!)
+          : app.store.persistence.flushCompanyBootstrap(flushOptions));
         appendServerTiming(reply, "persistence.company_bootstrap", startedAt);
       } else if (flushTarget.kind === "company-logo" && app.store.persistence.flushCompanyLogo) {
         await app.store.persistence.flushCompanyLogo(companyLogoPersistenceFlushOptions(payload));
@@ -200,6 +217,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
             emails: scope.emails,
             employeeCodes: scope.employeeCodes,
             tokenHashes: scope.tokenHashes,
+            companySlugs: scope.companySlugs,
           })
         : undefined;
       const resolvedUserIds = uniqueStrings([
@@ -207,6 +225,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         ...(distributedScope?.userIds ?? []),
       ]);
       if (resolvedUserIds.length) mutationUserIds.set(request, resolvedUserIds);
+      if (distributedScope?.signupEmployeeCode) {
+        request.signupEmployeeCode = distributedScope.signupEmployeeCode;
+      }
+      if (distributedScope) authMutationScopes.set(request, distributedScope);
       mutationLifecycleReleases.set(request, async () => {
         try {
           await distributedScope?.release();
@@ -296,23 +318,25 @@ function mutationLifecycleLockScope(
   emails: string[];
   employeeCodes: string[];
   tokenHashes: string[];
+  companySlugs: string[];
   authMutation: boolean;
 } {
   const path = url.split("?", 1)[0]!;
   const routeKey = `${method.toUpperCase()} ${path}`;
   if (["GET", "HEAD", "OPTIONS"].includes(method) && routeKey !== "GET /api/v1/auth/me") {
-    return { keys: [], userIds: [], emails: [], employeeCodes: [], tokenHashes: [], authMutation: false };
+    return { keys: [], userIds: [], emails: [], employeeCodes: [], tokenHashes: [], companySlugs: [], authMutation: false };
   }
   const isCoreMutation = path === "/api/v1/core" || path.startsWith("/api/v1/core/");
   const isAuthMutation = authOnlyMutationRoutes.has(routeKey) || companyBootstrapMutationRoutes.has(routeKey);
   if (!isCoreMutation && !isAuthMutation) {
-    return { keys: [], userIds: [], emails: [], employeeCodes: [], tokenHashes: [], authMutation: false };
+    return { keys: [], userIds: [], emails: [], employeeCodes: [], tokenHashes: [], companySlugs: [], authMutation: false };
   }
 
   const userIds = new Set<string>();
   const emails = new Set<string>();
   const employeeCodes = new Set<string>();
   const tokenHashes = new Set<string>();
+  const companySlugs = new Set<string>();
   const keys = new Set<string>();
   const record = nestedPayloadRecord(body);
   if (actorUserId) userIds.add(actorUserId);
@@ -344,6 +368,12 @@ function mutationLifecycleLockScope(
     if (token?.user_id) userIds.add(token.user_id);
     keys.add(`token:${tokenHash}`);
   }
+  const companySlugInput = firstString(record?.company_slug, record?.company_name);
+  if (companySlugInput) {
+    const companySlug = normalizeCompanySlug(companySlugInput);
+    companySlugs.add(companySlug);
+    keys.add(`company-slug:${companySlug}`);
+  }
   for (const userId of userIds) {
     keys.add(`user:${userId}`);
     const companyId = store.userSessionPreferences.find((record) => record.user_id === userId)?.company_id;
@@ -355,6 +385,7 @@ function mutationLifecycleLockScope(
     emails: [...emails],
     employeeCodes: [...employeeCodes],
     tokenHashes: [...tokenHashes],
+    companySlugs: [...companySlugs],
     authMutation: isAuthMutation,
   };
 }
@@ -617,12 +648,21 @@ function authPersistenceFlushOptions(payload: unknown): AuthPersistenceFlushOpti
 function mergeAuthPersistenceFlushOptions(
   payloadOptions: AuthPersistenceFlushOptions | undefined,
   lockedUserIds: readonly string[] | undefined,
+  store: DataStore,
 ): AuthPersistenceFlushOptions | undefined {
   const userIds = uniqueStrings([
     ...(payloadOptions?.userIds ?? []),
     ...(lockedUserIds ?? []),
   ]);
-  const companyIds = uniqueStrings(payloadOptions?.companyIds ?? []);
+  const companyIds = uniqueStrings([
+    ...(payloadOptions?.companyIds ?? []),
+    ...store.userSessionPreferences
+      .filter((record) => userIds.includes(record.user_id))
+      .map((record) => record.company_id),
+    ...store.authTokens
+      .filter((record) => Boolean(record.user_id && userIds.includes(record.user_id)))
+      .map((record) => record.company_id),
+  ]);
   if (!userIds.length && !companyIds.length) return undefined;
   return { userIds, companyIds };
 }

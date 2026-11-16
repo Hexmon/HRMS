@@ -198,10 +198,11 @@ function durationMs(startedAt: bigint): number {
   return Number(process.hrtime.bigint() - startedAt) / 1_000_000;
 }
 
-function requestContext(request: FastifyRequest): { ip: string; userAgent?: string } {
+function requestContext(request: FastifyRequest): { ip: string; userAgent?: string; signupEmployeeCode?: string } {
   const userAgent = request.headers["user-agent"];
   return {
     ip: request.ip,
+    signupEmployeeCode: request.signupEmployeeCode,
     userAgent: Array.isArray(userAgent) ? userAgent[0] : userAgent
   };
 }
