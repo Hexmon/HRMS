@@ -1252,7 +1252,7 @@ class PostgresPersistence {
       await this.flushEms(client);
       await client.query("COMMIT");
     } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
+      await client.query("ROLLBACK").catch(Boolean);
       throw error;
     } finally {
       client.release();
@@ -1284,7 +1284,7 @@ class PostgresPersistence {
       if (!companyIds?.size) {
         throw new Error("Company bootstrap persistence requires an explicit company id.");
       }
-      await this.flushCoreMasterData(client, companyIds);
+      await this.flushCoreMasterData(client, companyIds, false);
       await this.flushAuthCore(client, options);
       await this.flushAuthPlatform(client, options);
       await client.query("COMMIT");
@@ -3291,7 +3291,7 @@ class PostgresPersistence {
   private async flushCoreMasterData(
     client: PoolClient,
     companyIds: ReadonlySet<string>,
-    includeLegacyGlobal = false,
+    includeLegacyGlobal: boolean,
   ): Promise<void> {
     await this.lockMasterAssignments(client, companyIds);
     for (const designation of this.store.designations) {

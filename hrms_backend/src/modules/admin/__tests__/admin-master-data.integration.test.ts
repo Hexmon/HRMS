@@ -204,6 +204,62 @@ describe("admin master data", () => {
     expect(after.rows).toEqual(before.rows);
   });
 
+  it("fails closed when company context changes while a durable write waits for its lock", async () => {
+    const admin = await loginAs(app, "ADM");
+    const pool = app.store.pgPool!;
+    const persistence = app.store.persistence!;
+    const preference = await pool.query<{ company_id: string }>(
+      "SELECT company_id FROM platform.user_session_preferences WHERE user_id = $1",
+      [admin.user.id],
+    );
+    const companyAId = preference.rows[0]!.company_id;
+    const companyBId = randomUUID();
+    await pool.query(
+      `INSERT INTO platform.company_profiles (id, company_name, company_slug, status, bootstrap_completed_at)
+       VALUES ($1, 'Context Race Company', $2, 'active', now())`,
+      [companyBId, `context-race-${companyBId}`],
+    );
+    const blocker = await pool.connect();
+    let blockerOpen = false;
+    try {
+      await blocker.query("BEGIN");
+      blockerOpen = true;
+      await blocker.query("SELECT pg_advisory_xact_lock(hashtext($1::text))", [
+        `core:master-assignment:${companyAId}`,
+      ]);
+      const pending = persistence.createDepartmentForActor!(admin.user.id, {
+        name: "Context Race",
+        code: "CONTEXT_RACE",
+      });
+      for (let attempt = 0; attempt < 40; attempt += 1) {
+        const waiting = await pool.query<{ waiting: number }>(
+          `SELECT count(*)::int AS waiting FROM pg_stat_activity
+           WHERE datname = current_database() AND wait_event_type = 'Lock' AND wait_event = 'advisory'`,
+        );
+        if (waiting.rows[0]!.waiting > 0) break;
+        await new Promise((resolve) => setTimeout(resolve, 25));
+        if (attempt === 39) throw new Error("Admin write did not wait for the master-assignment lock.");
+      }
+      await pool.query("UPDATE platform.user_session_preferences SET company_id = $2 WHERE user_id = $1", [
+        admin.user.id,
+        companyBId,
+      ]);
+      await blocker.query("COMMIT");
+      blockerOpen = false;
+      await expect(pending).rejects.toMatchObject({ statusCode: 400 });
+      await expect(
+        pool.query("SELECT count(*)::text AS count FROM core.departments WHERE department_code = 'CONTEXT_RACE'"),
+      ).resolves.toMatchObject({ rows: [{ count: "0" }] });
+    } finally {
+      if (blockerOpen) await blocker.query("ROLLBACK");
+      blocker.release();
+      await pool.query("UPDATE platform.user_session_preferences SET company_id = $2 WHERE user_id = $1", [
+        admin.user.id,
+        companyAId,
+      ]);
+    }
+  });
+
   it("fences Company A from Company B master data and permits an effective HR Manager", async () => {
     const admin = await loginAs(app, "ADM");
     const pool = app.store.pgPool!;
@@ -345,8 +401,37 @@ describe("admin master data", () => {
       });
       stale.store.departments.push({ ...created, name: "Stale Snapshot Name", version: 1 });
 
+      const nullablePreference = stale.store.userSessionPreferences.find(
+        (preference) => preference.user_id !== admin.user.id && preference.company_id,
+      )!;
+      const nullablePreferenceCompanyId = nullablePreference.company_id!;
+      const inactiveUser = stale.store.users.find(
+        (user) => user.id !== admin.user.id && user.id !== nullablePreference.user_id,
+      )!;
+      const inactiveUserStatus = inactiveUser.employment_status;
+      nullablePreference.company_id = null;
+      inactiveUser.employment_status = "inactive";
+      stale.store.designations.push({
+        ...stale.store.designations[0]!,
+        id: randomUUID(),
+        company_id: randomUUID(),
+        designation_code: "FILTERED_FOREIGN_DESIGNATION",
+      });
       await stale.store.persistence!.flush();
+      nullablePreference.company_id = nullablePreferenceCompanyId;
+      inactiveUser.employment_status = inactiveUserStatus;
+      await app.store.pgPool!.query(
+        "UPDATE platform.user_session_preferences SET company_id = $2 WHERE user_id = $1",
+        [nullablePreference.user_id, nullablePreferenceCompanyId],
+      );
+      await app.store.pgPool!.query("UPDATE core.users SET employment_status = $2 WHERE id = $1", [
+        inactiveUser.id,
+        inactiveUserStatus,
+      ]);
       await stale.store.persistence!.flushDomain!("core", { userIds: [] });
+      await expect(stale.store.persistence!.flushCompanyBootstrap!({})).rejects.toThrow(
+        "Company bootstrap persistence requires an explicit company id.",
+      );
       await stale.store.persistence!.flushCompanyBootstrap!({ companyIds: [created.company_id!] });
 
       await expect(
@@ -821,6 +906,23 @@ describe("admin master data", () => {
         [[department.id, designation.id]],
       ),
     ).resolves.toMatchObject({ rows: [{ departments: "0", designations: "0", events: "2" }] });
+  });
+
+  it("rolls back an explicit seed snapshot when a core write fails", async () => {
+    const pool = app.store.pgPool!;
+    const seedPersistence = app.store.persistence! as typeof app.store.persistence & {
+      flushSeedSnapshot(): Promise<void>;
+    };
+    await pool.query(`CREATE OR REPLACE FUNCTION public.test_admin_seed_failure() RETURNS trigger
+      LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic seed failure'; END $$`);
+    await pool.query(`CREATE TRIGGER test_admin_seed_failure
+      BEFORE UPDATE ON core.roles FOR EACH ROW EXECUTE FUNCTION public.test_admin_seed_failure()`);
+    try {
+      await expect(seedPersistence.flushSeedSnapshot()).rejects.toThrow("synthetic seed failure");
+    } finally {
+      await pool.query("DROP TRIGGER IF EXISTS test_admin_seed_failure ON core.roles");
+      await pool.query("DROP FUNCTION IF EXISTS public.test_admin_seed_failure()");
+    }
   });
 
   it("manages extended master-data groups for visible Admin Settings tabs", async () => {
