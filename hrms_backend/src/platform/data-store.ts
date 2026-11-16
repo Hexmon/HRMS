@@ -103,6 +103,12 @@ import {
   type PdfCompressionOptions,
 } from "./pdf-compression.js";
 import type { EmailDeliveryRecord, EmailEventRecord } from "./email/types.js";
+import type {
+  DepartmentCreateInput,
+  DepartmentUpdateInput,
+  DesignationCreateInput,
+  DesignationUpdateInput,
+} from "../modules/admin/schemas.js";
 
 export interface NotificationRecord {
   id: UUID;
@@ -450,6 +456,12 @@ export interface DataStorePersistence {
   holidaysForActor?(actorUserId: UUID, year: number): Promise<Holiday[]>;
   /** Request-local working-week read paired with the actor's company context. */
   workingWeekForActor?(actorUserId: UUID): Promise<string>;
+  departmentsForActor?(actorUserId: UUID): Promise<Department[]>;
+  createDepartmentForActor?(actorUserId: UUID, input: DepartmentCreateInput): Promise<Department>;
+  updateDepartmentForActor?(actorUserId: UUID, id: UUID, input: DepartmentUpdateInput): Promise<Department>;
+  designationsForActor?(actorUserId: UUID): Promise<Designation[]>;
+  createDesignationForActor?(actorUserId: UUID, input: DesignationCreateInput): Promise<Designation>;
+  updateDesignationForActor?(actorUserId: UUID, id: UUID, input: DesignationUpdateInput): Promise<Designation>;
   attendanceReadStore?(scope: { companyId: UUID; employeeUserIds?: UUID[]; includePendingOutbox?: boolean }): Promise<DataStore>;
   reportExportReadStore?(scope: { companyId?: UUID; exportId?: UUID }): Promise<DataStore>;
   auditReportReadContext?(userId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }>;

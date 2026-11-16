@@ -82,11 +82,35 @@ import type { EmailDeliveryRecord, EmailEventRecord } from "./email/types.js";
 import { CloudinaryObjectStorage } from "./object-storage.js";
 import { normalizeAttendancePolicyConfig } from "../modules/attendance/policy-config.js";
 import { companyContextRequired, conflict, forbidden, notFound, unauthorized } from "./errors.js";
+import type {
+  DepartmentCreateInput,
+  DepartmentUpdateInput,
+  DesignationCreateInput,
+  DesignationUpdateInput,
+} from "../modules/admin/schemas.js";
 
 function optionalSet(
   values: readonly string[] | undefined,
 ): ReadonlySet<string> | undefined {
   return values?.length ? new Set(values) : undefined;
+}
+
+function normalizeAdminMasterCode(value: string): string {
+  return value.trim().toUpperCase().replace(/[^A-Z0-9]+/gu, "_").replace(/^_+|_+$/gu, "");
+}
+
+function mapDepartmentRow(row: Record<string, unknown>): Department {
+  return {
+    ...(row as unknown as Department),
+    deleted_at: asIsoOrNull(row.deleted_at),
+  };
+}
+
+function mapDesignationRow(row: Record<string, unknown>): Designation {
+  return {
+    ...(row as unknown as Designation),
+    deleted_at: asIsoOrNull(row.deleted_at),
+  };
 }
 
 function hasAnyDomainFlushOption(
@@ -546,6 +570,327 @@ class PostgresPersistence {
     } finally {
       client.release();
     }
+  }
+
+  private async adminMasterCompanyForActor(
+    client: PoolClient,
+    actorUserId: UUID,
+    operation: string,
+    forWrite: boolean,
+  ): Promise<UUID> {
+    const lock = forWrite ? " FOR SHARE" : "";
+    const user = await client.query<{ employment_status: string; deleted_at: Date | null }>(
+      `SELECT employment_status, deleted_at FROM core.users WHERE id = $1${lock}`,
+      [actorUserId],
+    );
+    if (!user.rows[0] || user.rows[0].deleted_at || user.rows[0].employment_status !== EmploymentStatuses.Active) {
+      throw unauthorized("User account is inactive or blocked");
+    }
+    const preference = await client.query<{ company_id: UUID | null; active_role: RoleKey }>(
+      `SELECT company_id, active_role FROM platform.user_session_preferences WHERE user_id = $1${lock}`,
+      [actorUserId],
+    );
+    const assignment = preference.rows[0];
+    if (!assignment?.company_id) {
+      throw companyContextRequired({ user_id: actorUserId, operation });
+    }
+    const roles = await client.query<{ role_key: RoleKey }>(
+      `SELECT ur.role_key FROM core.user_roles ur
+       JOIN core.roles role ON role.role_key = ur.role_key
+       WHERE ur.user_id = $1 AND ur.status = 'active' AND ur.deleted_at IS NULL
+         AND ur.effective_from <= CURRENT_DATE AND (ur.effective_to IS NULL OR ur.effective_to >= CURRENT_DATE)
+         AND role.status = 'active' AND role.deleted_at IS NULL${forWrite ? " FOR SHARE OF ur, role" : ""}`,
+      [actorUserId],
+    );
+    const assignedRoles = new Set(roles.rows.map((row) => row.role_key));
+    if (!assignedRoles.has(assignment.active_role)) {
+      throw forbidden("Selected role is not assigned to this user.");
+    }
+    if (!assignedRoles.has(Roles.Admin) && !assignedRoles.has(Roles.HRManager)) {
+      throw forbidden("Only Admin or HR Manager can manage master data");
+    }
+    const company = await client.query<{ status: string }>(
+      `SELECT status FROM platform.company_profiles WHERE id = $1${lock}`,
+      [assignment.company_id],
+    );
+    if (company.rows[0]?.status !== "active") {
+      throw companyContextRequired({ user_id: actorUserId, company_id: assignment.company_id, operation });
+    }
+    return assignment.company_id;
+  }
+
+  async departmentsForActor(actorUserId: UUID): Promise<Department[]> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const companyId = await this.adminMasterCompanyForActor(client, actorUserId, "admin.departments.list", false);
+      const { rows } = await client.query(
+        `SELECT id, company_id, department_code, name, cost_center, parent_department_id,
+                director_user_id, status, deleted_at, version
+         FROM core.departments WHERE company_id = $1 AND deleted_at IS NULL ORDER BY department_code`,
+        [companyId],
+      );
+      await client.query("COMMIT");
+      return rows.map(mapDepartmentRow);
+    } catch (error) {
+      await client.query("ROLLBACK").catch(Boolean);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async designationsForActor(actorUserId: UUID): Promise<Designation[]> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const companyId = await this.adminMasterCompanyForActor(client, actorUserId, "admin.designations.list", false);
+      const { rows } = await client.query(
+        `SELECT id, company_id, designation_code, title, level, status, deleted_at, version
+         FROM core.designations WHERE company_id = $1 AND deleted_at IS NULL
+         ORDER BY level NULLS LAST, designation_code`,
+        [companyId],
+      );
+      await client.query("COMMIT");
+      return rows.map(mapDesignationRow);
+    } catch (error) {
+      await client.query("ROLLBACK").catch(Boolean);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private assertDepartmentParentRows(
+    departments: Department[],
+    parentId: UUID | null,
+    currentId?: UUID,
+  ): void {
+    if (!parentId) return;
+    if (parentId === currentId) throw conflict("Department cannot be its own parent.", { parent_id: parentId });
+    const parent = departments.find((department) => department.id === parentId && department.status === "active");
+    if (!parent) throw notFound("Parent department not found", { parent_id: parentId });
+    const visited = new Set<UUID>();
+    let cursor = parent;
+    while (true) {
+      if (visited.has(cursor.id)) {
+        throw conflict("Department hierarchy contains a cycle.", { parent_id: parentId, cycle_department_id: cursor.id });
+      }
+      visited.add(cursor.id);
+      const nextParentId = cursor.parent_department_id;
+      if (!nextParentId) return;
+      if (nextParentId === currentId) {
+        throw conflict("Department parent would create a hierarchy cycle.", { parent_id: parentId });
+      }
+      const next = departments.find((department) => department.id === nextParentId);
+      if (!next) {
+        throw conflict("Department hierarchy contains an invalid parent reference.", { parent_id: parentId, missing_department_id: nextParentId });
+      }
+      cursor = next;
+    }
+  }
+
+  async createDepartmentForActor(actorUserId: UUID, input: DepartmentCreateInput): Promise<Department> {
+    const client = await this.pool.connect();
+    let saved: Department;
+    try {
+      await client.query("BEGIN");
+      const companyId = await this.adminMasterCompanyForActor(client, actorUserId, "admin.departments.create", true);
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1::text))", [`admin:departments:${companyId}`]);
+      const current = await client.query<Record<string, unknown>>(
+        `SELECT id, company_id, department_code, name, cost_center, parent_department_id,
+                director_user_id, status, deleted_at, version
+         FROM core.departments WHERE company_id = $1 AND deleted_at IS NULL FOR UPDATE`,
+        [companyId],
+      );
+      const departments = current.rows.map(mapDepartmentRow);
+      const parentId = input.parent_department_id ?? input.parent_id ?? null;
+      this.assertDepartmentParentRows(departments, parentId);
+      const code = normalizeAdminMasterCode(input.department_code ?? input.code ?? input.name);
+      if (departments.some((department) => department.department_code.toLowerCase() === code.toLowerCase())) {
+        throw conflict("Department code already exists", { department_code: code });
+      }
+      const id = randomUUID();
+      const result = await client.query<Record<string, unknown>>(
+        `INSERT INTO core.departments
+           (id, company_id, department_code, name, cost_center, parent_department_id, director_user_id, status, version)
+         VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, 1) RETURNING *`,
+        [id, companyId, code, input.name.trim(), input.cost_center?.trim() || null, parentId, input.status ?? "active"],
+      );
+      saved = mapDepartmentRow(result.rows[0]!);
+      await client.query(
+        `INSERT INTO platform.outbox_events (event_id, aggregate_type, aggregate_id, event_type, payload, idempotency_key)
+         VALUES ($1, 'department', $2, 'admin.master_data.department.created', $3::jsonb, $4)`,
+        [randomUUID(), id, JSON.stringify({ actor_user_id: actorUserId, department_code: saved.department_code, name: saved.name }), `admin.department.created:${id}:1`],
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(Boolean);
+      if ((error as { code?: string }).code === "23505") throw conflict("Department code already exists");
+      throw error;
+    } finally {
+      client.release();
+    }
+    this.upsertDepartmentSnapshot(saved);
+    return saved;
+  }
+
+  async updateDepartmentForActor(actorUserId: UUID, id: UUID, input: DepartmentUpdateInput): Promise<Department> {
+    const client = await this.pool.connect();
+    let saved: Department;
+    try {
+      await client.query("BEGIN");
+      const companyId = await this.adminMasterCompanyForActor(client, actorUserId, "admin.departments.update", true);
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1::text))", [`admin:departments:${companyId}`]);
+      const current = await client.query<Record<string, unknown>>(
+        `SELECT id, company_id, department_code, name, cost_center, parent_department_id,
+                director_user_id, status, deleted_at, version
+         FROM core.departments WHERE company_id = $1 AND deleted_at IS NULL FOR UPDATE`,
+        [companyId],
+      );
+      const departments = current.rows.map(mapDepartmentRow);
+      const existing = departments.find((department) => department.id === id);
+      if (!existing) throw notFound("Department not found", { id });
+      if (existing.version !== input.expected_version) {
+        throw conflict("Department was modified by another actor.", { aggregate: "department", id, expected_version: input.expected_version, current_version: existing.version });
+      }
+      const parentId = input.parent_department_id !== undefined || input.parent_id !== undefined
+        ? input.parent_department_id ?? input.parent_id ?? null
+        : existing.parent_department_id;
+      this.assertDepartmentParentRows(departments, parentId, id);
+      if (input.status === "inactive") {
+        const referenced = await client.query(
+          `SELECT 1 FROM core.users u
+           JOIN platform.user_session_preferences usp ON usp.user_id = u.id
+           WHERE usp.company_id = $1 AND u.department_id = $2 AND u.employment_status = 'active'
+             AND u.deleted_at IS NULL LIMIT 1`,
+          [companyId, id],
+        );
+        if (referenced.rows[0]) throw conflict("Cannot deactivate department while active employees reference it.", { id });
+      }
+      const code = input.department_code ?? input.code
+        ? normalizeAdminMasterCode((input.department_code ?? input.code)!)
+        : existing.department_code;
+      if (departments.some((department) => department.id !== id && department.department_code.toLowerCase() === code.toLowerCase())) {
+        throw conflict("Department code already exists", { department_code: code });
+      }
+      const result = await client.query<Record<string, unknown>>(
+        `UPDATE core.departments SET department_code = $3, name = $4, cost_center = $5,
+             parent_department_id = $6, status = $7, version = version + 1, updated_at = now()
+         WHERE id = $1 AND company_id = $2 AND version = $8 AND deleted_at IS NULL RETURNING *`,
+        [id, companyId, code, input.name?.trim() ?? existing.name,
+         input.cost_center !== undefined ? input.cost_center?.trim() || null : existing.cost_center,
+         parentId, input.status ?? existing.status, input.expected_version],
+      );
+      if (!result.rows[0]) throw conflict("Department was modified by another actor.", { aggregate: "department", id });
+      saved = mapDepartmentRow(result.rows[0]);
+      await client.query(
+        `INSERT INTO platform.outbox_events (event_id, aggregate_type, aggregate_id, event_type, payload, idempotency_key)
+         VALUES ($1, 'department', $2, 'admin.master_data.department.updated', $3::jsonb, $4)`,
+        [randomUUID(), id, JSON.stringify({ actor_user_id: actorUserId, changed_fields: Object.keys(input).filter((field) => field !== "expected_version"), department_code: saved.department_code, name: saved.name }), `admin.department.updated:${id}:${saved.version}`],
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(Boolean);
+      if ((error as { code?: string }).code === "23505") throw conflict("Department update conflicted with an existing record or event.");
+      throw error;
+    } finally {
+      client.release();
+    }
+    this.upsertDepartmentSnapshot(saved);
+    return saved;
+  }
+
+  private upsertDepartmentSnapshot(saved: Department): void {
+    const index = this.store.departments.findIndex((department) => department.id === saved.id);
+    if (index < 0) this.store.departments.push(saved);
+    else if (this.store.departments[index]!.company_id === saved.company_id && this.store.departments[index]!.version <= saved.version) this.store.departments[index] = saved;
+  }
+
+  async createDesignationForActor(actorUserId: UUID, input: DesignationCreateInput): Promise<Designation> {
+    return this.mutateDesignation(actorUserId, undefined, input);
+  }
+
+  async updateDesignationForActor(actorUserId: UUID, id: UUID, input: DesignationUpdateInput): Promise<Designation> {
+    return this.mutateDesignation(actorUserId, id, input);
+  }
+
+  private async mutateDesignation(
+    actorUserId: UUID,
+    id: UUID | undefined,
+    input: DesignationCreateInput | DesignationUpdateInput,
+  ): Promise<Designation> {
+    const client = await this.pool.connect();
+    let saved: Designation;
+    try {
+      await client.query("BEGIN");
+      const companyId = await this.adminMasterCompanyForActor(client, actorUserId, id ? "admin.designations.update" : "admin.designations.create", true);
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1::text))", [`admin:designations:${companyId}`]);
+      const current = await client.query<Record<string, unknown>>(
+        `SELECT id, company_id, designation_code, title, level, status, deleted_at, version
+         FROM core.designations WHERE company_id = $1 AND deleted_at IS NULL FOR UPDATE`,
+        [companyId],
+      );
+      const designations = current.rows.map(mapDesignationRow);
+      const existing = id ? designations.find((designation) => designation.id === id) : undefined;
+      if (id && !existing) throw notFound("Designation not found", { id });
+      const expectedVersion = "expected_version" in input ? input.expected_version : undefined;
+      if (existing && existing.version !== expectedVersion) {
+        throw conflict("Designation was modified by another actor.", { aggregate: "designation", id, expected_version: expectedVersion, current_version: existing.version });
+      }
+      if (existing && input.status === "inactive") {
+        const referenced = await client.query(
+          `SELECT 1 FROM core.users u
+           JOIN platform.user_session_preferences usp ON usp.user_id = u.id
+           WHERE usp.company_id = $1 AND u.designation_id = $2 AND u.employment_status = 'active'
+             AND u.deleted_at IS NULL LIMIT 1`,
+          [companyId, id],
+        );
+        if (referenced.rows[0]) throw conflict("Cannot deactivate designation while active employees reference it.", { id });
+      }
+      const title = (input.title ?? input.name ?? existing?.title)?.trim();
+      if (!title) throw conflict("Designation title is required");
+      const codeSource = input.designation_code ?? input.code;
+      const code = codeSource ? normalizeAdminMasterCode(codeSource) : existing?.designation_code ?? normalizeAdminMasterCode(title);
+      if (designations.some((designation) => designation.id !== id && designation.designation_code.toLowerCase() === code.toLowerCase())) {
+        throw conflict("Designation code already exists", { designation_code: code });
+      }
+      const savedId = id ?? randomUUID();
+      const result = existing
+        ? await client.query<Record<string, unknown>>(
+            `UPDATE core.designations SET designation_code = $3, title = $4, level = $5, status = $6,
+                 version = version + 1, updated_at = now()
+             WHERE id = $1 AND company_id = $2 AND version = $7 AND deleted_at IS NULL RETURNING *`,
+            [savedId, companyId, code, title, input.level !== undefined ? input.level : existing.level, input.status ?? existing.status, expectedVersion],
+          )
+        : await client.query<Record<string, unknown>>(
+            `INSERT INTO core.designations (id, company_id, designation_code, title, level, status, version)
+             VALUES ($1, $2, $3, $4, $5, $6, 1) RETURNING *`,
+            [savedId, companyId, code, title, input.level ?? null, input.status ?? "active"],
+          );
+      if (!result.rows[0]) throw conflict("Designation was modified by another actor.", { aggregate: "designation", id: savedId });
+      saved = mapDesignationRow(result.rows[0]);
+      const action = existing ? "updated" : "created";
+      const payload = existing
+        ? { actor_user_id: actorUserId, changed_fields: Object.keys(input).filter((field) => field !== "expected_version"), designation_code: saved.designation_code, title: saved.title }
+        : { actor_user_id: actorUserId, designation_code: saved.designation_code, title: saved.title };
+      await client.query(
+        `INSERT INTO platform.outbox_events (event_id, aggregate_type, aggregate_id, event_type, payload, idempotency_key)
+         VALUES ($1, 'designation', $2, $3, $4::jsonb, $5)`,
+        [randomUUID(), savedId, `admin.master_data.designation.${action}`, JSON.stringify(payload), `admin.designation.${action}:${savedId}:${saved.version}`],
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(Boolean);
+      if ((error as { code?: string }).code === "23505") throw conflict("Designation update conflicted with an existing record or event.");
+      throw error;
+    } finally {
+      client.release();
+    }
+    const index = this.store.designations.findIndex((designation) => designation.id === saved.id);
+    if (index < 0) this.store.designations.push(saved);
+    else if (this.store.designations[index]!.company_id === saved.company_id && this.store.designations[index]!.version <= saved.version) this.store.designations[index] = saved;
+    return saved;
   }
 
   async upsertHoliday(actorUserId: UUID, id: UUID, input: HolidayUpsertInput): Promise<Holiday> {

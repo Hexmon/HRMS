@@ -4,7 +4,7 @@ import { createMemoryDataStore, seedIds } from "../../../platform/data-store.js"
 import { AdminService } from "../service.js";
 
 describe("admin company-scoped master data", () => {
-  it("lists and mutates departments and designations only for the actor company", () => {
+  it("lists and mutates departments and designations only for the actor company", async () => {
     const store = createMemoryDataStore();
     const service = new AdminService(store);
     const admin = store.users.find((user) => user.id === seedIds.admin)!;
@@ -12,25 +12,25 @@ describe("admin company-scoped master data", () => {
     const companyAData = addCompanyMasterData(store, companyA, "A");
     const companyBData = addCompanyMasterData(store, companyB, "B");
 
-    expect(service.listDepartments(admin, { page: 1, page_size: 25 }).items.map((department) => department.name)).toEqual([
+    expect((await service.listDepartments(admin, { page: 1, page_size: 25 })).items.map((department) => department.name)).toEqual([
       companyAData.department.name
     ]);
-    expect(service.listDesignations(admin, { page: 1, page_size: 25 }).items.map((designation) => designation.title)).toEqual([
+    expect((await service.listDesignations(admin, { page: 1, page_size: 25 })).items.map((designation) => designation.title)).toEqual([
       companyAData.designation.title
     ]);
 
-    expect(() =>
+    await expect(
       service.updateDepartment(admin, companyBData.department.id, {
         expected_version: 1,
         name: "Should Not Update"
       })
-    ).toThrowError("Department not found");
-    expect(() =>
+    ).rejects.toThrowError("Department not found");
+    await expect(
       service.updateDesignation(admin, companyBData.designation.id, {
         expected_version: 1,
         title: "Should Not Update"
       })
-    ).toThrowError("Designation not found");
+    ).rejects.toThrowError("Designation not found");
   });
 
   it("creates company-scoped policy defaults instead of sharing global defaults", () => {
@@ -46,7 +46,7 @@ describe("admin company-scoped master data", () => {
     expect(store.adminPolicies.filter((policy) => policy.company_id === null)).toHaveLength(6);
   });
 
-  it("rejects an already-corrupt department cycle without mutating master data or outbox", () => {
+  it("rejects an already-corrupt department cycle without mutating master data or outbox", async () => {
     const store = createMemoryDataStore();
     const service = new AdminService(store);
     const admin = store.users.find((user) => user.id === seedIds.admin)!;
@@ -58,19 +58,19 @@ describe("admin company-scoped master data", () => {
     const departmentsBefore = structuredClone(store.departments);
     const outboxBefore = structuredClone(store.outbox);
 
-    expect(() =>
+    await expect(
       service.createDepartment(admin, {
         name: "Blocked Child",
         code: "BLOCKED_CHILD",
         parent_department_id: first.id,
       }),
-    ).toThrowError("Department hierarchy contains a cycle.");
+    ).rejects.toThrowError("Department hierarchy contains a cycle.");
 
     expect(store.departments).toEqual(departmentsBefore);
     expect(store.outbox).toEqual(outboxBefore);
   });
 
-  it("rejects self, descendant, inactive, foreign-company, and orphaned department parents while preserving valid chains", () => {
+  it("rejects self, descendant, inactive, foreign-company, and orphaned department parents while preserving valid chains", async () => {
     const store = createMemoryDataStore();
     const service = new AdminService(store);
     const admin = store.users.find((user) => user.id === seedIds.admin)!;
@@ -84,47 +84,72 @@ describe("admin company-scoped master data", () => {
     const orphaned = addCompanyMasterData(store, companyA, "ORPHANED").department;
     orphaned.parent_department_id = "missing-department";
 
-    expect(() =>
+    await expectRejectedWithoutEffects(store, () =>
       service.updateDepartment(admin, root.id, {
         expected_version: root.version,
         parent_department_id: root.id,
       }),
-    ).toThrowError("Department cannot be its own parent.");
-    expect(() =>
+    "Department cannot be its own parent.");
+    await expectRejectedWithoutEffects(store, () =>
       service.updateDepartment(admin, root.id, {
         expected_version: root.version,
         parent_department_id: child.id,
       }),
-    ).toThrowError("Department parent would create a hierarchy cycle.");
-    expect(() =>
+    "Department parent would create a hierarchy cycle.");
+    await expectRejectedWithoutEffects(store, () =>
       service.createDepartment(admin, {
         name: "Foreign Child",
         code: "FOREIGN_CHILD",
         parent_department_id: foreign.id,
       }),
-    ).toThrowError("Parent department not found");
-    expect(() =>
+    "Parent department not found");
+    await expectRejectedWithoutEffects(store, () =>
       service.createDepartment(admin, {
         name: "Inactive Child",
         code: "INACTIVE_CHILD",
         parent_department_id: inactive.id,
       }),
-    ).toThrowError("Parent department not found");
-    expect(() =>
+    "Parent department not found");
+    await expectRejectedWithoutEffects(store, () =>
       service.createDepartment(admin, {
         name: "Orphaned Child",
         code: "ORPHANED_CHILD",
         parent_department_id: orphaned.id,
       }),
-    ).toThrowError("Department hierarchy contains an invalid parent reference.");
+    "Department hierarchy contains an invalid parent reference.");
 
-    expect(
-      service.createDepartment(admin, {
+    const outboxBefore = store.outbox.length;
+    const created = await service.createDepartment(admin, {
         name: "Grandchild",
         code: "GRANDCHILD",
         parent_department_id: child.id,
-      }).department,
-    ).toMatchObject({ parent_department_id: child.id, version: 1 });
+      });
+    const createdDepartment = created.department!;
+    expect(createdDepartment).toMatchObject({ parent_department_id: child.id, version: 1 });
+    expect(store.departments.filter((department) => department.id === createdDepartment.id)).toHaveLength(1);
+    expect(store.outbox.slice(outboxBefore)).toEqual([
+      expect.objectContaining({
+        aggregate_id: createdDepartment.id,
+        event_type: "admin.master_data.department.created",
+      }),
+    ]);
+  });
+
+  it("fails closed when master-data company context is missing or inactive", async () => {
+    const store = createMemoryDataStore();
+    const service = new AdminService(store);
+    const admin = store.users.find((user) => user.id === seedIds.admin)!;
+    const preference = store.userSessionPreferences.find((candidate) => candidate.user_id === admin.id)!;
+    preference.company_id = null;
+
+    await expect(service.listDepartments(admin, { page: 1, page_size: 25 })).rejects.toThrow();
+    await expect(service.createDesignation(admin, { title: "Blocked", code: "BLOCKED" })).rejects.toThrow();
+    expect(store.designations.some((designation) => designation.designation_code === "BLOCKED")).toBe(false);
+
+    assignCompany(store, admin.id, companyA);
+    store.companyProfiles.find((company) => company.id === companyA)!.status = "inactive";
+    await expect(service.createDepartment(admin, { name: "Blocked", code: "BLOCKED" })).rejects.toThrow();
+    expect(store.departments.some((department) => department.department_code === "BLOCKED")).toBe(false);
   });
 });
 
@@ -175,4 +200,16 @@ function addCompanyMasterData(store: ReturnType<typeof createMemoryDataStore>, c
   store.departments.push(department);
   store.designations.push(designation);
   return { department, designation };
+}
+
+async function expectRejectedWithoutEffects(
+  store: ReturnType<typeof createMemoryDataStore>,
+  action: () => Promise<unknown>,
+  message: string,
+): Promise<void> {
+  const departmentsBefore = structuredClone(store.departments);
+  const outboxBefore = structuredClone(store.outbox);
+  await expect(action()).rejects.toThrowError(message);
+  expect(store.departments).toEqual(departmentsBefore);
+  expect(store.outbox).toEqual(outboxBefore);
 }
