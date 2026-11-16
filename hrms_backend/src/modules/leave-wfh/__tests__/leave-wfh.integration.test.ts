@@ -187,7 +187,9 @@ describe("leave / WFH / holidays", () => {
       "UPDATE platform.user_session_preferences SET company_id = $2 WHERE user_id = $1",
       [employeeB.id, companyB],
     );
+    await expect(app.store.persistence!.workingWeekForActor!(employeeB.id)).resolves.toBe("Mon-Sat");
     const employee = await loginAs(app, "E2");
+    await expect(app.store.persistence!.workingWeekForActor!(employeeB.id)).resolves.toBe("Mon-Sat");
 
     const wfh = await app.inject({
       method: "POST",
@@ -195,7 +197,7 @@ describe("leave / WFH / holidays", () => {
       headers: authHeader(employee.token),
       payload: { date_from: "2026-06-06", date_to: "2026-06-06", reason: "Saturday coverage" },
     });
-    expect(wfh.statusCode).toBe(200);
+    expect(wfh.statusCode, wfh.body).toBe(200);
     expect(wfh.json().request.duration).toBe(1);
   });
 

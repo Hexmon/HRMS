@@ -86,6 +86,71 @@ describe("app persistence flushing", () => {
       expect(authFlushCount).toBe(3);
       expect(fullFlushCount).toBe(0);
       expect(authFlushOptions[2]?.userIds).toContain(setPassword.json().user_id);
+
+      const session = await loginAs(app, "E1");
+      expect(authFlushCount).toBe(4);
+      expect(authFlushOptions[3]?.userIds).toContain(session.user.id);
+      const logout = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/logout",
+        headers: authHeader(session.token),
+      });
+      expect(logout.statusCode).toBe(200);
+      expect(authFlushCount).toBe(4);
+      expect(fullFlushCount).toBe(0);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("uses standalone company-bootstrap persistence when scoped persistence is unavailable", async () => {
+    process.env.APP_ENV = "local";
+    const store = createMemoryDataStore();
+    let bootstrapFlushCount = 0;
+    const bootstrapFlushOptions: Parameters<NonNullable<DataStorePersistence["flushCompanyBootstrap"]>>[0][] = [];
+    store.persistence = {
+      async flush() {},
+      async flushAuth() {},
+      async flushCompanyBootstrap(options) {
+        bootstrapFlushCount += 1;
+        bootstrapFlushOptions.push(options);
+      },
+      async reload() {},
+      async close() {},
+    };
+
+    const app = await buildApp({ dataStore: store, rateLimit: false });
+    await app.ready();
+    try {
+      const signup = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/signup",
+        payload: {
+          company_name: "Standalone Bootstrap",
+          full_name: "Standalone Founder",
+          email: "standalone.founder@example.test",
+          timezone: "Asia/Kolkata",
+        },
+      });
+      expect(signup.statusCode).toBe(200);
+
+      const verify = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/verify-email",
+        payload: { token: signup.json().dev_only.email_verification_token },
+      });
+      expect(verify.statusCode).toBe(200);
+
+      const bootstrap = await app.inject({
+        method: "POST",
+        url: "/api/v1/onboarding/company-bootstrap",
+        payload: { bootstrap_token: verify.json().dev_only.company_bootstrap_token },
+      });
+      expect(bootstrap.statusCode).toBe(200);
+      expect(bootstrapFlushCount).toBe(1);
+      expect(bootstrapFlushOptions[0]?.userIds).toContain(signup.json().signup_id);
+      expect(bootstrapFlushOptions[0]?.companyIds).toEqual([bootstrap.json().company.id]);
+      expect(bootstrap.headers["server-timing"]).toContain("persistence.company_bootstrap");
     } finally {
       await app.close();
     }
@@ -203,6 +268,81 @@ describe("app persistence flushing", () => {
         }
       });
       expect(response.headers["server-timing"]).toContain("persistence.core");
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("releases the actor-scoped Core mutation lock when company context is missing", async () => {
+    process.env.APP_ENV = "local";
+    const store = createMemoryDataStore();
+    const app = await buildApp({ dataStore: store, rateLimit: false });
+    await app.ready();
+    try {
+      const admin = await loginAs(app, "ADM");
+      const preference = store.userSessionPreferences.find((row) => row.user_id === admin.user.id)!;
+      const target = store.users.find((user) => user.employee_code === "E2")!;
+      preference.company_id = null;
+      const first = await app.inject({
+        method: "POST",
+        url: `/api/v1/core/users/${target.id}/deactivate`,
+        headers: authHeader(admin.token),
+        payload: { expected_version: target.version, status: "inactive" },
+      });
+      const second = await app.inject({
+        method: "POST",
+        url: `/api/v1/core/users/${target.id}/deactivate`,
+        headers: authHeader(admin.token),
+        payload: { expected_version: target.version, status: "inactive" },
+      });
+      expect(first.statusCode).toBe(400);
+      expect(second.statusCode).toBe(400);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("releases the local auth lock when distributed scope acquisition fails", async () => {
+    process.env.APP_ENV = "local";
+    const store = createMemoryDataStore();
+    let acquireAttempts = 0;
+    let distributedReleases = 0;
+    store.persistence = {
+      async flush() {},
+      async flushAuth() {},
+      async acquireAuthMutationScope(scope) {
+        acquireAttempts += 1;
+        expect(scope.employeeCodes).toEqual(["E1"]);
+        if (acquireAttempts === 1) throw new Error("synthetic distributed lock failure");
+        const user = store.users.find((candidate) => candidate.employee_code === "E1")!;
+        return {
+          userIds: [user.id],
+          async flushAuth(options) { await store.persistence!.flushAuth!(options); },
+          async flushCompanyBootstrap(options) { await store.persistence!.flushCompanyBootstrap!(options); },
+          release: async () => { distributedReleases += 1; },
+        };
+      },
+      async reload() {},
+      async close() {},
+    };
+    const app = await buildApp({ dataStore: store, rateLimit: false });
+    await app.ready();
+    try {
+      const failed = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { employee_code: "E1" },
+      });
+      expect(failed.statusCode).toBe(500);
+
+      const retry = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { employee_code: "E1" },
+      });
+      expect(retry.statusCode).toBe(200);
+      expect(acquireAttempts).toBe(2);
+      expect(distributedReleases).toBe(1);
     } finally {
       await app.close();
     }

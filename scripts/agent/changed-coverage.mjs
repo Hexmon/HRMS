@@ -1499,6 +1499,25 @@ function validateHolidayMigration(path, content) {
   requireSemanticText(path, content, /COMMIT\s*;/i, "holiday migration must commit transactionally");
 }
 
+function validateAttendancePolicyVersionMigration(path, content) {
+  requireSemanticText(path, content, /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+attendance\.reject_overlapping_policy_version/i, "attendance policy migration must define the overlap guard");
+  requireSemanticText(path, content, /TG_OP\s*=\s*'INSERT'/i, "attendance policy migration must scope replay handling to inserts");
+  requireSemanticText(path, content, /existing\.policy_id\s*=\s*NEW\.policy_id/i, "attendance policy replay identity must include policy_id");
+  requireSemanticText(path, content, /existing\.version_number\s*=\s*NEW\.version_number/i, "attendance policy replay identity must include version_number");
+  requireSemanticText(path, content, /existing\.id\s*<>\s*NEW\.id/i, "attendance policy migration must retain genuine overlap detection");
+  requireSemanticText(path, content, /overlapping attendance policy versions are not allowed/i, "attendance policy migration must retain overlap rejection");
+}
+
+function validateSignupEmployeeCodeSequenceMigration(path, content) {
+  requireSemanticText(path, content, /CREATE\s+SEQUENCE\s+platform\.signup_employee_code_seq/i, "signup allocator migration must create a dedicated sequence");
+  requireSemanticText(path, content, /AS\s+bigint/i, "signup allocator sequence must use bounded bigint values");
+  requireSemanticText(path, content, /setval\s*\(/i, "signup allocator migration must advance beyond safe legacy codes");
+  requireSemanticText(path, content, /\^ONB\[0-9\]\{1,9\}\$/i, "legacy initialization must ignore tenant-controlled oversized ONB values");
+  if (/\b(?:BEGIN|COMMIT)\s*;/iu.test(content)) {
+    semanticFailure(path, "signup allocator migration must leave transaction ownership to the migration runner");
+  }
+}
+
 function validateQaSeedSafety(path, content) {
   requireSemanticText(path, content, /HRMS_QA_SEED_ALLOW/, "QA seed safety must require explicit opt-in");
   requireSemanticText(path, content, /only isolated local or QA/, "QA seed safety must reject non-isolated targets");
@@ -1533,6 +1552,8 @@ export function validateSemanticPath(root, path, content, base) {
     case "hrms_backend/vitest.config.ts": validateVitestConfig(path, content, false); break;
     case "scripts/agent/verify-change.sh": validateShellVerifier(root, path, content, base); break;
     case "hrms_backend/infra/docker/docker-compose.qa.yml": validateQaCompose(path, content); break;
+    case "hrms_backend/src/db/migrations/0066_attendance_policy_version_replay_guard.sql": validateAttendancePolicyVersionMigration(path, content); break;
+    case "hrms_backend/src/db/migrations/0067_signup_employee_code_sequence.sql": validateSignupEmployeeCodeSequenceMigration(path, content); break;
     case "hrms_backend/src/db/migrations/0065_holiday_company_unique_constraint.sql": validateHolidayMigration(path, content); break;
     case "hrms_backend/scripts/qa-seed-safety.ts": validateQaSeedSafety(path, content); break;
     case "hrms_backend/scripts/seed-qa.ts": validateQaSeedEntrypoint(path, content); break;
@@ -1555,6 +1576,8 @@ export const semanticCoveragePaths = new Set([
   "hrms_backend/vitest.config.ts",
   "scripts/agent/verify-change.sh",
   "hrms_backend/infra/docker/docker-compose.qa.yml",
+  "hrms_backend/src/db/migrations/0066_attendance_policy_version_replay_guard.sql",
+  "hrms_backend/src/db/migrations/0067_signup_employee_code_sequence.sql",
   "hrms_backend/src/db/migrations/0065_holiday_company_unique_constraint.sql",
   "hrms_backend/scripts/qa-seed-safety.ts",
   "hrms_backend/scripts/seed-qa.ts",

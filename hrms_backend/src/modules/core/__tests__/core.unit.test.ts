@@ -96,6 +96,26 @@ describe("core hierarchy", () => {
     expect(result.items.map((user) => user.employee_code)).toEqual(["ADM", "NEW1"]);
   });
 
+  it("reserves numeric ONB employee codes for company signup", () => {
+    const store = createMemoryDataStore();
+    const service = new CoreService(store);
+    const admin = store.users.find((user) => user.id === seedIds.admin)!;
+    addCompanyProfile(store, companyA);
+    const masterData = addCompanyMasterData(store, companyA);
+    assignCompany(store, admin.id, companyA);
+
+    expect(() => service.createUser(admin, {
+      employee_code: `ONB${"9".repeat(29)}`,
+      email: "reserved.onb@example.test",
+      full_name: "Reserved Namespace",
+      department_id: masterData.department.id,
+      designation_id: masterData.designation.id,
+      roles: [Roles.Employee],
+      employment_status: "active",
+    })).toThrowError("Employee codes in the ONB namespace are reserved");
+    expect(store.users.some((user) => user.email === "reserved.onb@example.test")).toBe(false);
+  });
+
   it("rejects cross-company department and designation assignments", () => {
     const store = createMemoryDataStore();
     const service = new CoreService(store);

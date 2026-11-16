@@ -782,7 +782,9 @@ describe("attendance", () => {
   it("applies admin company schedule, holidays, and attendance policy to day status", async () => {
     const employee = await loginAs(app, "E1");
     const company = ensureActiveCompany(app);
-    company.working_week = "Mon-Sat";
+    // Keep the real-time punch assertion valid on every CI day, including Sunday.
+    // The fixed May calendar assertions below still prove Saturday schedule handling.
+    company.working_week = "Mon-Sun";
     company.work_hours_per_day = 7.5;
     const policy = app.store.adminPolicies.find(
       (candidate) => candidate.company_id === company.id && candidate.policy_key === "attendance",
@@ -982,6 +984,7 @@ describe("attendance", () => {
     company.timezone = "UTC";
     const employeeRecord = app.store.users.find((candidate) => candidate.id === employee.user.id)!;
     employeeRecord.timezone = "UTC";
+    employeeRecord.version += 1;
     const workDate = localDate(0, "UTC");
     let policy = app.store.adminPolicies.find(
       (candidate) => candidate.company_id === company.id && candidate.policy_key === "attendance",
@@ -1007,6 +1010,8 @@ describe("attendance", () => {
       autoPunchOutEnabled: true,
       autoPunchOutTime: "23:59",
     };
+    policy.updated_at = new Date().toISOString();
+    policy.version += 1;
     await app.store.persistence?.flush();
     if (deactivated !== "transfer" && deactivated !== "removed_preference") {
       await createAttendancePolicy(app, company.id, {
@@ -1142,6 +1147,7 @@ describe("attendance", () => {
     company.working_week = "Mon-Sun";
     company.timezone = testTimeZone;
     employeeRecord.timezone = testTimeZone;
+    employeeRecord.version += 1;
     await app.store.persistence?.flush();
     const staleDate = previousWorkday(testTimeZone);
     const staleExisting = app.store.attendanceDayRecords.find(

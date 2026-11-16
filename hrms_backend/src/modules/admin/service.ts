@@ -675,15 +675,25 @@ export class AdminService {
     return { role: this.presentRbacRole(updated), version: updated.version };
   }
 
-  listDepartments(
+  async listDepartments(
     actor: AuthUser,
     query: MasterDataQuery,
-  ): Paginated<DepartmentResponse> {
+  ): Promise<Paginated<DepartmentResponse>> {
     assertCanManageMasterData(actor);
+    if (this.store.persistence) {
+      if (!this.store.persistence.departmentsForActor) throw new Error("Admin department SQL read is unavailable.");
+      return this.presentDepartmentsPage(await this.store.persistence.departmentsForActor(actor.id), query);
+    }
+    const companyId = this.activeCompanyIdForActor(actor, "admin.departments.list");
+    return this.presentDepartmentsPage(this.repository.listDepartments(companyId), query);
+  }
+
+  private presentDepartmentsPage(
+    departments: Department[],
+    query: MasterDataQuery,
+  ): Paginated<DepartmentResponse> {
     const search = query.search?.trim().toLowerCase();
-    const companyId = this.companyIdForActor(actor);
-    const filtered = this.repository
-      .listDepartments(companyId)
+    const filtered = departments
       .filter(
         (department) => !query.active_only || department.status === "active",
       )
@@ -702,12 +712,20 @@ export class AdminService {
     );
   }
 
-  createDepartment(
+  async createDepartment(
     actor: AuthUser,
     input: DepartmentCreateInput,
-  ): MasterDataMutationResponse<DepartmentResponse> {
+  ): Promise<MasterDataMutationResponse<DepartmentResponse>> {
     assertCanManageMasterData(actor);
-    const companyId = this.companyIdForActor(actor);
+    if (this.store.persistence) {
+      if (!this.store.persistence.createDepartmentForActor) throw new Error("Admin department SQL write is unavailable.");
+      const department = await this.store.persistence.createDepartmentForActor(actor.id, input);
+      return {
+        department: presentDepartment(department),
+        version: department.version,
+      };
+    }
+    const companyId = this.activeCompanyIdForActor(actor, "admin.departments.create");
     this.assertValidDepartmentParent(
       companyId,
       input.parent_department_id ?? input.parent_id ?? null,
@@ -730,13 +748,21 @@ export class AdminService {
     };
   }
 
-  updateDepartment(
+  async updateDepartment(
     actor: AuthUser,
     id: string,
     input: DepartmentUpdateInput,
-  ): MasterDataMutationResponse<DepartmentResponse> {
+  ): Promise<MasterDataMutationResponse<DepartmentResponse>> {
     assertCanManageMasterData(actor);
-    const companyId = this.companyIdForActor(actor);
+    if (this.store.persistence) {
+      if (!this.store.persistence.updateDepartmentForActor) throw new Error("Admin department SQL write is unavailable.");
+      const department = await this.store.persistence.updateDepartmentForActor(actor.id, id, input);
+      return {
+        department: presentDepartment(department),
+        version: department.version,
+      };
+    }
+    const companyId = this.activeCompanyIdForActor(actor, "admin.departments.update");
     if (input.status === "inactive") {
       this.assertNoActiveUsersReference(companyId, "department", id);
     }
@@ -771,15 +797,25 @@ export class AdminService {
     };
   }
 
-  listDesignations(
+  async listDesignations(
     actor: AuthUser,
     query: MasterDataQuery,
-  ): Paginated<DesignationResponse> {
+  ): Promise<Paginated<DesignationResponse>> {
     assertCanManageMasterData(actor);
+    if (this.store.persistence) {
+      if (!this.store.persistence.designationsForActor) throw new Error("Admin designation SQL read is unavailable.");
+      return this.presentDesignationsPage(await this.store.persistence.designationsForActor(actor.id), query);
+    }
+    const companyId = this.activeCompanyIdForActor(actor, "admin.designations.list");
+    return this.presentDesignationsPage(this.repository.listDesignations(companyId), query);
+  }
+
+  private presentDesignationsPage(
+    designations: Designation[],
+    query: MasterDataQuery,
+  ): Paginated<DesignationResponse> {
     const search = query.search?.trim().toLowerCase();
-    const companyId = this.companyIdForActor(actor);
-    const filtered = this.repository
-      .listDesignations(companyId)
+    const filtered = designations
       .filter(
         (designation) => !query.active_only || designation.status === "active",
       )
@@ -804,13 +840,21 @@ export class AdminService {
     );
   }
 
-  createDesignation(
+  async createDesignation(
     actor: AuthUser,
     input: DesignationCreateInput,
-  ): MasterDataMutationResponse<DesignationResponse> {
+  ): Promise<MasterDataMutationResponse<DesignationResponse>> {
     assertCanManageMasterData(actor);
+    if (this.store.persistence) {
+      if (!this.store.persistence.createDesignationForActor) throw new Error("Admin designation SQL write is unavailable.");
+      const designation = await this.store.persistence.createDesignationForActor(actor.id, input);
+      return {
+        designation: presentDesignation(designation),
+        version: designation.version,
+      };
+    }
     const designation = this.repository.createDesignation(
-      this.companyIdForActor(actor),
+      this.activeCompanyIdForActor(actor, "admin.designations.create"),
       input,
     );
     appendOutboxEvent(this.store, {
@@ -830,13 +874,21 @@ export class AdminService {
     };
   }
 
-  updateDesignation(
+  async updateDesignation(
     actor: AuthUser,
     id: string,
     input: DesignationUpdateInput,
-  ): MasterDataMutationResponse<DesignationResponse> {
+  ): Promise<MasterDataMutationResponse<DesignationResponse>> {
     assertCanManageMasterData(actor);
-    const companyId = this.companyIdForActor(actor);
+    if (this.store.persistence) {
+      if (!this.store.persistence.updateDesignationForActor) throw new Error("Admin designation SQL write is unavailable.");
+      const designation = await this.store.persistence.updateDesignationForActor(actor.id, id, input);
+      return {
+        designation: presentDesignation(designation),
+        version: designation.version,
+      };
+    }
+    const companyId = this.activeCompanyIdForActor(actor, "admin.designations.update");
     if (input.status === "inactive") {
       this.assertNoActiveUsersReference(companyId, "designation", id);
     }
@@ -867,6 +919,7 @@ export class AdminService {
     query: MasterDataQuery,
   ): Paginated<ExtendedMasterDataResponse> {
     assertCanManageMasterData(actor);
+    this.activeCompanyIdForActor(actor, `admin.master-data.${masterKey}.list`);
     const search = query.search?.trim().toLowerCase();
     const filtered = this.repository
       .listExtendedMasterData(masterKey)
@@ -895,6 +948,7 @@ export class AdminService {
     input: ExtendedMasterDataCreateInput,
   ): MasterDataMutationResponse<ExtendedMasterDataResponse> {
     assertCanManageMasterData(actor);
+    this.activeCompanyIdForActor(actor, `admin.master-data.${masterKey}.create`);
     const item = this.repository.createExtendedMasterData(masterKey, input);
     appendOutboxEvent(this.store, {
       aggregateType: "admin_master_data_item",
@@ -918,6 +972,7 @@ export class AdminService {
     input: ExtendedMasterDataUpdateInput,
   ): MasterDataMutationResponse<ExtendedMasterDataResponse> {
     assertCanManageMasterData(actor);
+    this.activeCompanyIdForActor(actor, `admin.master-data.${masterKey}.update`);
     const item = this.repository.updateExtendedMasterData(masterKey, id, input);
     appendOutboxEvent(this.store, {
       aggregateType: "admin_master_data_item",
@@ -986,16 +1041,33 @@ export class AdminService {
     if (!parent) {
       throw notFound("Parent department not found", { parent_id: parentId });
     }
-    let cursor: Department | undefined = parent;
-    while (cursor?.parent_department_id) {
-      if (cursor.parent_department_id === currentId) {
+    const visitedDepartmentIds = new Set<string>();
+    let cursor: Department = parent;
+    while (true) {
+      if (visitedDepartmentIds.has(cursor.id)) {
+        throw conflict("Department hierarchy contains a cycle.", {
+          parent_id: parentId,
+          cycle_department_id: cursor.id,
+        });
+      }
+      visitedDepartmentIds.add(cursor.id);
+      const nextParentId = cursor.parent_department_id;
+      if (!nextParentId) return;
+      if (nextParentId === currentId) {
         throw conflict("Department parent would create a hierarchy cycle.", {
           parent_id: parentId,
         });
       }
-      cursor = departments.find(
-        (department) => department.id === cursor?.parent_department_id,
+      const nextParent = departments.find(
+        (department) => department.id === nextParentId,
       );
+      if (!nextParent) {
+        throw conflict("Department hierarchy contains an invalid parent reference.", {
+          parent_id: parentId,
+          missing_department_id: nextParentId,
+        });
+      }
+      cursor = nextParent;
     }
   }
 
