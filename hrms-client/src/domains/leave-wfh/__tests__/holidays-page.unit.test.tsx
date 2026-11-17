@@ -29,12 +29,17 @@ vi.mock("@/domains/leave-wfh", () => ({
 vi.mock("sonner", () => ({ toast: { error: mock.toastError, success: mock.toastSuccess } }));
 
 import { formatHolidayDate, isHolidayInMonth } from "@/domains/leave-wfh/calendar-date";
-import { HolidaysPage } from "@/routes/_app/leave-wfh.holidays";
+import {
+  holidayCursorFromHref,
+  HolidaysPage,
+  hrefWithHolidayCursor,
+} from "@/routes/_app/leave-wfh.holidays";
 
 const firstId = "11111111-1111-4111-8111-111111111111";
 const secondId = "22222222-2222-4222-8222-222222222222";
 
 beforeEach(() => {
+  window.history.replaceState({}, "", "/leave-wfh/holidays");
   vi.stubGlobal("crypto", {
     randomUUID: vi.fn().mockReturnValueOnce(firstId).mockReturnValueOnce(secondId),
   });
@@ -154,7 +159,9 @@ describe("holiday create form retry", () => {
     render(<HolidaysPage />);
     expect(screen.getByText("December Founding")).toBeInTheDocument();
     expect(screen.getByText(/Dec 01, 2026/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("tab", { name: "Calendar" }));
+    const calendarTab = screen.getByRole("tab", { name: "Calendar" });
+    fireEvent.pointerDown(calendarTab, { button: 0, ctrlKey: false });
+    fireEvent.click(calendarTab);
     expect(screen.getByText("December Founding")).toBeInTheDocument();
   });
 
@@ -183,6 +190,19 @@ describe("holiday create form retry", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Calendar" }));
     expect(screen.getByText("Regional Day")).toBeInTheDocument();
     expect(screen.getByText("Optional Day")).toBeInTheDocument();
+  });
+
+  it("round-trips a selected calendar month through the URL", () => {
+    const today = new Date("2026-11-17T12:00:00.000Z");
+    expect(
+      holidayCursorFromHref("https://hrms.example/leave-wfh/holidays?month=2027-01", today),
+    ).toEqual({ y: 2027, m: 0 });
+    expect(
+      holidayCursorFromHref("https://hrms.example/leave-wfh/holidays?month=invalid", today),
+    ).toEqual({ y: today.getFullYear(), m: today.getMonth() });
+    expect(
+      hrefWithHolidayCursor("https://hrms.example/leave-wfh/holidays", { y: 2026, m: 11 }).search,
+    ).toBe("?month=2026-12");
   });
 
   it("edits with the displayed version and keeps the draft after a stale conflict", async () => {

@@ -14,6 +14,7 @@ export const releaseSeedEmailEnvKeys = {
 } as const;
 
 export const qaSeedEmailEnvKeys = {
+  tenantBAdmin: "QA_SEED_TENANT_B_ADMIN_EMAIL",
   hrManager: "QA_SEED_HR_MANAGER_EMAIL",
   normalManager: "QA_SEED_NORMAL_MANAGER_EMAIL",
   unauthorizedEmployee: "QA_SEED_UNAUTHORIZED_EMPLOYEE_EMAIL",

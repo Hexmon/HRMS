@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { QueryResultRow } from "pg";
+import { Roles } from "#shared";
 
 export interface QaSeedEnvironment {
   APP_ENV?: string;
@@ -7,6 +8,7 @@ export interface QaSeedEnvironment {
   DATABASE_URL?: string;
   HRMS_QA_SEED_ALLOW?: string;
   HRMS_QA_SEED_CONFIRM_DATABASE?: string;
+  HRMS_QA_SEED_DATABASE_FINGERPRINT?: string;
 }
 
 interface QaSeedPhases {
@@ -26,6 +28,31 @@ interface QaAdminCompanyContextIds {
   adminUserId: string;
   companyId: string;
   preferenceId: string;
+}
+
+export interface QaTenantAdminIdentityRow {
+  id: string;
+  employee_code: string;
+  email: string;
+  company_id: string | null;
+  active_role: string | null;
+}
+
+export function requireQaTenantAdminIdentity(
+  rows: QaTenantAdminIdentityRow[],
+  expected: { userId: string; companyId: string; employeeCode: string; email: string },
+): void {
+  const exact = rows.filter(
+    (row) =>
+      row.id === expected.userId &&
+      row.employee_code === expected.employeeCode &&
+      row.email.toLowerCase() === expected.email.toLowerCase() &&
+      (row.company_id === null ||
+        (row.company_id === expected.companyId && row.active_role === Roles.Admin)),
+  );
+  if (rows.length > 0 && (rows.length !== 1 || exact.length !== 1)) {
+    throw new Error("QA seed refused a tenant Admin identity or company-context collision.");
+  }
 }
 
 export function deterministicQaCompanyId(): string {
@@ -58,6 +85,32 @@ export function requireQaSeedTarget(env: QaSeedEnvironment): URL {
     throw new Error(`Local QA seed refused remote database host ${target.hostname}.`);
   }
   return target;
+}
+
+export async function verifyQaSeedDatabaseIdentity(
+  client: QaSeedSqlClient,
+  env: QaSeedEnvironment,
+): Promise<void> {
+  if (env.APP_ENV !== "qa") return;
+  const fingerprint = env.HRMS_QA_SEED_DATABASE_FINGERPRINT?.trim();
+  if (!fingerprint) {
+    throw new Error("Remote QA seed requires HRMS_QA_SEED_DATABASE_FINGERPRINT.");
+  }
+  const result = await client.query<{ database_name: string; database_marker: string | null }>(
+    `SELECT current_database() AS database_name,
+            obj_description(oid, 'pg_database') AS database_marker
+       FROM pg_database
+      WHERE datname = current_database()`,
+  );
+  const expectedDatabase = env.HRMS_QA_SEED_CONFIRM_DATABASE;
+  const identity = result.rows[0];
+  if (
+    !identity ||
+    identity.database_name !== expectedDatabase ||
+    identity.database_marker !== `hawkaii-qa:${fingerprint}`
+  ) {
+    throw new Error("QA seed refused a database without the independently provisioned QA marker.");
+  }
 }
 
 export function requireQaPersonaIdentity(
@@ -119,7 +172,7 @@ export async function preflightQaAdminCompanyContext(
   if (
     existingAdmin.preference_id !== null &&
     (existingAdmin.company_id !== ids.companyId ||
-      existingAdmin.active_role !== "admin" ||
+      existingAdmin.active_role !== Roles.Admin ||
       existingAdmin.company_slug !== qaCompanySlug ||
       existingAdmin.company_status !== "active")
   ) {
@@ -151,7 +204,7 @@ export async function ensureQaAdminCompanyContext(
       currentContext.company_id !== ids.companyId ||
       currentContext.company_slug !== qaCompanySlug ||
       currentContext.company_status !== "active" ||
-      currentContext.active_role !== "admin"
+      currentContext.active_role !== Roles.Admin
     ) {
       throw new Error(
         "QA seed refused an Admin company preference that does not exactly match the deterministic QA company.",
@@ -191,9 +244,9 @@ export async function ensureQaAdminCompanyContext(
     `INSERT INTO platform.user_session_preferences (
        id, user_id, active_role, company_id, landing_page, locale, timezone
      )
-     VALUES ($1, $2, 'admin', $3, '/dashboard', 'en-IN', 'Asia/Kolkata')
+     VALUES ($1, $2, $4, $3, '/dashboard', 'en-IN', 'Asia/Kolkata')
      ON CONFLICT (user_id) DO NOTHING`,
-    [ids.preferenceId, ids.adminUserId, ids.companyId],
+    [ids.preferenceId, ids.adminUserId, ids.companyId, Roles.Admin],
   );
 
   const verified = await client.query<{ company_id: string }>(
@@ -207,8 +260,8 @@ export async function ensureQaAdminCompanyContext(
        AND company.status = 'active'
        AND admin.deleted_at IS NULL
        AND admin.employment_status = 'active'
-       AND preference.active_role = 'admin'`,
-    [ids.adminUserId, ids.companyId, qaCompanySlug],
+       AND preference.active_role = $4`,
+    [ids.adminUserId, ids.companyId, qaCompanySlug, Roles.Admin],
   );
   if (verified.rows[0]?.company_id !== ids.companyId) {
     throw new Error("QA seed could not establish the exact deterministic Admin company context.");

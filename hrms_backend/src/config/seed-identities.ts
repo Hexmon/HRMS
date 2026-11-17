@@ -12,6 +12,7 @@ export const defaultReleaseSeedEmails = {
 } as const;
 
 export const defaultQaSeedEmails = {
+  tenantBAdmin: "admin.tenant-b@example.test",
   hrManager: "hrm@example.test",
   normalManager: "manager@example.test",
   unauthorizedEmployee: "unauthorized@example.test",

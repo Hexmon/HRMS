@@ -37,16 +37,25 @@ export function HolidaysPage() {
   const draftId = useRef<string | null>(null);
   const submissionInFlight = useRef(false);
 
-  const today = new Date();
-  const [cursor, setCursor] = useState({ y: today.getFullYear(), m: today.getMonth() });
+  const [cursor, setCursor] = useState(initialHolidayCursor);
   const monthName = new Date(cursor.y, cursor.m, 1).toLocaleDateString(undefined, {
     month: "long",
     year: "numeric",
   });
   const firstDow = new Date(cursor.y, cursor.m, 1).getDay();
   const days = new Date(cursor.y, cursor.m + 1, 0).getDate();
-  const prev = () => setCursor((c) => (c.m === 0 ? { y: c.y - 1, m: 11 } : { y: c.y, m: c.m - 1 }));
-  const next = () => setCursor((c) => (c.m === 11 ? { y: c.y + 1, m: 0 } : { y: c.y, m: c.m + 1 }));
+  const moveCursor = (nextCursor: { y: number; m: number }) => {
+    setCursor(nextCursor);
+    window.history.replaceState(
+      window.history.state,
+      "",
+      hrefWithHolidayCursor(window.location.href, nextCursor),
+    );
+  };
+  const prev = () =>
+    moveCursor(cursor.m === 0 ? { y: cursor.y - 1, m: 11 } : { y: cursor.y, m: cursor.m - 1 });
+  const next = () =>
+    moveCursor(cursor.m === 11 ? { y: cursor.y + 1, m: 0 } : { y: cursor.y, m: cursor.m + 1 });
   const holidaysQuery = useHolidays({ year: cursor.y, page: 1, page_size: 100 });
   const mutation = useHolidayMutation();
   const list = holidaysFromResponse(holidaysQuery.data);
@@ -388,6 +397,25 @@ export function HolidaysPage() {
       </Modal>
     </div>
   );
+}
+
+function initialHolidayCursor(): { y: number; m: number } {
+  const today = new Date();
+  if (typeof window === "undefined") return { y: today.getFullYear(), m: today.getMonth() };
+  return holidayCursorFromHref(window.location.href, today);
+}
+
+export function holidayCursorFromHref(href: string, today: Date): { y: number; m: number } {
+  const month = new URL(href).searchParams.get("month");
+  const match = /^(\d{4})-(0[1-9]|1[0-2])$/u.exec(month ?? "");
+  if (!match) return { y: today.getFullYear(), m: today.getMonth() };
+  return { y: Number(match[1]), m: Number(match[2]) - 1 };
+}
+
+export function hrefWithHolidayCursor(href: string, cursor: { y: number; m: number }): URL {
+  const url = new URL(href);
+  url.searchParams.set("month", `${cursor.y}-${String(cursor.m + 1).padStart(2, "0")}`);
+  return url;
 }
 
 function createId(): string {

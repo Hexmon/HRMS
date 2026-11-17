@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
+import { Roles } from "#shared";
 import {
   ensureQaAdminCompanyContext,
   preflightQaAdminCompanyContext,
   requireQaPersonaIdentity,
   requireQaSeedTarget,
+  requireQaTenantAdminIdentity,
   rethrowAfterQaSeedRollback,
   runGuardedQaSeed,
+  verifyQaSeedDatabaseIdentity,
 } from "../../scripts/qa-seed-safety.js";
 
 const safe = {
@@ -42,6 +45,41 @@ describe("QA seed target guard", () => {
     ).toBe("qa-db.example");
   });
 
+  it("requires a database-resident identity marker before seeding remote QA", async () => {
+    const query = vi.fn().mockResolvedValue({
+      rows: [{ database_name: "hrms_qa", database_marker: "hawkaii-qa:qa-project-42" }],
+    });
+    await expect(verifyQaSeedDatabaseIdentity({ query }, {
+      ...safe,
+      APP_ENV: "qa",
+      HRMS_QA_SEED_CONFIRM_DATABASE: "hrms_qa",
+      HRMS_QA_SEED_DATABASE_FINGERPRINT: "qa-project-42",
+    })).resolves.toBeUndefined();
+    await expect(verifyQaSeedDatabaseIdentity({ query }, {
+      ...safe,
+      APP_ENV: "qa",
+      HRMS_QA_SEED_CONFIRM_DATABASE: "hrms_qa",
+    })).rejects.toThrow(/requires HRMS_QA_SEED_DATABASE_FINGERPRINT/);
+  });
+
+  it("rejects remote QA when the database marker or database name differs", async () => {
+    const query = vi.fn().mockResolvedValue({
+      rows: [{ database_name: "production", database_marker: "hawkaii-qa:another-project" }],
+    });
+    await expect(verifyQaSeedDatabaseIdentity({ query }, {
+      ...safe,
+      APP_ENV: "qa",
+      HRMS_QA_SEED_CONFIRM_DATABASE: "hrms_qa",
+      HRMS_QA_SEED_DATABASE_FINGERPRINT: "qa-project-42",
+    })).rejects.toThrow(/independently provisioned QA marker/);
+  });
+
+  it("does not require a hosted marker for an isolated local database", async () => {
+    const query = vi.fn();
+    await expect(verifyQaSeedDatabaseIdentity({ query }, safe)).resolves.toBeUndefined();
+    expect(query).not.toHaveBeenCalled();
+  });
+
   it("accepts the deterministic persona identity returned by the database", () => {
     expect(() => requireQaPersonaIdentity("persona-id", "persona-id", "HRM")).not.toThrow();
   });
@@ -55,13 +93,50 @@ describe("QA seed target guard", () => {
     );
   });
 
+  it("accepts only an unused or exact deterministic tenant Admin identity", () => {
+    const expected = {
+      userId: "tenant-admin",
+      companyId: "tenant-b",
+      employeeCode: "QBADM",
+      email: "admin.tenant-b@example.test",
+    };
+    expect(() => requireQaTenantAdminIdentity([], expected)).not.toThrow();
+    expect(() => requireQaTenantAdminIdentity([{
+      id: expected.userId,
+      employee_code: expected.employeeCode,
+      email: expected.email.toUpperCase(),
+      company_id: null,
+      active_role: null,
+    }], expected)).not.toThrow();
+    expect(() => requireQaTenantAdminIdentity([{
+      id: expected.userId,
+      employee_code: expected.employeeCode,
+      email: expected.email,
+      company_id: expected.companyId,
+      active_role: Roles.Admin,
+    }], expected)).not.toThrow();
+  });
+
+  it.each([
+    ["foreign identity", { id: "foreign", employee_code: "QBADM", email: "admin.tenant-b@example.test", company_id: null, active_role: null }],
+    ["foreign company", { id: "tenant-admin", employee_code: "QBADM", email: "admin.tenant-b@example.test", company_id: "tenant-a", active_role: Roles.Admin }],
+    ["wrong role", { id: "tenant-admin", employee_code: "QBADM", email: "admin.tenant-b@example.test", company_id: "tenant-b", active_role: Roles.Employee }],
+  ])("rejects a %s collision for the deterministic tenant Admin", (_label, row) => {
+    expect(() => requireQaTenantAdminIdentity([row], {
+      userId: "tenant-admin",
+      companyId: "tenant-b",
+      employeeCode: "QBADM",
+      email: "admin.tenant-b@example.test",
+    })).toThrow(/tenant Admin identity or company-context collision/);
+  });
+
   it("reuses an existing active Admin company context without rewriting seed state", async () => {
     const query = vi.fn().mockResolvedValue({
       rows: [{
         company_id: "company-default",
         company_slug: "hawkaii-hrms",
         company_status: "active",
-        active_role: "admin",
+        active_role: Roles.Admin,
       }],
     });
 
@@ -109,7 +184,12 @@ describe("QA seed target guard", () => {
     expect(query.mock.calls[2]?.[0]).toContain("INSERT INTO platform.company_profiles");
     expect(query.mock.calls[2]?.[1]).toEqual(["company-default", "hawkaii-hrms"]);
     expect(query.mock.calls[3]?.[0]).toContain("ON CONFLICT (user_id) DO NOTHING");
-    expect(query.mock.calls[3]?.[1]).toEqual(["preference-id", "admin-id", "company-default"]);
+    expect(query.mock.calls[3]?.[1]).toEqual([
+      "preference-id",
+      "admin-id",
+      "company-default",
+      Roles.Admin,
+    ]);
   });
 
   it.each(["active", "inactive"])(

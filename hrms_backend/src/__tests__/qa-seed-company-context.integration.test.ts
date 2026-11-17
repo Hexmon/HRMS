@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { Roles } from "#shared";
 import { ensureQaAdminCompanyContext, preflightQaAdminCompanyContext } from "../../scripts/qa-seed-safety.js";
 import { resetPostgresDatabase } from "../platform/postgres-data-store.js";
 
@@ -76,8 +77,8 @@ describe.skipIf(!databaseUrl)("QA seed deterministic company boundary", () => {
     );
     await client.query(
       `INSERT INTO platform.user_session_preferences (id, user_id, active_role, company_id)
-       VALUES ($1, $2, 'admin', $3)`,
-      [randomUUID(), adminUserId, foreignCompanyId],
+       VALUES ($1, $2, $3, $4)`,
+      [randomUUID(), adminUserId, Roles.Admin, foreignCompanyId],
     );
 
     await expect(runSeedContextWithMarker()).rejects.toThrow(
@@ -149,8 +150,8 @@ describe.skipIf(!databaseUrl)("QA seed deterministic company boundary", () => {
     );
     await client.query(
       `INSERT INTO platform.user_session_preferences (id, user_id, active_role, company_id)
-       VALUES ($1, $2, 'admin', $3)`,
-      [preferenceId, adminUserId, expectedCompanyId],
+       VALUES ($1, $2, $3, $4)`,
+      [preferenceId, adminUserId, Roles.Admin, expectedCompanyId],
     );
 
     await expect(runSeedContextWithMarker()).rejects.toThrow(/company identity/);
@@ -159,10 +160,10 @@ describe.skipIf(!databaseUrl)("QA seed deterministic company boundary", () => {
       "SELECT company_id, active_role FROM platform.user_session_preferences WHERE user_id = $1",
       [adminUserId],
     );
-    expect(preference.rows).toEqual([{ company_id: expectedCompanyId, active_role: "admin" }]);
+    expect(preference.rows).toEqual([{ company_id: expectedCompanyId, active_role: Roles.Admin }]);
   });
 
-  it.each(["admin", "employee"])(
+  it.each([Roles.Admin, "employee"])(
     "refuses an existing null-company preference with role %s before any marker write",
     async (role) => {
       await client.query(
@@ -237,7 +238,7 @@ describe.skipIf(!databaseUrl)("QA seed deterministic company boundary", () => {
     await client.query(
       `INSERT INTO platform.user_session_preferences (id, user_id, active_role, company_id)
        VALUES ($1, $2, $3, $4)`,
-      [preferenceId, adminUserId, role ?? "admin", companyId],
+      [preferenceId, adminUserId, role ?? Roles.Admin, companyId],
     );
 
     await expect(runSeedContextWithMarker()).rejects.toThrow();
@@ -248,7 +249,7 @@ describe.skipIf(!databaseUrl)("QA seed deterministic company boundary", () => {
       [adminUserId],
     );
     expect(state.rows[0]?.employment_status).toBe(status);
-    expect(state.rows[0]?.active_role).toBe(role ?? "admin");
+    expect(state.rows[0]?.active_role).toBe(role ?? Roles.Admin);
     expect(state.rows[0]?.company_id).toBe(companyId);
   });
 });
