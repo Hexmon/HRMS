@@ -5,6 +5,10 @@ export interface DepartmentHierarchyRow {
   parentId: string | null;
 }
 
+export function hasPendingMutation(...states: boolean[]): boolean {
+  return states.some(Boolean);
+}
+
 export function selectableDepartmentParents(
   rows: readonly DepartmentHierarchyRow[],
   editingId: string | null,

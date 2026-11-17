@@ -2,9 +2,17 @@ import { describe, expect, it } from "vitest";
 import {
   departmentParentPatch,
   designationLevelPatch,
+  hasPendingMutation,
   parseDesignationLevel,
   selectableDepartmentParents,
 } from "../master-data-helpers";
+
+describe("hasPendingMutation", () => {
+  it("reports whether any API mutation is pending", () => {
+    expect(hasPendingMutation(false, false, false)).toBe(false);
+    expect(hasPendingMutation(false, true, false)).toBe(true);
+  });
+});
 
 describe("selectableDepartmentParents", () => {
   const rows = [

@@ -35,6 +35,7 @@ import {
 import {
   departmentParentPatch,
   designationLevelPatch,
+  hasPendingMutation,
   selectableDepartmentParents,
 } from "@/domains/admin/master-data-helpers";
 import { useDebouncedValue } from "@/shared/hooks/use-debounced-value";
@@ -345,13 +346,14 @@ function MasterDataScreen() {
     }
   };
 
-  const mutationPending =
-    Boolean(createDepartment.isPending) ||
-    updateDepartment.isPending ||
-    createDesignation.isPending ||
-    updateDesignation.isPending ||
-    createExtendedMaster.isPending ||
-    updateExtendedMaster.isPending;
+  const mutationPending = hasPendingMutation(
+    createDepartment.isPending,
+    updateDepartment.isPending,
+    createDesignation.isPending,
+    updateDesignation.isPending,
+    createExtendedMaster.isPending,
+    updateExtendedMaster.isPending,
+  );
   const activePage = activeKey === "departments" ? departmentsQuery.data : designationsQuery.data;
   const totalPages = Math.max(1, Math.ceil((activePage?.total ?? 0) / 25));
 
