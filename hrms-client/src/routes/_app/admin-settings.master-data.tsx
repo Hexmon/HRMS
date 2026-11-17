@@ -346,7 +346,7 @@ function MasterDataScreen() {
   };
 
   const mutationPending =
-    createDepartment.isPending ||
+    Boolean(createDepartment.isPending) ||
     updateDepartment.isPending ||
     createDesignation.isPending ||
     updateDesignation.isPending ||
@@ -487,61 +487,25 @@ function MasterDataScreen() {
       return;
     }
 
-    if (activeKey === "designations") {
-      const current = editing as ApiMasterRow | null;
-      if (current) {
-        await updateDesignation.mutateAsync({
-          id: current.id,
-          input: {
-            title: form.name,
-            code,
-            expected_version: current.version,
-            ...designationLevelPatch(form.designationLevel, current.level ?? null, true),
-          },
-        });
-        toast.success("Designation updated");
-      } else {
-        await createDesignation.mutateAsync({
-          title: form.name,
-          code,
-          ...designationLevelPatch(form.designationLevel, null, false),
-        });
-        toast.success("Designation added");
-      }
-      return;
-    }
-
-    if (isExtendedApiMasterKey(activeKey)) {
-      const current = editing as ApiMasterRow | null;
-      const extendedCode = normalizeCode(current?.code || form.name);
-      const description = form.description.trim() || null;
-      if (current) {
-        await updateExtendedMaster.mutateAsync({
-          masterKey: activeKey,
-          id: current.id,
-          input: {
-            name: form.name,
-            code: extendedCode,
-            description,
-            expected_version: current.version,
-          },
-        });
-        toast.success(`${MASTER_LABELS[activeKey].replace(/s$/, "")} updated`);
-      } else {
-        await createExtendedMaster.mutateAsync({
-          masterKey: activeKey,
-          input: { name: form.name, code: extendedCode, description },
-        });
-        toast.success(`Added to ${MASTER_LABELS[activeKey]}`);
-      }
-      return;
-    }
-
     const current = editing as ApiMasterRow | null;
     if (current) {
-      throw new Error(`Unsupported master data group: ${activeKey}`);
+      await updateDesignation.mutateAsync({
+        id: current.id,
+        input: {
+          title: form.name,
+          code,
+          expected_version: current.version,
+          ...designationLevelPatch(form.designationLevel, current.level ?? null, true),
+        },
+      });
+      toast.success("Designation updated");
     } else {
-      throw new Error(`Unsupported master data group: ${activeKey}`);
+      await createDesignation.mutateAsync({
+        title: form.name,
+        code,
+        ...designationLevelPatch(form.designationLevel, null, false),
+      });
+      toast.success("Designation added");
     }
   }
 
