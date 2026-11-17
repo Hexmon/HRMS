@@ -694,16 +694,17 @@ export class AdminService {
   ): Paginated<DepartmentResponse> {
     const namesById = new Map(departments.map((department) => [department.id, department.name]));
     const search = query.search?.trim().toLowerCase();
-    const parentCandidateFor = query.parent_candidate_for;
-    const candidateTargetExists = !parentCandidateFor || departments.some((department) => department.id === parentCandidateFor);
+    const eligibleParentIds = eligibleDepartmentParentIds(
+      departments,
+      query.parent_candidate_for,
+    );
     const filtered = departments
       .filter(
         (department) => !query.active_only || department.status === "active",
       )
       .filter(
         (department) =>
-          candidateTargetExists &&
-          isEligibleDepartmentParentCandidate(departments, department, parentCandidateFor),
+          eligibleParentIds === null || eligibleParentIds.has(department.id),
       )
       .filter((department) => {
         if (!search) return true;
@@ -783,6 +784,23 @@ export class AdminService {
       };
     }
     const companyId = this.activeCompanyIdForActor(actor, "admin.departments.update");
+    const existing = this.repository
+      .listDepartments(companyId)
+      .find((department) => department.id === id);
+    if (!existing) throw notFound("Department not found", { id });
+    if (existing.version !== input.expected_version) {
+      throw conflict("Department was modified by another actor.", {
+        aggregate: "department",
+        id,
+        expected_version: input.expected_version,
+        current_version: existing.version,
+      });
+    }
+    const parentId =
+      input.parent_department_id !== undefined || input.parent_id !== undefined
+        ? (input.parent_department_id ?? input.parent_id ?? null)
+        : existing.parent_department_id;
+    this.assertValidDepartmentParent(companyId, parentId, id);
     if (input.status === "inactive") {
       this.assertNoActiveUsersReference(companyId, "department", id);
       if (
@@ -798,16 +816,6 @@ export class AdminService {
           { id },
         );
       }
-    }
-    if (
-      input.parent_department_id !== undefined ||
-      input.parent_id !== undefined
-    ) {
-      this.assertValidDepartmentParent(
-        companyId,
-        input.parent_department_id ?? input.parent_id ?? null,
-        id,
-      );
     }
     const department = this.repository.updateDepartment(companyId, id, input);
     appendOutboxEvent(this.store, {
@@ -1537,24 +1545,37 @@ function presentDepartment(
   };
 }
 
-function isEligibleDepartmentParentCandidate(
+function eligibleDepartmentParentIds(
   departments: readonly Department[],
-  candidate: Department,
   currentDepartmentId?: string,
-): boolean {
-  if (!currentDepartmentId) return true;
-  if (candidate.id === currentDepartmentId) return false;
+): Set<string> | null {
+  if (!currentDepartmentId) return null;
   const byId = new Map(departments.map((department) => [department.id, department]));
-  const visited = new Set<string>();
-  let cursor: Department | undefined = candidate;
-  while (cursor.parent_department_id) {
-    if (cursor.parent_department_id === currentDepartmentId) return false;
-    if (visited.has(cursor.id)) return false;
-    visited.add(cursor.id);
-    cursor = byId.get(cursor.parent_department_id);
-    if (!cursor) return false;
+  if (!byId.has(currentDepartmentId)) return new Set();
+
+  const eligibility = new Map<string, boolean>([[currentDepartmentId, false]]);
+  const visiting = new Set<string>();
+  const resolveEligibility = (departmentId: string): boolean => {
+    if (eligibility.has(departmentId)) return eligibility.get(departmentId)!;
+    if (visiting.has(departmentId)) {
+      eligibility.set(departmentId, false);
+      return false;
+    }
+    const department = byId.get(departmentId);
+    if (!department) return false;
+    visiting.add(departmentId);
+    const parentId = department.parent_department_id;
+    const eligible = parentId === null ? true : resolveEligibility(parentId);
+    visiting.delete(departmentId);
+    eligibility.set(departmentId, eligible);
+    return eligible;
+  };
+
+  const eligibleIds = new Set<string>();
+  for (const department of departments) {
+    if (resolveEligibility(department.id)) eligibleIds.add(department.id);
   }
-  return true;
+  return eligibleIds;
 }
 
 function presentDesignation(designation: Designation): DesignationResponse {

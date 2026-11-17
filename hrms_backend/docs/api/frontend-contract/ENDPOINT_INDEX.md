@@ -3088,6 +3088,7 @@ Success body highlights:
 | `sort` | query | no | string | - |
 | `active_only` | query | no | boolean | - |
 | `search` | query | no | string | - |
+| `parent_candidate_for` | query | no | string<uuid> | - |
 
 **Request body**
 

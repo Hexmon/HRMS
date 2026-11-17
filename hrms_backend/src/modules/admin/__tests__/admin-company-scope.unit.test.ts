@@ -84,6 +84,37 @@ describe("admin company-scoped master data", () => {
     expect(store.outbox).toEqual(outboxBefore);
   });
 
+  it("filters a large parent-candidate hierarchy in bounded time", async () => {
+    const store = createMemoryDataStore();
+    const service = new AdminService(store);
+    const admin = store.users.find((user) => user.id === seedIds.admin)!;
+    assignCompany(store, admin.id, companyA);
+    const root = addCompanyMasterData(store, companyA, "LARGE_ROOT").department;
+    let parentId = root.id;
+    for (let index = 0; index < 10_000; index += 1) {
+      const id = `dept-large-${index}`;
+      store.departments.push({
+        ...root,
+        id,
+        department_code: `LARGE_${String(index).padStart(5, "0")}`,
+        name: `Large department ${index}`,
+        parent_department_id: parentId,
+      });
+      parentId = id;
+    }
+
+    const startedAt = performance.now();
+    const result = await service.listDepartments(admin, {
+      page: 1,
+      page_size: 25,
+      active_only: true,
+      parent_candidate_for: root.id,
+    });
+
+    expect(result).toMatchObject({ items: [], total: 0 });
+    expect(performance.now() - startedAt).toBeLessThan(1_000);
+  });
+
   it("rejects self, descendant, inactive, foreign-company, and orphaned department parents while preserving valid chains", async () => {
     const store = createMemoryDataStore();
     const service = new AdminService(store);
@@ -107,6 +138,16 @@ describe("admin company-scoped master data", () => {
         parent_candidate_for: root.id,
       }),
     ).resolves.toMatchObject({ items: [], total: 0 });
+
+    await expectRejectedWithoutEffects(
+      store,
+      () =>
+        service.updateDepartment(admin, orphaned.id, {
+          expected_version: orphaned.version,
+          name: "Still orphaned",
+        }),
+      "Parent department not found",
+    );
     await expect(
       service.listDepartments(admin, {
         page: 1,
