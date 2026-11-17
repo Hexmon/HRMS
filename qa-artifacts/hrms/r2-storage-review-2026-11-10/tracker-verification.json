@@ -1,0 +1,76 @@
+{
+  "date": "2026-11-10",
+  "baseline": "87618f88f464847d049c9e2cf97968238cae1b66",
+  "scope": "Source review, documentation and shared Sprint 25 planning only",
+  "tracker_tab": "Sprint 25 Nov07-Nov13",
+  "tracker_gid": 1812876151,
+  "new_tasks": [
+    {
+      "row": 79,
+      "id": "R2-S25-001",
+      "owner": "Anurag Kumar",
+      "role": "Development",
+      "points": 8,
+      "status": "Planned"
+    },
+    {
+      "row": 80,
+      "id": "R2-S25-002",
+      "owner": "Anurag Kumar",
+      "role": "Development",
+      "points": 8,
+      "status": "Planned"
+    },
+    {
+      "row": 81,
+      "id": "R2-S25-003",
+      "owner": "Anurag Kumar",
+      "role": "Development",
+      "points": 5,
+      "status": "Planned"
+    },
+    {
+      "row": 82,
+      "id": "QA-R2-S25-001",
+      "owner": "Anurag Kumar",
+      "role": "QA",
+      "points": 8,
+      "status": "Planned"
+    }
+  ],
+  "existing_remarks_updated": [
+    "M15",
+    "M25",
+    "M26",
+    "M27",
+    "M28",
+    "M31",
+    "M33",
+    "M39",
+    "M40",
+    "M41",
+    "M48",
+    "M61"
+  ],
+  "exact_remarks_readback": "passed",
+  "authorized_cells_only": "passed",
+  "formula_changes": [],
+  "formula_errors": [],
+  "other_tabs_preserved": "Values/formulas unchanged except calculated SP Calculation caches",
+  "sp_assigned": {
+    "before": 539,
+    "after": 568
+  },
+  "sp_pending": {
+    "before": 469,
+    "after": 498
+  },
+  "sp_completed": 70,
+  "new_points": 29,
+  "estimates": "Provisional; overlap and capacity refinement required",
+  "relative_link_check": {
+    "documents": 8,
+    "broken": []
+  },
+  "runtime_tests": "Not run; remediation implementation pending"
+}

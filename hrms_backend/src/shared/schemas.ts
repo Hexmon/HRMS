@@ -565,12 +565,12 @@ export const leaveWfhCancelSchema = z.object({
 export type LeaveWfhCancelInput = z.infer<typeof leaveWfhCancelSchema>;
 
 export const holidayUpsertSchema = z.object({
-  name: z.string().min(2).max(160),
+  name: z.string().trim().min(2).max(160),
   date: isoDateSchema,
   region: z.string().trim().min(1).max(80).default("All"),
   optional: z.boolean().default(false),
   expected_version: z.number().int().min(1).optional()
-});
+}).strict();
 
 export type HolidayUpsertInput = z.infer<typeof holidayUpsertSchema>;
 

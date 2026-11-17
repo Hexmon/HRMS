@@ -1199,7 +1199,21 @@ describe("API contracts", () => {
       url: "/api/v1/openapi.json",
     });
     expect(openapi.statusCode).toBe(200);
-    expect(openapi.json().info.title).toBe("Hawkaii HRMS API");
+    const openapiBody = openapi.json();
+    expect(openapiBody.info.title).toBe("Hawkaii HRMS API");
+    expect(
+      openapiBody.paths["/api/v1/admin/master-data/departments"].get.parameters,
+    ).toContainEqual(
+      expect.objectContaining({
+        in: "query",
+        name: "parent_candidate_for",
+        required: false,
+        schema: expect.objectContaining({ format: "uuid", type: "string" }),
+      }),
+    );
+    expect(
+      openapiBody.paths["/api/v1/admin/master-data/departments/{id}"].patch.description,
+    ).toContain("active child departments");
 
     const docs = await app.inject({ method: "GET", url: "/docs" });
     expect(docs.statusCode).toBe(200);

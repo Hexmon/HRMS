@@ -287,6 +287,11 @@ export class CoreService {
   createUser(actor: AuthUser, input: UserCreateInput): CoreUserMutationResult {
     requirePeopleManager(actor);
     const employeeCode = normalizeEmployeeCode(input.employee_code);
+    if (/^ONB[0-9]+$/u.test(employeeCode)) {
+      throw badRequest("Employee codes in the ONB namespace are reserved for company signup.", {
+        employee_code: employeeCode,
+      });
+    }
     const email = normalizeEmail(input.email);
     if (this.store.users.some((user) => normalizeEmployeeCode(user.employee_code) === employeeCode && !user.deleted_at)) {
       throw conflict("Employee code already exists.", { employee_code: employeeCode });

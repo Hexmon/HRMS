@@ -1,0 +1,8 @@
+FROM node:24-bookworm-slim
+WORKDIR /app
+COPY .output ./.output
+ENV PORT=5173
+ENV HOST=0.0.0.0
+
+EXPOSE 5173
+CMD ["node", ".output/server/index.mjs"]

@@ -234,7 +234,8 @@ async function expectManualFallbackFor(page: Page, expectedReason: RegExp): Prom
   ).toBeVisible();
   await page.getByRole("button", { name: "Clock in", exact: true }).click();
 
-  await expect(page.getByText("Review", { exact: true })).toBeVisible();
+  await expect(page.getByText("Rejected", { exact: true })).toBeVisible();
+  await expect(page.getByText("Your punch was recorded", { exact: false })).toBeHidden();
   await expect(page.getByRole("button", { name: "Use manual fallback" })).toBeVisible();
   await expect(page.getByText(expectedReason)).toBeVisible();
 }

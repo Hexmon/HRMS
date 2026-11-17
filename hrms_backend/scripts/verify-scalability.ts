@@ -27,6 +27,7 @@ const requiredIndexes = [
   "timesheets_submissions_queue_idx",
   "timesheets_workflow_definitions_definition_gin_idx",
   "attendance_punch_employee_occurred_idx",
+  "attendance_sessions_open_sweep_idx",
   "attendance_daily_status_date_idx",
   "attendance_regularizations_queue_idx",
   "leave_requests_employee_date_idx",

@@ -1,0 +1,68 @@
+# Project overlay — Hawkaii HRMS / Hexmon/HRMS / release-01
+
+> Baseline: **uploaded repository snapshot only**, checked out on `release-01`, commit `18fdc1bfd9144e98628d96411942918470a593f1`, committer timestamp `2026-10-15T01:37:15+05:30`. Snapshot `origin/release-01` points to the same commit. This does not independently prove the live GitHub branch is still newest. Re-read every path for a different checkout. Never treat this document as certification or a test result.
+
+## Exact product type and topology — code/doc evidence
+
+- **Modular monolith, not proven microservices:** one Fastify API assembled in `hrms_backend/src/app.ts`, modular services in `src/modules/*`, shared PostgreSQL/Drizzle schemas/SQL migrations, plus separately running workers; `hrms-client/` is TanStack Start/React. `docs/architecture/system-architecture.md` describes Vercel browser/SSR → Render API → Postgres/Valkey/Cloudinary/Resend.
+- **Domains:** core HR, authentication/onboarding, admin policy/RBAC, dashboard, attendance and geo/offline, leave/WFH, EMS, expenses/finance, documents/media, projects, timesheets, assets, helpdesk, notifications, reports, locations and webhooks.
+- **Roles:** Admin, HR Manager, Employee, Reviewer/Manager, Director, Finance Manager, Asset Manager, Auditor, Helpdesk Agent, project-related roles; UI role names differ from backend role constants. `hrms_backend/src/shared/constants.ts`, `hrms_backend/src/modules/auth/service.ts`, `hrms-client/src/lib/auth.tsx`, root `README.md`.
+- **Data:** schema-per-domain PostgreSQL, Drizzle ORM, raw SQL migrations. No cross-schema FKs is intentional; verify cross-domain consistency via `hrms_backend/src/db/migrations/0063_cross_schema_reference_integrity.sql` and related script/tests.
+- **Infrastructure:** session persistence and rate/outbox via Valkey/Redis (`hrms_backend/src/platform/valkey-client.ts`); Upstash TCP Redis support newly changed on release branch; Resend email, Cloudinary objects; separate API and outbox worker; attendance automatic punchout worker; deployment Render, frontend Vercel. Configured topology is evidence of design, not verification of running environments.
+- **Frontend/mobile:** web responsive attendance is present. Mobile API handoff exists, but native app delivery **is not claimed** (`docs/release/sprint-15-attendance-release-notes.md`). Do not automatically generate native UI execution tests as if a released native app exists.
+- **Existing quality:** `hrms_backend/vitest.config.ts`, 98 `.test.ts` backend source tests in snapshot; 20 frontend Playwright `.spec.ts` files; `.github/workflows/branch-ci-cd.yml`; existing QA workbook and historical QA docs. Counts are static file inventories, NOT pass rate or coverage.
+
+## Source-of-truth freshness traps
+
+| Topic | Old text | Current snapshot | Required disposition |
+|---|---|---|---|
+| OpenAPI operation count | `README.md` and `docs/architecture/system-architecture.md` say **245** | `hrms_backend/docs/api/openapi.json` and frontend mirror both contain **281 operations / 240 paths** | Flag DOC-001; run comparison at target commit; no API semantics implied from counts. |
+| Migration count | `docs/architecture/data-architecture.md` describes **25** ending `0025...` | **63** `.sql` migrations ending `0063_cross_schema_reference_integrity.sql` | Flag DOC-002; verify migrator history (planning only). |
+| Architecture verification date | Architecture files say `2026-06-30` | Current snapshot checkout commits through `2026-10-15` | Flag DOC-003; newer application code must be traced. |
+| QA launch status | `qa/RELEASE_SIGNOFF_SUMMARY.md` planned QA for June 2026 | October Sprint 15 docs indicate stakeholder UAT intake deferred (`geo-s15-014`) and environment-specific blocked checks | Flag QA-001; historical evidence is not current execution status. |
+| Role approval | `qa/BUSINESS_RULES_CONFIRMED.md` contains BLQ decisions without clear per-rule approving authority/date | Current code roles/permissions must be traced per route | Preserve intent candidates, request explicit owners and provenance, do not silently mark confirmed. |
+
+## Required vertical traces before test-oracle decisions
+
+Trace all layers, including actual source file and symbol with current line numbers:
+
+1. **Signup and verification:** `hrms_backend/src/modules/auth/{routes,service}.ts`, `src/plugins/auth.ts`, `src/platform/email/`, `src/modules/webhooks/resend-routes.ts`, `src/platform/company-membership-context.ts`, `hrms-client/src/domains/auth/`. Distinguish send/delivery telemetry from verification authority; token reuse/replay, resend, unverified tenant/bootstrap, reset session revocation, role changes mid-session.
+2. **Company/role/document ownership:** `src/modules/documents/{routes,service,policy,repository}.ts`, `src/modules/core/service.ts`, `src/platform/company-membership-context.ts`, `src/shared/types.ts`. Enumerate actor × company × resource ownership × classification × permission. **Investigate** the `Auditor` write access mismatch; `policy.ts` lines 9–12 return `true` for every permission for Admin/Auditor; `service.ts` delete checks permission `write`. Root README says Auditor read-only. No production exploit has been tested. Also locate if/where document ownership is bound to company: source policy/repository lacks an obvious company check; examine upstream scope before conclusion.
+3. **Expense independent approvals:** `src/modules/expenses/{service,policy,state-machine,routes}.ts`, `src/modules/platform/service.ts`, `src/modules/admin/service.ts`, frontend expense adapters. `policy.ts` lines 5–19 guard self-processing; `service.ts` approx lines 356–400 requires separate manager/finance approvers; verify status matrix, backup assignment, locked/terminal paths, finance hold/clarification, concurrency, amount precision, duplicate settlement, state transition persistence, notifications and read models.
+4. **Attendance command/outbox/read model:** `src/modules/attendance/{routes,command-service,command-repository,session-transition,daily-projection,reporting-projection,service}.ts`. Inputs include `client_event_id`, idempotency key, device provenance, geo/shift/policy, duplicate hash, correction and payroll lock. Trace transaction boundaries and authorization, replay effects and projection reconciliation.
+5. **Offline and device:** `src/modules/attendance/{offline-sync-service,offline-sync-contract,attestation-adapter}.ts`, registered devices repository/migrations. Observe sequential cursor, changed-body conflicts, duplicate sequence, revoked/stolen device, clock skew, partial batch and out-of-order delivery. Verify actual supported channel and test double before planning native app tests.
+6. **Geo privacy and fallback:** `src/modules/attendance/{geo-policy,service,location-access-audit,geo-policy-simulation-service}.ts`; UI attendance privacy/admin-geo/manager queue. No location background tracking asserted. Separate redacted evidence from privileged exact-location reveal and audit; plan retention/purge, permission removal mid-review, cross-company site, expired evidence.
+7. **Payroll snapshot/adjustments:** `src/modules/attendance/payroll-period-service.ts`, attendance regularization, exports and reports. `open`/`locked`, overlapping periods and post-lock adjustments are implemented. Whether post-lock corrections affect downstream payroll is an OWNER question.
+8. **Leave/WFH policies:** `src/modules/leave-wfh/{service,policy,repository}.ts`; inspect policy lookups and calendar selection **per company**, balance allocations, overlap, half day, year boundaries and approvals. **Investigation flag:** `service.ts` lines ~549–575 select first active company, global-looking admin policy and holiday array; trace whether store is tenant-isolated before treating as defect.
+9. **Documents and asset QR scan:** `src/modules/documents/{service,policy}.ts`, `src/modules/assets/{routes,service,repository}.ts`, `src/plugins/auth.ts`. Auth plugin exempts `/api/v1/assets/scan/*`; scan returns asset summary; ask whether unauthenticated asset disclosure is intentional and what level of data disclosure is acceptable.
+10. **Reports and exports:** backend `src/modules/reports/*`, `src/modules/attendance/reporting-projection.ts`, frontend report pages, CSV sanitization, date/zone/tenant filters, export permissions, large-data pagination, projected evidence state vs UI/dashboard.
+11. **Valkey/outbox/recovery:** `src/platform/valkey-client.ts`, `src/auth/index.ts`, `src/plugins/rate-limit.ts`, `src/workers/{outbox-worker,run-outbox-worker}.ts`. Code changes relative to `main` move to shared lazy Valkey client, support `redis://` / `rediss://`; investigate cold-start handshake, TLS, connect timeouts, closed/reconnecting session client, outbox retry/dead-letter and stop/restart. Session revokeUser currently uses Redis `KEYS` in `src/auth/index.ts`; plan volume effects before changing the design.
+12. **SSR/CI/migrations/environment:** `hrms-client/scripts/build-vercel.mjs`, `src/routes/__root.tsx`, `.github/workflows/branch-ci-cd.yml`, `render.yaml`, `infra/render/*`, migrations, `hrms-client/src/shared/api/config.ts`. Distinguish PR/branch CI from deployment: `release-*` runs checks; backend deploy is restricted to push on `dev`, `qa`, `main`. Check direct deep links, cookies/redirect, SSR hydration, required checks, secrets, DB/Valkey segregation, verified backup/restore. CI source is NOT proof GitHub branch protections are configured.
+
+## Priority-and-risk rules (draft, owner validation pending)
+
+- **Provisional P0:** cross-company data access and unapproved document mutation; authentication/session invalidation; expense self-approval or double settlement; irreversible/duplicate attendance effects; payroll period and regularization integrity; accidental production mock/seed use.
+- **Provisional P1:** worker outage or replay, geolocation privacy/retention, versioned migrations, financial and attendance export leaks, leave-day accounting, policy mismatch, responsive critical user journeys, Vercel SSR and Valkey reconnect regression.
+- Assign criticality per blast radius, reversibility, owner-approved policy and actual workload. Do not reduce data-loss/tenant-leak exposure solely because frequency is unknown. Separate current evidence from hypotheticals and from gaps.
+
+## User contexts and scenario lenses
+
+Actor × tenant × employee hierarchy × device/channel × network quality × timezone × lifecycle status × target environment × concurrency × source of truth. Prioritize: employees on mobile web in intermittent networks, managers approving at peak, Finance on close, HR on joins/exits, admins creating second company, auditors with read-only expectations, users with disabilities/shared devices, helpdesk owners. Do not infer exact accessibility support or legally mandated obligations; ask owners and use applicable WCAG planning.
+
+## Human decision gate — first 7 questions
+
+1. **Product/Security:** Is Auditor STRICTLY read-only everywhere, especially Documents? Can auditors see sensitive docs; is anyone authorized to delete/verify? (README vs policy mismatch). Proposed options: read-only scoped / scoped verify / existing broad access intentionally approved / Other/TBD.
+2. **Product/Engineering:** Is every document, asset QR lookup, leave/holiday policy and report strictly company-isolated? Is public asset QR lookup deliberately unauthenticated? State allowed disclosure and scope.
+3. **Engineering:** Does each request operate on a full global store or company-specific store; where is authoritative tenant membership enforced (before vs within each service)? How are no-cross-schema-FK references reconciled?
+4. **Product/Finance:** For expense submission when there is no independent Manager or Finance approver, should it block, route to backup, or enter a manual exception? Confirm auditor/admin and emergency paths and no self-approval.
+5. **HR/Product:** Which attendance events are payroll-authoritative: accepted vs provisional/offline/manual fallback? How do locked periods, post-lock corrections and off-day/overtime feed payroll and reporting?
+6. **Engineering/SRE:** Are Upstash Redis TCP/TLS, backend worker deployment, email, storage, DB restore and Vercel SSR actually deployed to dev/QA/prod? What outage and throughput acceptance targets exist? No numbers without approval.
+7. **QA/Product:** Which operating environments, browsers/devices, company sizes, employee volumes, release success criteria and UAT approvers are in scope? Native mobile is not currently claimed shipped; confirm roadmap and scope.
+
+Ask at most a targeted 5–7 per round; group by owner. Follow `hrms-release-01/02_STAKEHOLDER_INTERVIEWS.md` for deeper subsequent rounds. Preserve prior `qa/BUSINESS_LOGIC_QUESTIONS.md` responses as historical leads and avoid repeating answered, properly confirmed decisions.
+
+## Planning deliverables and review discipline
+
+- First `mode=discover`: source map; 6–12 critical vertical slices with trace gaps; evidence-backed business rule candidates; code-vs-intent questions; prioritized risk hypotheses; exact missing documentation and owner. STOP. Do not create final expected results for unanswered rules.
+- Then `mode=plan` only after G1: original 12 SOP artifacts, decision log, user/persona action matrix, failure model, approved test-case CSV and optional tester XLSX (see `hrms-release-01/09_TEST_WORKBOOK_SPEC.md`), owners and requirements, release gates and artifact version.
+- Preserve production/historical QA files and never imply test execution. Use read-only source inspection; do not invoke running applications or network attack tools under this skill.

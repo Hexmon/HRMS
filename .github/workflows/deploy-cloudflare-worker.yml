@@ -1,0 +1,107 @@
+name: Deploy Cloudflare background worker
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Isolated environment to deploy
+        required: true
+        type: choice
+        options: [dev, qa, production]
+      state:
+        description: Deploy inactive first; activate only after the old Render worker is stopped
+        required: true
+        type: choice
+        options: [inactive, active]
+      cutover_confirmation:
+        description: For active only, enter STOPPED_RENDER_WORKER_AND_RECONCILED_OUTBOX
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-worker-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: ${{ inputs.target == 'dev' && 'development' || inputs.target }}
+    defaults:
+      run:
+        working-directory: hrms_backend
+    steps:
+      - name: Check active-cutover acknowledgement
+        env:
+          WORKER_STATE: ${{ inputs.state }}
+          CUTOVER_CONFIRMATION: ${{ inputs.cutover_confirmation }}
+        run: |
+          if [[ "$WORKER_STATE" == "active" && "$CUTOVER_CONFIRMATION" != "STOPPED_RENDER_WORKER_AND_RECONCILED_OUTBOX" ]]; then
+            echo "Active deployment requires an explicit Render stop and outbox reconciliation acknowledgement." >&2
+            exit 1
+          fi
+
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v6
+        with:
+          package_json_file: hrms_backend/package.json
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: hrms_backend/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare isolated deployment configuration
+        env:
+          HRMS_HYPERDRIVE_ID: ${{ secrets.HRMS_HYPERDRIVE_ID }}
+          WORKER_TARGET: ${{ inputs.target }}
+          WORKER_STATE: ${{ inputs.state }}
+        run: node scripts/prepare-cloudflare-config.mjs "$WORKER_TARGET" "$WORKER_STATE"
+
+      - name: Bundle before deployment
+        env:
+          WORKER_TARGET: ${{ inputs.target }}
+        run: pnpm exec wrangler deploy --config .wrangler/deploy-config.json --env "$WORKER_TARGET" --dry-run
+
+      - name: Configure secret before activation
+        if: inputs.state == 'active'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          OUTBOX_SIGNAL_TOKEN: ${{ secrets.OUTBOX_SIGNAL_TOKEN }}
+          WORKER_TARGET: ${{ inputs.target }}
+        run: |
+          test -n "$OUTBOX_SIGNAL_TOKEN"
+          printf '%s' "$OUTBOX_SIGNAL_TOKEN" | pnpm exec wrangler secret put OUTBOX_SIGNAL_TOKEN --config .wrangler/deploy-config.json --env "$WORKER_TARGET"
+
+      - name: Deploy Worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          WORKER_TARGET: ${{ inputs.target }}
+        run: pnpm exec wrangler deploy --config .wrangler/deploy-config.json --env "$WORKER_TARGET"
+
+      - name: Configure secret after inactive staging
+        if: inputs.state == 'inactive'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          OUTBOX_SIGNAL_TOKEN: ${{ secrets.OUTBOX_SIGNAL_TOKEN }}
+          WORKER_TARGET: ${{ inputs.target }}
+        run: |
+          test -n "$OUTBOX_SIGNAL_TOKEN"
+          printf '%s' "$OUTBOX_SIGNAL_TOKEN" | pnpm exec wrangler secret put OUTBOX_SIGNAL_TOKEN --config .wrangler/deploy-config.json --env "$WORKER_TARGET"

@@ -186,9 +186,9 @@ export class LeaveWfhService {
     };
   }
 
-  createLeaveRequest(actor: AuthUser, input: LeaveRequestCreateInput) {
+  async createLeaveRequest(actor: AuthUser, input: LeaveRequestCreateInput) {
     this.requireActiveEmployee(actor.id);
-    const duration = this.requestDurationDays(input.date_from, input.date_to, input.half_day);
+    const duration = await this.requestDurationDays(actor.id, input.date_from, input.date_to, input.half_day);
     this.assertNoOverlap(actor.id, input.date_from, input.date_to);
     this.assertLeaveBalanceAvailable(actor, input.leave_type, duration, input.date_from);
     const approver = this.core.resolveImmediateManager(actor.id) ?? this.adminFallback();
@@ -245,7 +245,7 @@ export class LeaveWfhService {
     };
   }
 
-  decideLeaveRequest(actor: AuthUser, id: UUID, input: LeaveWfhDecisionInput) {
+  async decideLeaveRequest(actor: AuthUser, id: UUID, input: LeaveWfhDecisionInput) {
     const current = this.repository.findLeaveRequest(id);
     if (current.version !== input.expected_version) {
       throw conflict("Leave request was modified by another actor.", { aggregate: "leave_request", id });
@@ -267,7 +267,7 @@ export class LeaveWfhService {
       candidate.decided_at = nowIso();
     });
     if (nextStatus === LeaveRequestStatuses.Approved) {
-      this.applyAttendanceStatus(request.employee_user_id, request.date_from, request.date_to, AttendanceDayStatuses.Leave, "Approved leave");
+      await this.applyAttendanceStatus(request.employee_user_id, request.date_from, request.date_to, AttendanceDayStatuses.Leave, "Approved leave");
     }
     appendLeaveWfhOutboxEvent(this.store, {
       aggregateType: "leave_request",
@@ -309,9 +309,9 @@ export class LeaveWfhService {
     return { ...this.presentLeaveRequest(request, actor), previous_status: previousStatus, next_status: request.status };
   }
 
-  createWfhRequest(actor: AuthUser, input: WfhRequestCreateInput) {
+  async createWfhRequest(actor: AuthUser, input: WfhRequestCreateInput) {
     this.requireActiveEmployee(actor.id);
-    const duration = this.requestDurationDays(input.date_from, input.date_to, input.half_day);
+    const duration = await this.requestDurationDays(actor.id, input.date_from, input.date_to, input.half_day);
     this.assertNoOverlap(actor.id, input.date_from, input.date_to);
     const approver = this.core.resolveImmediateManager(actor.id) ?? this.adminFallback();
     const request = this.repository.addWfhRequest({
@@ -360,7 +360,7 @@ export class LeaveWfhService {
     };
   }
 
-  decideWfhRequest(actor: AuthUser, id: UUID, input: LeaveWfhDecisionInput) {
+  async decideWfhRequest(actor: AuthUser, id: UUID, input: LeaveWfhDecisionInput) {
     const current = this.repository.findWfhRequest(id);
     if (current.version !== input.expected_version) {
       throw conflict("WFH request was modified by another actor.", { aggregate: "wfh_request", id });
@@ -382,7 +382,7 @@ export class LeaveWfhService {
       candidate.decided_at = nowIso();
     });
     if (nextStatus === LeaveRequestStatuses.Approved) {
-      this.applyAttendanceStatus(request.employee_user_id, request.date_from, request.date_to, AttendanceDayStatuses.Wfh, "Approved WFH", "wfh");
+      await this.applyAttendanceStatus(request.employee_user_id, request.date_from, request.date_to, AttendanceDayStatuses.Wfh, "Approved WFH", "wfh");
     }
     appendLeaveWfhOutboxEvent(this.store, {
       aggregateType: "wfh_request",
@@ -424,10 +424,16 @@ export class LeaveWfhService {
     };
   }
 
-  listHolidays(actor: AuthUser, query: LeaveWfhQuery) {
-    const companyId = this.requireCompanyId(actor.id);
+  async listHolidays(actor: AuthUser, query: LeaveWfhQuery) {
+    const companyId = this.store.persistence ? undefined : this.requireCompanyId(actor.id);
     const year = query.year ?? currentYear();
-    const holidays = this.repository.listHolidays(companyId, year).map((holiday) => this.presentHoliday(holiday));
+    if (this.store.persistence && !this.store.persistence.holidaysForActor) {
+      throw new Error("Holiday SQL read is unavailable.");
+    }
+    const holidays = (this.store.persistence
+      ? await this.store.persistence.holidaysForActor!(actor.id, year)
+      : this.repository.listHolidays(companyId!, year)
+    ).map((holiday) => this.presentHoliday(holiday));
     return {
       holidays,
       calendar_metadata: {
@@ -438,9 +444,17 @@ export class LeaveWfhService {
     };
   }
 
-  upsertHoliday(actor: AuthUser, id: UUID, input: HolidayUpsertInput) {
+  async upsertHoliday(actor: AuthUser, id: UUID, input: HolidayUpsertInput) {
+    if (this.store.persistence) {
+      if (!this.store.persistence.upsertHoliday) {
+        throw new Error("Holiday SQL write is unavailable.");
+      }
+      const holiday = await this.store.persistence.upsertHoliday(actor.id, id, input);
+      return { holiday: this.presentHoliday(holiday), version: holiday.version };
+    }
     assertCanMutateHolidays(actor);
     const companyId = this.requireCompanyId(actor.id);
+    const previousVersion = this.repository.findHoliday(id, companyId)?.version;
     const holiday = this.repository.upsertHoliday(id, {
       company_id: companyId,
       name: input.name.trim(),
@@ -449,13 +463,15 @@ export class LeaveWfhService {
       optional: input.optional,
       expected_version: input.expected_version
     });
-    appendLeaveWfhOutboxEvent(this.store, {
-      aggregateType: "holiday",
-      aggregateId: holiday.id,
-      eventType: leaveWfhEvents.HolidayUpserted,
-      payload: { holiday_id: holiday.id, actor_user_id: actor.id, date: holiday.holiday_date, region: holiday.region },
-      idempotencyKey: `holiday.upserted:${holiday.id}:${holiday.version}`
-    });
+    if (previousVersion !== holiday.version) {
+      appendLeaveWfhOutboxEvent(this.store, {
+        aggregateType: "holiday",
+        aggregateId: holiday.id,
+        eventType: leaveWfhEvents.HolidayUpserted,
+        payload: { holiday_id: holiday.id, actor_user_id: actor.id, company_id: companyId, date: holiday.holiday_date, region: holiday.region },
+        idempotencyKey: `holiday.upserted:${holiday.id}:${holiday.version}`
+      });
+    }
     return { holiday: this.presentHoliday(holiday), version: holiday.version };
   }
 
@@ -568,25 +584,56 @@ export class LeaveWfhService {
     return this.activeCompany()?.working_week ?? "Mon-Fri";
   }
 
-  private holidayDates(): Set<string> {
+  private async workingWeekForActor(actorUserId: UUID): Promise<string> {
+    if (!this.store.persistence) {
+      return this.workingWeek();
+    }
+    if (!this.store.persistence.workingWeekForActor) {
+      throw new Error("Company working-week SQL read is unavailable.");
+    }
+    return this.store.persistence.workingWeekForActor(actorUserId);
+  }
+
+  private async holidayDatesForActor(actorUserId: UUID, dateFrom: string, dateTo: string): Promise<Set<string>> {
+    if (!this.store.persistence) {
+      return new Set(
+        this.store.holidays
+          .filter((holiday) => !holiday.optional && !holiday.deleted_at)
+          .map((holiday) => holiday.holiday_date)
+      );
+    }
+    if (!this.store.persistence.holidaysForActor) {
+      throw new Error("Holiday SQL read is unavailable.");
+    }
+    const years = new Set<number>();
+    for (let year = Number(dateFrom.slice(0, 4)); year <= Number(dateTo.slice(0, 4)); year += 1) {
+      years.add(year);
+    }
+    const holidays = (await Promise.all(
+      [...years].map((year) => this.store.persistence!.holidaysForActor!(actorUserId, year)),
+    )).flat();
     return new Set(
-      this.store.holidays
+      holidays
         .filter((holiday) => !holiday.optional && !holiday.deleted_at)
         .map((holiday) => holiday.holiday_date)
     );
   }
 
-  private requestDurationDays(dateFrom: string, dateTo: string, halfDay: boolean): number {
+  private async requestDurationDays(actorUserId: UUID, dateFrom: string, dateTo: string, halfDay: boolean): Promise<number> {
     durationDays(dateFrom, dateTo, halfDay);
+    const [holidays, workingWeek] = await Promise.all([
+      this.holidayDatesForActor(actorUserId, dateFrom, dateTo),
+      this.workingWeekForActor(actorUserId),
+    ]);
     if (halfDay) {
-      if (!isWorkingDate(dateFrom, this.workingWeek(), this.holidayDates())) {
+      if (!isWorkingDate(dateFrom, workingWeek, holidays)) {
         throw badRequest("Leave/WFH cannot be requested for a company non-working day.", {
           date: dateFrom
         });
       }
       return 0.5;
     }
-    const days = workdaysInclusive(dateFrom, dateTo, this.workingWeek(), this.holidayDates());
+    const days = workdaysInclusive(dateFrom, dateTo, workingWeek, holidays);
     if (days <= 0) {
       throw badRequest("Leave/WFH date range must include at least one company working day.", {
         date_from: dateFrom,
@@ -661,16 +708,20 @@ export class LeaveWfhService {
     };
   }
 
-  private applyAttendanceStatus(
+  private async applyAttendanceStatus(
     employeeUserId: UUID,
     dateFrom: string,
     dateTo: string,
     status: typeof AttendanceDayStatuses.Leave | typeof AttendanceDayStatuses.Wfh,
     note: string,
     workMode: "wfh" | null = null
-  ): void {
+  ): Promise<void> {
     const companyId = this.requireCompanyId(employeeUserId);
-    for (const workDate of workingDatesInclusive(dateFrom, dateTo, this.workingWeek(), this.holidayDates())) {
+    const [holidays, workingWeek] = await Promise.all([
+      this.holidayDatesForActor(employeeUserId, dateFrom, dateTo),
+      this.workingWeekForActor(employeeUserId),
+    ]);
+    for (const workDate of workingDatesInclusive(dateFrom, dateTo, workingWeek, holidays)) {
       const existing = this.attendance.dayRecord(companyId, employeeUserId, workDate);
       const kind = status === AttendanceDayStatuses.Leave
         ? AttendanceApprovalKinds.Leave

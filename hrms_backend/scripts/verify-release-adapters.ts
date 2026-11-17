@@ -33,9 +33,10 @@ try {
   }
   if (!store.sessionStore.constructor.name.includes("Valkey")) failures.push("session store is not Valkey-backed");
 
+  const eventId = randomUUID();
   store.outbox.push({
     id: store.nextOutboxId++,
-    event_id: randomUUID(),
+    event_id: eventId,
     aggregate_type: "release_acceptance",
     aggregate_id: seedIds.employee1,
     event_type: "release.acceptance.outbox_smoke",
@@ -51,20 +52,43 @@ try {
   });
   await store.persistence?.flush();
 
-  const publisher = new ValkeyStreamPublisher(valkeyUrl);
-  const worker = new OutboxWorker(store, publisher);
-  const publishResult = await worker.publishPending(100);
-  publisher.close();
-  if (publishResult.published < 1) failures.push("outbox worker did not publish any Valkey Stream event");
+  const eventTransport = process.env.HRMS_EVENT_TRANSPORT ?? "legacy";
+  let publishedThisRun = 0;
+  let streamEntries: number | null = null;
+  if (eventTransport === "cloudflare") {
+    const response = await fetch(requireEnv("OUTBOX_DRAIN_URL"), {
+      method: "POST",
+      headers: { authorization: `Bearer ${requireEnv("OUTBOX_DRAIN_TOKEN")}` },
+      signal: AbortSignal.timeout(5_000),
+    });
+    if (!response.ok) failures.push(`Cloudflare outbox signal returned ${response.status}`);
+    for (let attempt = 0; attempt < 25 && publishedThisRun === 0; attempt += 1) {
+      const result = await store.pgPool!.query<{ status: string }>(
+        "SELECT status FROM platform.outbox_events WHERE event_id = $1", [eventId],
+      );
+      if (result.rows[0]?.status === "published") publishedThisRun = 1;
+      else await new Promise((resolve) => setTimeout(resolve, 1_000));
+    }
+    if (publishedThisRun === 0) failures.push("Cloudflare Queue did not accept the outbox smoke event in 25 seconds");
+  } else if (eventTransport === "legacy") {
+    const publisher = new ValkeyStreamPublisher(valkeyUrl);
+    const worker = new OutboxWorker(store, publisher);
+    const publishResult = await worker.publishPending(100);
+    publisher.close();
+    publishedThisRun = publishResult.published;
+    if (publishedThisRun < 1) failures.push("outbox worker did not publish any Valkey Stream event");
 
-  const valkey = new Valkey(valkeyUrl);
-  const streamKeys = await valkey.keys("hrms.*");
-  let streamEntries = 0;
-  for (const key of streamKeys) {
-    streamEntries += await valkey.xlen(key);
+    const valkey = new Valkey(valkeyUrl);
+    const streamKeys = await valkey.keys("hrms.*");
+    streamEntries = 0;
+    for (const key of streamKeys) {
+      streamEntries += await valkey.xlen(key);
+    }
+    await valkey.quit();
+    if (streamEntries < 1) failures.push("Valkey Streams contain no published outbox entries");
+  } else {
+    failures.push(`Unsupported HRMS_EVENT_TRANSPORT: ${eventTransport}`);
   }
-  await valkey.quit();
-  if (streamEntries < 1) failures.push("Valkey Streams contain no published outbox entries");
 
   const missingObjects: string[] = [];
   for (const document of store.documents) {
@@ -89,8 +113,9 @@ try {
   notes.push(`assets=${store.assets.length}`);
   notes.push(`asset_recovery_tickets=${store.assetRecoveryTickets.length}`);
   notes.push(`timesheet_submissions=${store.timesheetSubmissions.length}`);
-  notes.push(`valkey_stream_entries=${streamEntries}`);
-  notes.push(`outbox_published_this_run=${publishResult.published}`);
+  notes.push(`event_transport=${eventTransport}`);
+  if (streamEntries !== null) notes.push(`valkey_stream_entries=${streamEntries}`);
+  notes.push(`outbox_published_this_run=${publishedThisRun}`);
 } finally {
   await store.persistence?.close();
 }

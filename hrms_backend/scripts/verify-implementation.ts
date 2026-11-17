@@ -83,6 +83,15 @@ function verifyMutatingRoutesAreGuarded(): void {
       continue;
     }
     const content = read(route);
+    if (route === "src/modules/webhooks/resend-routes.ts") {
+      // Provider webhooks cannot carry an employee session; the raw body and
+      // Svix headers are verified by ResendWebhookService before mutation.
+      if (!content.includes("ResendWebhookService") || !content.includes("service.process(body") ||
+          !content.includes("svix-signature") || !content.includes("RESEND_WEBHOOK_SECRET")) {
+        violations.push(`${route}: provider webhook signature guard is missing`);
+      }
+      continue;
+    }
     if (/fastify\.(post|patch|put|delete)\(/u.test(content) && !content.includes("request.actor")) {
       violations.push(`${route}: mutating route lacks auth guard`);
     }

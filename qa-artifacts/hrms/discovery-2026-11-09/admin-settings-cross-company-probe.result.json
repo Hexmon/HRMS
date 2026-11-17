@@ -1,0 +1,11 @@
+{
+  "environment": "in-memory Fastify inject; synthetic sequential B-to-A preference; no external services",
+  "company_b_update_status": 200,
+  "company_a_read_status": 200,
+  "initial_password_min_length": 10,
+  "company_b_saved_password_min_length": 11,
+  "company_a_observed_password_min_length": 11,
+  "company_a_observed_b_change": true,
+  "initial_version": 1,
+  "company_a_observed_version": 2
+}

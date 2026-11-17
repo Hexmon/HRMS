@@ -239,7 +239,7 @@ function rejectedResultFor(
     title: unavailableCopy?.title ?? ACTION_COPY[action].rejectedTitle,
     message:
       unavailableCopy?.message ??
-      geoDecisionDisplay?.description ??
+      (reasonCode.startsWith("geo_") ? geoDecisionDisplay?.description : undefined) ??
       userFacingErrorMessage(error, "The attendance request could not be completed."),
     browserLocationKind,
     backendReasonCode: reasonCode,

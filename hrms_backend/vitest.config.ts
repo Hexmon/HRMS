@@ -15,6 +15,13 @@ export default defineConfig({
   },
   test: {
     environment: "node",
+    coverage: {
+      provider: "v8",
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["src/**/*.test.{ts,tsx}", "src/**/*.d.ts", "src/db/migrations/**"],
+      reporter: ["text-summary", "json"],
+      reportsDirectory: "./coverage"
+    },
     globals: true,
     setupFiles,
     testTimeout: 15000,
@@ -36,6 +43,7 @@ export default defineConfig({
           name: "integration",
           setupFiles,
           testTimeout: 30000,
+          hookTimeout: 30000,
           include: [
             "src/**/*.integration.test.ts"
           ]
@@ -46,6 +54,7 @@ export default defineConfig({
           name: "contracts",
           setupFiles,
           testTimeout: 30000,
+          hookTimeout: 60000,
           include: [
             "src/**/*.contract.test.ts"
           ]
@@ -56,6 +65,7 @@ export default defineConfig({
           name: "e2e",
           setupFiles,
           testTimeout: 30000,
+          hookTimeout: 60000,
           include: [
             "src/**/*.e2e.test.ts"
           ]

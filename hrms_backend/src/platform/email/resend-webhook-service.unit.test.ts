@@ -168,6 +168,53 @@ describe("ResendWebhookService", () => {
     ).toThrowError("Invalid Resend webhook signature.");
   });
 
+  it.each([
+    { label: "past edge", timestamp: 700, accepted: true },
+    { label: "future edge", timestamp: 1300, accepted: true },
+    { label: "just before past edge", timestamp: 699, accepted: false },
+    { label: "just after future edge", timestamp: 1301, accepted: false },
+  ])("enforces the inclusive 300-second $label with a fixed clock", ({ timestamp, accepted }) => {
+    const store = createMemoryDataStore();
+    const payload = JSON.stringify({ type: "email.sent", data: { email_id: "email_clock_edge" } });
+    const id = `msg_clock_${timestamp}`;
+    const signedTimestamp = String(timestamp);
+    const service = new ResendWebhookService(store, secret, {
+      timestampToleranceSeconds: 300,
+      nowSeconds: () => 1000,
+    });
+    const process = () => service.process(payload, {
+      id,
+      timestamp: signedTimestamp,
+      signature: `v1,${sign(secret, id, signedTimestamp, payload)}`,
+    });
+
+    if (accepted) {
+      expect(process()).toMatchObject({ received: true, duplicate: false });
+      expect(store.emailEvents).toHaveLength(1);
+    } else {
+      expect(process).toThrowError("Invalid Resend webhook signature.");
+      expect(store.emailEvents).toHaveLength(0);
+    }
+  });
+
+  it("evaluates a signed timestamp against verification time, not creation time", () => {
+    const store = createMemoryDataStore();
+    const payload = JSON.stringify({ type: "email.sent", data: { email_id: "email_clock_shift" } });
+    const id = "msg_clock_shift";
+    const timestamp = "1301"; // 301 seconds ahead at creation time 1000.
+    const service = new ResendWebhookService(store, secret, {
+      timestampToleranceSeconds: 300,
+      nowSeconds: () => 1001, // One second later, this is exactly 300 seconds ahead.
+    });
+
+    expect(service.process(payload, {
+      id,
+      timestamp,
+      signature: `v1,${sign(secret, id, timestamp, payload)}`,
+    })).toMatchObject({ received: true, duplicate: false });
+    expect(store.emailEvents).toHaveLength(1);
+  });
+
   it("rejects a malformed timestamp", () => {
     const store = createMemoryDataStore();
 

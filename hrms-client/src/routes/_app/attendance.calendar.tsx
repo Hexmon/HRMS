@@ -1,5 +1,5 @@
 import { createFileRoute, Navigate, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { DataCard, StatusBadge, EmptyState } from "@/components/ui-kit";
@@ -7,7 +7,11 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import type { Role } from "@/lib/mock/roles";
-import { useAttendanceDailyCalendar, useAttendanceMonthlyCalendar } from "@/domains/attendance";
+import {
+  useAttendanceDailyCalendar,
+  useAttendanceMonthlyCalendar,
+  useMyAttendanceSummary,
+} from "@/domains/attendance";
 import { employeeDayEvidenceView } from "@/domains/attendance/employee-day-evidence-model";
 import type { RegularizationItemDisplay } from "@/domains/attendance/regularization-form-model";
 import {
@@ -94,12 +98,23 @@ function AttendanceCalendar() {
 function EmployeeAttendanceCalendar() {
   const navigate = useNavigate();
   const today = new Date();
+  const todayQuery = useMyAttendanceSummary({ page: 1, page_size: 1 });
+  const companyToday = text(asRecord(asRecord(todayQuery.data).today).work_date);
   const [cursor, setCursor] = useState({ y: today.getFullYear(), m: today.getMonth() });
   const [selected, setSelected] = useState<number>(today.getDate());
+  useEffect(() => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(companyToday)) return;
+    const [year, month, day] = companyToday.split("-").map(Number);
+    setCursor({ y: year, m: month - 1 });
+    setSelected(day);
+  }, [companyToday]);
   const selectedDate = `${monthValue(cursor.y, cursor.m)}-${String(selected).padStart(2, "0")}`;
-  const todayDate = `${monthValue(today.getFullYear(), today.getMonth())}-${String(
-    today.getDate(),
-  ).padStart(2, "0")}`;
+  const todayDate =
+    companyToday ||
+    `${monthValue(today.getFullYear(), today.getMonth())}-${String(today.getDate()).padStart(
+      2,
+      "0",
+    )}`;
   const monthlyQuery = useAttendanceMonthlyCalendar({
     month: monthValue(cursor.y, cursor.m),
     page: 1,
@@ -192,7 +207,9 @@ function EmployeeAttendanceCalendar() {
                     const status = dayStatus(record);
                     const isSelected = day === selected;
                     const dayDate = new Date(cursor.y, cursor.m, day);
-                    const isToday = dayDate.toDateString() === today.toDateString();
+                    const isToday =
+                      `${monthValue(cursor.y, cursor.m)}-${String(day).padStart(2, "0")}` ===
+                      todayDate;
                     const dayLabel = dayDate.toLocaleDateString(undefined, {
                       weekday: "long",
                       month: "long",

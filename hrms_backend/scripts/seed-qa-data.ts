@@ -7,8 +7,15 @@ import { AssetStatuses, EmploymentStatuses, ExpenseSubTypes, Roles } from "#shar
 import { seedIds } from "../src/platform/data-store.js";
 import { getQaSeedEmails } from "../src/platform/seed-personas.js";
 import { loadRuntimeEnv, requireEnv } from "./env.js";
+import {
+  ensureQaAdminCompanyContext,
+  requireQaPersonaIdentity,
+  requireQaSeedTarget,
+  rethrowAfterQaSeedRollback,
+} from "./qa-seed-safety.js";
 
 loadRuntimeEnv();
+requireQaSeedTarget(process.env);
 const localDemoPassword = getLocalDemoPassword();
 const qaSeedEmails = getQaSeedEmails();
 
@@ -26,6 +33,8 @@ function sha256(value: string): string {
 }
 
 const ids = {
+  companyDefault: uuidFromName("company-default"),
+  adminPreference: uuidFromName(`session-preference-${seedIds.admin}`),
   departmentHr: uuidFromName("qa-department-hr"),
   designationHrManager: seedIds.designationHrManager,
   designationManager: uuidFromName("qa-designation-normal-manager"),
@@ -51,6 +60,11 @@ await client.connect();
 
 try {
   await client.query("BEGIN");
+  const defaultCompanyId = await ensureQaAdminCompanyContext(client, {
+    adminUserId: seedIds.admin,
+    companyId: ids.companyDefault,
+    preferenceId: ids.adminPreference,
+  });
 
   await client.query(
     `INSERT INTO core.designations (id, designation_code, title, level, status)
@@ -94,7 +108,7 @@ try {
 
   for (const user of users) {
     const [id, employeeCode, email, fullName, departmentId, designationId, managerUserId, hierarchyPath, role, status] = user;
-    await client.query(
+    const seededUser = await client.query<{ id: string }>(
       `INSERT INTO core.users (
         id, employee_code, email, full_name, department_id, designation_id, manager_user_id,
         hierarchy_path, employment_status, timezone, joined_on, terminated_on
@@ -104,15 +118,32 @@ try {
       SET email = EXCLUDED.email, full_name = EXCLUDED.full_name, department_id = EXCLUDED.department_id,
           designation_id = EXCLUDED.designation_id, manager_user_id = EXCLUDED.manager_user_id,
           hierarchy_path = EXCLUDED.hierarchy_path, employment_status = EXCLUDED.employment_status,
-          updated_at = now(), deleted_at = NULL`,
+          updated_at = now(), deleted_at = NULL
+       RETURNING id`,
       [id, employeeCode, email, fullName, departmentId, designationId, managerUserId, hierarchyPath, status]
     );
+    requireQaPersonaIdentity(id, seededUser.rows[0]?.id, employeeCode);
     await client.query(
       `INSERT INTO core.user_roles (id, user_id, role_key, status, effective_from)
        VALUES ($1, $2, $3, 'active', '2026-01-01')
        ON CONFLICT (id) DO UPDATE
-       SET user_id = EXCLUDED.user_id, role_key = EXCLUDED.role_key, status = EXCLUDED.status, updated_at = now()`,
+       SET user_id = EXCLUDED.user_id, role_key = EXCLUDED.role_key,
+           status = EXCLUDED.status, updated_at = now()`,
       [uuidFromName(`qa-role-${employeeCode}`), id, role]
+    );
+    await client.query(
+      `INSERT INTO platform.user_session_preferences
+       (id, user_id, active_role, company_id, landing_page, locale, timezone)
+       VALUES ($1, $2, $3, $4, '/dashboard', 'en-IN', 'Asia/Kolkata')
+       ON CONFLICT (user_id) DO UPDATE
+       SET active_role = EXCLUDED.active_role,
+           company_id = EXCLUDED.company_id,
+           landing_page = EXCLUDED.landing_page,
+           locale = EXCLUDED.locale,
+           timezone = EXCLUDED.timezone,
+           updated_at = now(),
+           version = platform.user_session_preferences.version + 1`,
+      [uuidFromName(`qa-session-preference-${employeeCode}`), id, role, defaultCompanyId]
     );
     await client.query(
       `INSERT INTO platform.user_credentials (id, user_id, password_hash, status)
@@ -128,6 +159,18 @@ try {
         hashPasswordSync(localDemoPassword, `hrms-local-${String(employeeCode).toLowerCase()}`)
       ]
     );
+  }
+
+  const personaPreferences = await client.query<{ count: number }>(
+    `SELECT count(*)::int AS count
+     FROM platform.user_session_preferences preference
+     JOIN platform.company_profiles company ON company.id = preference.company_id
+     WHERE preference.company_id = $1 AND preference.user_id = ANY($2::uuid[])
+       AND company.status = 'active'`,
+    [defaultCompanyId, users.map(([id]) => id)],
+  );
+  if (personaPreferences.rows[0]?.count !== users.length) {
+    throw new Error("QA seed did not assign every persona to the release Admin company.");
   }
 
   await client.query(
@@ -190,8 +233,7 @@ try {
 
   await client.query("COMMIT");
 } catch (error) {
-  await client.query("ROLLBACK");
-  throw error;
+  await rethrowAfterQaSeedRollback(client, error);
 } finally {
   await client.end();
 }

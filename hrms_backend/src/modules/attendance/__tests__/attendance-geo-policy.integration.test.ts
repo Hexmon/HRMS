@@ -54,6 +54,21 @@ function employeeCompanyId(app: TestApp, employeeUserId: string): string {
   return companyId;
 }
 
+async function makeEveryDayAWorkingDay(
+  app: TestApp,
+  companyId: string,
+): Promise<void> {
+  const company = app.store.companyProfiles.find(
+    (candidate) => candidate.id === companyId,
+  );
+  if (!company) throw new Error("Company fixture is unavailable.");
+  company.working_week = "Mon-Sun";
+  await app.store.pgPool!.query(
+    "UPDATE platform.company_profiles SET working_week = 'Mon-Sun' WHERE id = $1",
+    [companyId],
+  );
+}
+
 async function clearGeoPolicyFixtures(app: TestApp): Promise<void> {
   const pool = app.store.pgPool;
   if (!pool) throw new Error("PostgreSQL pool is unavailable.");
@@ -1269,6 +1284,7 @@ describe("PostgreSQL attendance geo policy enforcement", () => {
     const manager = await loginAs(app, "D1");
     const employee = await loginAs(app, "E1");
     const companyId = employeeCompanyId(app, employee.user.id);
+    await makeEveryDayAWorkingDay(app, companyId);
     const geofenceId = await createPublishedPolygonGeofence(app, companyId);
     await assignAttendancePolicy(app, {
       companyId,

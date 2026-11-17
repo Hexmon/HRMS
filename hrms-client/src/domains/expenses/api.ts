@@ -38,6 +38,11 @@ export const expensesApi = {
   managerQueue(query: PageQuery = {}) {
     return apiRequest<PaginatedResponse<ApiRecord>>("/api/v1/expenses/queue/manager", { query });
   },
+  managerHistory(query: PageQuery = {}) {
+    return apiRequest<PaginatedResponse<ApiRecord>>("/api/v1/reports/expenses/manager-history", {
+      query,
+    });
+  },
   managerVerify(id: string, input: ExpectedVersionBody) {
     return apiRequest<ApiRecord>(`/api/v1/expenses/${id}/manager/verify`, {
       method: "POST",

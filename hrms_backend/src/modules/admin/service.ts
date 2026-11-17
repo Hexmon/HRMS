@@ -675,17 +675,36 @@ export class AdminService {
     return { role: this.presentRbacRole(updated), version: updated.version };
   }
 
-  listDepartments(
+  async listDepartments(
     actor: AuthUser,
     query: MasterDataQuery,
-  ): Paginated<DepartmentResponse> {
+  ): Promise<Paginated<DepartmentResponse>> {
     assertCanManageMasterData(actor);
+    if (this.store.persistence) {
+      if (!this.store.persistence.departmentsForActor) throw new Error("Admin department SQL read is unavailable.");
+      return this.presentDepartmentsPage(await this.store.persistence.departmentsForActor(actor.id), query);
+    }
+    const companyId = this.activeCompanyIdForActor(actor, "admin.departments.list");
+    return this.presentDepartmentsPage(this.repository.listDepartments(companyId), query);
+  }
+
+  private presentDepartmentsPage(
+    departments: Department[],
+    query: MasterDataQuery,
+  ): Paginated<DepartmentResponse> {
+    const namesById = new Map(departments.map((department) => [department.id, department.name]));
     const search = query.search?.trim().toLowerCase();
-    const companyId = this.companyIdForActor(actor);
-    const filtered = this.repository
-      .listDepartments(companyId)
+    const eligibleParentIds = eligibleDepartmentParentIds(
+      departments,
+      query.parent_candidate_for,
+    );
+    const filtered = departments
       .filter(
         (department) => !query.active_only || department.status === "active",
+      )
+      .filter(
+        (department) =>
+          eligibleParentIds === null || eligibleParentIds.has(department.id),
       )
       .filter((department) => {
         if (!search) return true;
@@ -696,18 +715,33 @@ export class AdminService {
       })
       .sort((a, b) => a.department_code.localeCompare(b.department_code));
     return page(
-      filtered.map((department) => presentDepartment(department)),
+      filtered.map((department) =>
+        presentDepartment(
+          department,
+          department.parent_department_id
+            ? (namesById.get(department.parent_department_id) ?? null)
+            : null,
+        ),
+      ),
       query.page,
       query.page_size,
     );
   }
 
-  createDepartment(
+  async createDepartment(
     actor: AuthUser,
     input: DepartmentCreateInput,
-  ): MasterDataMutationResponse<DepartmentResponse> {
+  ): Promise<MasterDataMutationResponse<DepartmentResponse>> {
     assertCanManageMasterData(actor);
-    const companyId = this.companyIdForActor(actor);
+    if (this.store.persistence) {
+      if (!this.store.persistence.createDepartmentForActor) throw new Error("Admin department SQL write is unavailable.");
+      const department = await this.store.persistence.createDepartmentForActor(actor.id, input);
+      return {
+        department: presentDepartment(department, department.parent_department_name),
+        version: department.version,
+      };
+    }
+    const companyId = this.activeCompanyIdForActor(actor, "admin.departments.create");
     this.assertValidDepartmentParent(
       companyId,
       input.parent_department_id ?? input.parent_id ?? null,
@@ -725,30 +759,62 @@ export class AdminService {
       idempotencyKey: `admin.department.created:${department.id}:${department.version}`,
     });
     return {
-      department: presentDepartment(department),
+      department: presentDepartment(
+        department,
+        department.parent_department_id
+          ? this.repository.listDepartments(companyId).find((candidate) => candidate.id === department.parent_department_id)!.name
+          : null,
+      ),
       version: department.version,
     };
   }
 
-  updateDepartment(
+  async updateDepartment(
     actor: AuthUser,
     id: string,
     input: DepartmentUpdateInput,
-  ): MasterDataMutationResponse<DepartmentResponse> {
+  ): Promise<MasterDataMutationResponse<DepartmentResponse>> {
     assertCanManageMasterData(actor);
-    const companyId = this.companyIdForActor(actor);
+    if (this.store.persistence) {
+      if (!this.store.persistence.updateDepartmentForActor) throw new Error("Admin department SQL write is unavailable.");
+      const department = await this.store.persistence.updateDepartmentForActor(actor.id, id, input);
+      return {
+        department: presentDepartment(department, department.parent_department_name),
+        version: department.version,
+      };
+    }
+    const companyId = this.activeCompanyIdForActor(actor, "admin.departments.update");
+    const existing = this.repository
+      .listDepartments(companyId)
+      .find((department) => department.id === id);
+    if (!existing) throw notFound("Department not found", { id });
+    if (existing.version !== input.expected_version) {
+      throw conflict("Department was modified by another actor.", {
+        aggregate: "department",
+        id,
+        expected_version: input.expected_version,
+        current_version: existing.version,
+      });
+    }
+    const parentId = input.parent_department_id !== undefined || input.parent_id !== undefined
+        ? (input.parent_department_id ?? input.parent_id ?? null)
+        : existing.parent_department_id;
+    this.assertValidDepartmentParent(companyId, parentId, id);
     if (input.status === "inactive") {
       this.assertNoActiveUsersReference(companyId, "department", id);
-    }
-    if (
-      input.parent_department_id !== undefined ||
-      input.parent_id !== undefined
-    ) {
-      this.assertValidDepartmentParent(
-        companyId,
-        input.parent_department_id ?? input.parent_id ?? null,
-        id,
-      );
+      if (
+        this.repository
+          .listDepartments(companyId)
+          .some(
+            (department) =>
+              department.parent_department_id === id && department.status === "active",
+          )
+      ) {
+        throw conflict(
+          "Cannot deactivate department while active child departments reference it.",
+          { id },
+        );
+      }
     }
     const department = this.repository.updateDepartment(companyId, id, input);
     appendOutboxEvent(this.store, {
@@ -766,20 +832,35 @@ export class AdminService {
       idempotencyKey: `admin.department.updated:${department.id}:${department.version}`,
     });
     return {
-      department: presentDepartment(department),
+      department: presentDepartment(
+        department,
+        department.parent_department_id
+          ? this.repository.listDepartments(companyId).find((candidate) => candidate.id === department.parent_department_id)!.name
+          : null,
+      ),
       version: department.version,
     };
   }
 
-  listDesignations(
+  async listDesignations(
     actor: AuthUser,
     query: MasterDataQuery,
-  ): Paginated<DesignationResponse> {
+  ): Promise<Paginated<DesignationResponse>> {
     assertCanManageMasterData(actor);
+    if (this.store.persistence) {
+      if (!this.store.persistence.designationsForActor) throw new Error("Admin designation SQL read is unavailable.");
+      return this.presentDesignationsPage(await this.store.persistence.designationsForActor(actor.id), query);
+    }
+    const companyId = this.activeCompanyIdForActor(actor, "admin.designations.list");
+    return this.presentDesignationsPage(this.repository.listDesignations(companyId), query);
+  }
+
+  private presentDesignationsPage(
+    designations: Designation[],
+    query: MasterDataQuery,
+  ): Paginated<DesignationResponse> {
     const search = query.search?.trim().toLowerCase();
-    const companyId = this.companyIdForActor(actor);
-    const filtered = this.repository
-      .listDesignations(companyId)
+    const filtered = designations
       .filter(
         (designation) => !query.active_only || designation.status === "active",
       )
@@ -804,13 +885,21 @@ export class AdminService {
     );
   }
 
-  createDesignation(
+  async createDesignation(
     actor: AuthUser,
     input: DesignationCreateInput,
-  ): MasterDataMutationResponse<DesignationResponse> {
+  ): Promise<MasterDataMutationResponse<DesignationResponse>> {
     assertCanManageMasterData(actor);
+    if (this.store.persistence) {
+      if (!this.store.persistence.createDesignationForActor) throw new Error("Admin designation SQL write is unavailable.");
+      const designation = await this.store.persistence.createDesignationForActor(actor.id, input);
+      return {
+        designation: presentDesignation(designation),
+        version: designation.version,
+      };
+    }
     const designation = this.repository.createDesignation(
-      this.companyIdForActor(actor),
+      this.activeCompanyIdForActor(actor, "admin.designations.create"),
       input,
     );
     appendOutboxEvent(this.store, {
@@ -830,13 +919,21 @@ export class AdminService {
     };
   }
 
-  updateDesignation(
+  async updateDesignation(
     actor: AuthUser,
     id: string,
     input: DesignationUpdateInput,
-  ): MasterDataMutationResponse<DesignationResponse> {
+  ): Promise<MasterDataMutationResponse<DesignationResponse>> {
     assertCanManageMasterData(actor);
-    const companyId = this.companyIdForActor(actor);
+    if (this.store.persistence) {
+      if (!this.store.persistence.updateDesignationForActor) throw new Error("Admin designation SQL write is unavailable.");
+      const designation = await this.store.persistence.updateDesignationForActor(actor.id, id, input);
+      return {
+        designation: presentDesignation(designation),
+        version: designation.version,
+      };
+    }
+    const companyId = this.activeCompanyIdForActor(actor, "admin.designations.update");
     if (input.status === "inactive") {
       this.assertNoActiveUsersReference(companyId, "designation", id);
     }
@@ -867,6 +964,7 @@ export class AdminService {
     query: MasterDataQuery,
   ): Paginated<ExtendedMasterDataResponse> {
     assertCanManageMasterData(actor);
+    this.activeCompanyIdForActor(actor, `admin.master-data.${masterKey}.list`);
     const search = query.search?.trim().toLowerCase();
     const filtered = this.repository
       .listExtendedMasterData(masterKey)
@@ -895,6 +993,7 @@ export class AdminService {
     input: ExtendedMasterDataCreateInput,
   ): MasterDataMutationResponse<ExtendedMasterDataResponse> {
     assertCanManageMasterData(actor);
+    this.activeCompanyIdForActor(actor, `admin.master-data.${masterKey}.create`);
     const item = this.repository.createExtendedMasterData(masterKey, input);
     appendOutboxEvent(this.store, {
       aggregateType: "admin_master_data_item",
@@ -918,6 +1017,7 @@ export class AdminService {
     input: ExtendedMasterDataUpdateInput,
   ): MasterDataMutationResponse<ExtendedMasterDataResponse> {
     assertCanManageMasterData(actor);
+    this.activeCompanyIdForActor(actor, `admin.master-data.${masterKey}.update`);
     const item = this.repository.updateExtendedMasterData(masterKey, id, input);
     appendOutboxEvent(this.store, {
       aggregateType: "admin_master_data_item",
@@ -986,16 +1086,33 @@ export class AdminService {
     if (!parent) {
       throw notFound("Parent department not found", { parent_id: parentId });
     }
-    let cursor: Department | undefined = parent;
-    while (cursor?.parent_department_id) {
-      if (cursor.parent_department_id === currentId) {
+    const visitedDepartmentIds = new Set<string>();
+    let cursor: Department = parent;
+    while (true) {
+      if (visitedDepartmentIds.has(cursor.id)) {
+        throw conflict("Department hierarchy contains a cycle.", {
+          parent_id: parentId,
+          cycle_department_id: cursor.id,
+        });
+      }
+      visitedDepartmentIds.add(cursor.id);
+      const nextParentId = cursor.parent_department_id;
+      if (!nextParentId) return;
+      if (nextParentId === currentId) {
         throw conflict("Department parent would create a hierarchy cycle.", {
           parent_id: parentId,
         });
       }
-      cursor = departments.find(
-        (department) => department.id === cursor?.parent_department_id,
+      const nextParent = departments.find(
+        (department) => department.id === nextParentId,
       );
+      if (!nextParent) {
+        throw conflict("Department hierarchy contains an invalid parent reference.", {
+          parent_id: parentId,
+          missing_department_id: nextParentId,
+        });
+      }
+      cursor = nextParent;
     }
   }
 
@@ -1078,6 +1195,7 @@ export interface DepartmentResponse {
   name: string;
   parent_department_id: string | null;
   parent_id: string | null;
+  parent_department_name: string | null;
   cost_center: string | null;
   director_user_id: string | null;
   status: Department["status"];
@@ -1405,7 +1523,10 @@ function presentAdminSecuritySettings(
   };
 }
 
-function presentDepartment(department: Department): DepartmentResponse {
+function presentDepartment(
+  department: Department,
+  parentDepartmentName: string | null,
+): DepartmentResponse {
   return {
     id: department.id,
     department_code: department.department_code,
@@ -1414,12 +1535,53 @@ function presentDepartment(department: Department): DepartmentResponse {
     cost_center: department.cost_center,
     parent_department_id: department.parent_department_id,
     parent_id: department.parent_department_id,
+    parent_department_name: parentDepartmentName,
     director_user_id: department.director_user_id,
     status: department.status,
     active: department.status === "active",
     deleted_at: department.deleted_at,
     version: department.version,
   };
+}
+
+function eligibleDepartmentParentIds(
+  departments: readonly Department[],
+  currentDepartmentId?: string,
+): Set<string> | null {
+  if (!currentDepartmentId) return null;
+  const byId = new Map(departments.map((department) => [department.id, department]));
+  if (!byId.has(currentDepartmentId)) return new Set();
+
+  const eligibility = new Map<string, boolean>([[currentDepartmentId, false]]);
+  const eligibleIds = new Set<string>();
+  for (const department of departments) {
+    if (!eligibility.has(department.id)) {
+      const path: string[] = [];
+      const pathIds = new Set<string>();
+      let cursorId: string | null = department.id;
+      let isEligible = false;
+
+      while (cursorId !== null) {
+        const resolved = eligibility.get(cursorId);
+        if (resolved !== undefined) {
+          isEligible = resolved;
+          break;
+        }
+        if (pathIds.has(cursorId)) break;
+
+        const cursor = byId.get(cursorId);
+        if (!cursor) break;
+        path.push(cursorId);
+        pathIds.add(cursorId);
+        cursorId = cursor.parent_department_id;
+        if (cursorId === null) isEligible = true;
+      }
+
+      for (const pathId of path) eligibility.set(pathId, isEligible);
+    }
+    if (eligibility.get(department.id)) eligibleIds.add(department.id);
+  }
+  return eligibleIds;
 }
 
 function presentDesignation(designation: Designation): DesignationResponse {

@@ -1,0 +1,75 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
+
+usage() {
+  cat <<'USAGE'
+Usage: scripts/agent/verify-full.sh
+
+Runs the repository-wide automated release gate. Run frontend Playwright separately
+against a verified isolated, seeded application environment.
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1" >&2
+      usage >&2
+      exit 2
+      ;;
+  esac
+done
+
+require_command git
+require_command pnpm
+require_command python3
+
+test_env_file="$HRMS_REPO_ROOT/hrms_backend/.env.test"
+
+run_step "Sensitive-file guard" "$HRMS_REPO_ROOT" "$HRMS_REPO_ROOT/scripts/agent/protect-sensitive-files.sh"
+run_step "Unstaged patch integrity" "$HRMS_REPO_ROOT" git diff --check
+run_step "Staged patch integrity" "$HRMS_REPO_ROOT" git diff --cached --check
+run_step "Agent setup and documentation references" "$HRMS_REPO_ROOT" bash scripts/agent/validate-agent-setup.sh
+run_step "Agent verifier unit tests" "$HRMS_REPO_ROOT" python3 -m unittest discover -s scripts/agent/tests -v
+
+run_step "Backend lint" "$HRMS_REPO_ROOT/hrms_backend" pnpm lint
+run_step "Backend typecheck" "$HRMS_REPO_ROOT/hrms_backend" pnpm typecheck
+run_step "Disposable database preflight" "$HRMS_REPO_ROOT" python3 scripts/agent/assert-disposable-test-db.py "$test_env_file"
+run_step "Migration history and schema drift" "$HRMS_REPO_ROOT/hrms_backend" env HRMS_ENV_FILE="$test_env_file" pnpm db:verify:migrations
+run_step "Cross-schema foreign keys" "$HRMS_REPO_ROOT/hrms_backend" env HRMS_DB_VERIFY_ENV_FILE="$test_env_file" pnpm db:verify:no-cross-schema-fks
+run_step "OpenAPI drift" "$HRMS_REPO_ROOT/hrms_backend" pnpm api:docs:verify
+run_step "API consumer compatibility" "$HRMS_REPO_ROOT/hrms_backend" pnpm api:consumer:verify
+run_step "Backend test projects" "$HRMS_REPO_ROOT/hrms_backend" env HRMS_ENV_FILE="$test_env_file" pnpm test
+if [[ -f "$test_env_file" ]]; then
+  run_step "Cloudflare Queue DLQ and replay" "$HRMS_REPO_ROOT/hrms_backend" pnpm exec tsx scripts/run-with-env.ts "$test_env_file" -- pnpm verify:cloudflare-queue-dlq
+else
+  run_step "Cloudflare Queue DLQ and replay" "$HRMS_REPO_ROOT/hrms_backend" pnpm verify:cloudflare-queue-dlq
+fi
+# verify:business reruns unit and integration tests, while verify:regression
+# reruns the complete backend test matrix plus the four gates below. Keep this
+# release gate single-pass by invoking the underlying unique checks directly.
+run_step "Quality verification" "$HRMS_REPO_ROOT/hrms_backend" pnpm verify:quality
+run_step "Implementation verification" "$HRMS_REPO_ROOT/hrms_backend" pnpm verify:implementation
+run_step "Scalability verification" "$HRMS_REPO_ROOT/hrms_backend" pnpm verify:scalability
+run_step "Backend build" "$HRMS_REPO_ROOT/hrms_backend" pnpm build
+
+for target in dev qa production; do
+  run_step "Cloudflare Worker dry run: $target" "$HRMS_REPO_ROOT/hrms_backend" pnpm exec wrangler deploy --env "$target" --dry-run --outdir "/tmp/hrms-worker-$target"
+done
+
+run_step "Frontend lint" "$HRMS_REPO_ROOT/hrms-client" pnpm lint
+run_step "Frontend typecheck" "$HRMS_REPO_ROOT/hrms-client" pnpm typecheck
+run_step "Frontend production guard" "$HRMS_REPO_ROOT/hrms-client" pnpm api:production-config-guard
+run_step "Frontend implemented-route guard" "$HRMS_REPO_ROOT/hrms-client" pnpm api:implemented-route-guard
+run_step "Frontend contract route coverage" "$HRMS_REPO_ROOT/hrms-client" pnpm api:frontend-contract:route-coverage
+run_step "Frontend production build" "$HRMS_REPO_ROOT/hrms-client" pnpm build:vercel
+
+echo
+echo "Automated full verification completed. Isolated Playwright, human UI/UAT, hosted smoke, migration/rollback and approval evidence remain separate release gates."

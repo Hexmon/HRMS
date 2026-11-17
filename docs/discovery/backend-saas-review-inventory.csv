@@ -1,0 +1,621 @@
+kind,key,source_path,line,status,evidence,review_note
+file,app.ts,hrms_backend/src/app.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+file,auth/index.ts,hrms_backend/src/auth/index.ts,,partially reviewed,docs/discovery/session-media-failure-boundaries.md,Selected failure path read at 6a8d11f7; outage/provider execution and full API matrix remain open.
+file,config/runtime-defaults.ts,hrms_backend/src/config/runtime-defaults.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,config/seed-identities.ts,hrms_backend/src/config/seed-identities.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,db/index.ts,hrms_backend/src/db/index.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,db/schema.ts,hrms_backend/src/db/schema.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+file,modules/admin/index.ts,hrms_backend/src/modules/admin/index.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/admin/policy.ts,hrms_backend/src/modules/admin/policy.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/admin/repository.ts,hrms_backend/src/modules/admin/repository.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+file,modules/admin/routes.ts,hrms_backend/src/modules/admin/routes.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+route,GET /company-profile,hrms_backend/src/modules/admin/routes.ts,39,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,PUT /company-profile,hrms_backend/src/modules/admin/routes.ts,44,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /company-profile/logo,hrms_backend/src/modules/admin/routes.ts,52,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /master-data/departments,hrms_backend/src/modules/admin/routes.ts,58,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /master-data/departments,hrms_backend/src/modules/admin/routes.ts,66,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,PATCH /master-data/departments/:id,hrms_backend/src/modules/admin/routes.ts,74,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /master-data/designations,hrms_backend/src/modules/admin/routes.ts,84,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /master-data/designations,hrms_backend/src/modules/admin/routes.ts,92,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,PATCH /master-data/designations/:id,hrms_backend/src/modules/admin/routes.ts,100,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /master-data/:master_key,hrms_backend/src/modules/admin/routes.ts,110,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /master-data/:master_key,hrms_backend/src/modules/admin/routes.ts,120,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,PATCH /master-data/:master_key/:id,hrms_backend/src/modules/admin/routes.ts,130,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /rbac/roles,hrms_backend/src/modules/admin/routes.ts,141,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /rbac/roles,hrms_backend/src/modules/admin/routes.ts,149,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,PATCH /rbac/roles/:id,hrms_backend/src/modules/admin/routes.ts,157,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /rbac/permissions,hrms_backend/src/modules/admin/routes.ts,167,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,PUT /rbac/roles/:id/permissions,hrms_backend/src/modules/admin/routes.ts,175,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /workflows,hrms_backend/src/modules/admin/routes.ts,185,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,PUT /workflows/:workflow_key,hrms_backend/src/modules/admin/routes.ts,193,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /policies,hrms_backend/src/modules/admin/routes.ts,203,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,PUT /policies/:policy_key,hrms_backend/src/modules/admin/routes.ts,211,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /email-templates,hrms_backend/src/modules/admin/routes.ts,221,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,PUT /email-templates/:template_key,hrms_backend/src/modules/admin/routes.ts,229,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /notification-channels,hrms_backend/src/modules/admin/routes.ts,239,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,PUT /notification-channels,hrms_backend/src/modules/admin/routes.ts,247,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /audit-log,hrms_backend/src/modules/admin/routes.ts,255,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /security-settings,hrms_backend/src/modules/admin/routes.ts,263,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,PUT /security-settings,hrms_backend/src/modules/admin/routes.ts,268,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+file,modules/admin/schemas.ts,hrms_backend/src/modules/admin/schemas.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/admin/service.ts,hrms_backend/src/modules/admin/service.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+file,modules/assets/errors.ts,hrms_backend/src/modules/assets/errors.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/assets/events.ts,hrms_backend/src/modules/assets/events.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/assets/index.ts,hrms_backend/src/modules/assets/index.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/assets/policy.ts,hrms_backend/src/modules/assets/policy.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/assets/repository.ts,hrms_backend/src/modules/assets/repository.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/assets/routes.ts,hrms_backend/src/modules/assets/routes.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+route,POST /,hrms_backend/src/modules/assets/routes.ts,80,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /,hrms_backend/src/modules/assets/routes.ts,87,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /warranty-alerts,hrms_backend/src/modules/assets/routes.ts,95,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /:id,hrms_backend/src/modules/assets/routes.ts,105,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /:id/assign,hrms_backend/src/modules/assets/routes.ts,113,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /:id/return,hrms_backend/src/modules/assets/routes.ts,122,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /scan/:qr_hash,hrms_backend/src/modules/assets/routes.ts,131,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /licenses/activate,hrms_backend/src/modules/assets/routes.ts,136,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /licenses/validate,hrms_backend/src/modules/assets/routes.ts,140,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /licenses/revoke,hrms_backend/src/modules/assets/routes.ts,146,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /events/employee-terminated,hrms_backend/src/modules/assets/routes.ts,156,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /requests,hrms_backend/src/modules/assets/routes.ts,164,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /requests/my,hrms_backend/src/modules/assets/routes.ts,171,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /requests/queue,hrms_backend/src/modules/assets/routes.ts,181,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /requests/:id/decision,hrms_backend/src/modules/assets/routes.ts,191,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /requests/:id/cancel,hrms_backend/src/modules/assets/routes.ts,203,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /:id/acknowledgements,hrms_backend/src/modules/assets/routes.ts,215,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /:id/maintenance,hrms_backend/src/modules/assets/routes.ts,227,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /:id/maintenance,hrms_backend/src/modules/assets/routes.ts,239,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /vendors,hrms_backend/src/modules/assets/routes.ts,251,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /vendors,hrms_backend/src/modules/assets/routes.ts,258,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,PATCH /vendors/:id,hrms_backend/src/modules/assets/routes.ts,265,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /recovery-queue,hrms_backend/src/modules/assets/routes.ts,277,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /recovery-queue/:id/settlement,hrms_backend/src/modules/assets/routes.ts,287,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+file,modules/assets/schemas.ts,hrms_backend/src/modules/assets/schemas.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/assets/service.ts,hrms_backend/src/modules/assets/service.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+file,modules/assets/state-machine.ts,hrms_backend/src/modules/assets/state-machine.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/attendance/admin-geo-repository.ts,hrms_backend/src/modules/attendance/admin-geo-repository.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/attendance/attendance-openapi-examples.ts,hrms_backend/src/modules/attendance/attendance-openapi-examples.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/attendance/attestation-adapter.ts,hrms_backend/src/modules/attendance/attestation-adapter.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/attendance/canonical-json.ts,hrms_backend/src/modules/attendance/canonical-json.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/attendance/command-repository.ts,hrms_backend/src/modules/attendance/command-repository.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/attendance/command-service.ts,hrms_backend/src/modules/attendance/command-service.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/attendance/daily-projection.ts,hrms_backend/src/modules/attendance/daily-projection.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/attendance/events.ts,hrms_backend/src/modules/attendance/events.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/attendance/geo-location-status.ts,hrms_backend/src/modules/attendance/geo-location-status.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/attendance/geo-policy-simulation-service.ts,hrms_backend/src/modules/attendance/geo-policy-simulation-service.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/attendance/geo-policy.ts,hrms_backend/src/modules/attendance/geo-policy.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/attendance/geofence-repository.ts,hrms_backend/src/modules/attendance/geofence-repository.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/attendance/index.ts,hrms_backend/src/modules/attendance/index.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/attendance/location-access-audit.ts,hrms_backend/src/modules/attendance/location-access-audit.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/attendance/migration-dry-run-service.ts,hrms_backend/src/modules/attendance/migration-dry-run-service.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/attendance/observability.ts,hrms_backend/src/modules/attendance/observability.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/attendance/offline-sync-contract.ts,hrms_backend/src/modules/attendance/offline-sync-contract.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/attendance/offline-sync-service.ts,hrms_backend/src/modules/attendance/offline-sync-service.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/attendance/payroll-period-service.ts,hrms_backend/src/modules/attendance/payroll-period-service.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+file,modules/attendance/policy-config.ts,hrms_backend/src/modules/attendance/policy-config.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/attendance/policy-resolver.ts,hrms_backend/src/modules/attendance/policy-resolver.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/attendance/policy.ts,hrms_backend/src/modules/attendance/policy.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/attendance/projection-rebuild-service.ts,hrms_backend/src/modules/attendance/projection-rebuild-service.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/attendance/reporting-evidence.ts,hrms_backend/src/modules/attendance/reporting-evidence.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/attendance/reporting-projection.ts,hrms_backend/src/modules/attendance/reporting-projection.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/attendance/repository.ts,hrms_backend/src/modules/attendance/repository.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/attendance/routes.ts,hrms_backend/src/modules/attendance/routes.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+route,POST /punches,hrms_backend/src/modules/attendance/routes.ts,363,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /offline-sync,hrms_backend/src/modules/attendance/routes.ts,420,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /employees/:employeeUserId/assisted-current-punches,hrms_backend/src/modules/attendance/routes.ts,449,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /employees/:employeeUserId/historical-corrections,hrms_backend/src/modules/attendance/routes.ts,476,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /punches/my,hrms_backend/src/modules/attendance/routes.ts,497,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /summary/my,hrms_backend/src/modules/attendance/routes.ts,506,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /privacy,hrms_backend/src/modules/attendance/routes.ts,522,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /summary/team,hrms_backend/src/modules/attendance/routes.ts,529,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /calendar/monthly,hrms_backend/src/modules/attendance/routes.ts,538,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /calendar/daily,hrms_backend/src/modules/attendance/routes.ts,547,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /regularizations,hrms_backend/src/modules/attendance/routes.ts,556,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /regularizations/my,hrms_backend/src/modules/attendance/routes.ts,566,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /regularizations/queue/manager,hrms_backend/src/modules/attendance/routes.ts,576,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /regularizations/:id/decision,hrms_backend/src/modules/attendance/routes.ts,586,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /geo-fallbacks/:id/submit,hrms_backend/src/modules/attendance/routes.ts,603,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /geo-fallbacks/queue/manager,hrms_backend/src/modules/attendance/routes.ts,620,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /geo-fallbacks/:id/exact-location,hrms_backend/src/modules/attendance/routes.ts,630,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /geo-fallbacks/:id/decision,hrms_backend/src/modules/attendance/routes.ts,641,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /payroll-periods,hrms_backend/src/modules/attendance/routes.ts,654,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /payroll-periods/:id/lock,hrms_backend/src/modules/attendance/routes.ts,664,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /payroll-periods/:id/unlock,hrms_backend/src/modules/attendance/routes.ts,676,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /payroll-periods/:id/summary,hrms_backend/src/modules/attendance/routes.ts,688,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /work-sites,hrms_backend/src/modules/attendance/routes.ts,700,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /geo/simulate,hrms_backend/src/modules/attendance/routes.ts,708,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /work-sites/:workSiteId,hrms_backend/src/modules/attendance/routes.ts,717,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /work-sites,hrms_backend/src/modules/attendance/routes.ts,729,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,PATCH /work-sites/:workSiteId,hrms_backend/src/modules/attendance/routes.ts,742,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,DELETE /work-sites/:workSiteId,hrms_backend/src/modules/attendance/routes.ts,757,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /work-sites/:workSiteId/geofences,hrms_backend/src/modules/attendance/routes.ts,772,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /work-sites/:workSiteId/geofences,hrms_backend/src/modules/attendance/routes.ts,784,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /geofences/:geofenceId,hrms_backend/src/modules/attendance/routes.ts,799,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,PATCH /geofences/:geofenceId,hrms_backend/src/modules/attendance/routes.ts,811,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,DELETE /geofences/:geofenceId,hrms_backend/src/modules/attendance/routes.ts,826,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /geofences/:geofenceId/versions,hrms_backend/src/modules/attendance/routes.ts,841,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /geofences/:geofenceId/versions/:versionId,hrms_backend/src/modules/attendance/routes.ts,853,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /geofences/:geofenceId/versions,hrms_backend/src/modules/attendance/routes.ts,866,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,PATCH /geofences/:geofenceId/versions/:versionId,hrms_backend/src/modules/attendance/routes.ts,881,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,DELETE /geofences/:geofenceId/versions/:versionId,hrms_backend/src/modules/attendance/routes.ts,896,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /geofences/:geofenceId/versions/:versionId/publish,hrms_backend/src/modules/attendance/routes.ts,907,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /exceptions,hrms_backend/src/modules/attendance/routes.ts,927,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /exports,hrms_backend/src/modules/attendance/routes.ts,937,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+file,modules/attendance/service.ts,hrms_backend/src/modules/attendance/service.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+file,modules/attendance/session-transition.ts,hrms_backend/src/modules/attendance/session-transition.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/attendance/shift-repository.ts,hrms_backend/src/modules/attendance/shift-repository.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/attendance/shift-resolver.ts,hrms_backend/src/modules/attendance/shift-resolver.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/auth/errors.ts,hrms_backend/src/modules/auth/errors.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/auth/events.ts,hrms_backend/src/modules/auth/events.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+file,modules/auth/index.ts,hrms_backend/src/modules/auth/index.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/auth/policy.ts,hrms_backend/src/modules/auth/policy.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/auth/repository.ts,hrms_backend/src/modules/auth/repository.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/auth/routes.ts,hrms_backend/src/modules/auth/routes.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+route,POST /signup,hrms_backend/src/modules/auth/routes.ts,18,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /verify-email,hrms_backend/src/modules/auth/routes.ts,23,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /email-verifications/resend,hrms_backend/src/modules/auth/routes.ts,28,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /set-password,hrms_backend/src/modules/auth/routes.ts,33,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /password-reset/request,hrms_backend/src/modules/auth/routes.ts,38,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /password-reset/confirm,hrms_backend/src/modules/auth/routes.ts,43,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /login,hrms_backend/src/modules/auth/routes.ts,48,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /logout,hrms_backend/src/modules/auth/routes.ts,69,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /me,hrms_backend/src/modules/auth/routes.ts,93,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,PATCH /session/preference,hrms_backend/src/modules/auth/routes.ts,100,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /company-logo,hrms_backend/src/modules/auth/routes.ts,110,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /company-bootstrap,hrms_backend/src/modules/auth/routes.ts,121,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+file,modules/auth/schemas.ts,hrms_backend/src/modules/auth/schemas.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/auth/service.ts,hrms_backend/src/modules/auth/service.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+file,modules/auth/state-machine.ts,hrms_backend/src/modules/auth/state-machine.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/core/errors.ts,hrms_backend/src/modules/core/errors.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/core/events.ts,hrms_backend/src/modules/core/events.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/core/index.ts,hrms_backend/src/modules/core/index.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/core/policy.ts,hrms_backend/src/modules/core/policy.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/core/repository.ts,hrms_backend/src/modules/core/repository.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/core/routes.ts,hrms_backend/src/modules/core/routes.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+route,GET /master-data/org-selectors,hrms_backend/src/modules/core/routes.ts,110,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /users,hrms_backend/src/modules/core/routes.ts,118,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /users,hrms_backend/src/modules/core/routes.ts,127,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /users/profile-photo-policy,hrms_backend/src/modules/core/routes.ts,136,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /users/:id/profile-photo,hrms_backend/src/modules/core/routes.ts,143,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,DELETE /users/:id/profile-photo,hrms_backend/src/modules/core/routes.ts,158,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /users/:id,hrms_backend/src/modules/core/routes.ts,167,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,PATCH /users/:id,hrms_backend/src/modules/core/routes.ts,176,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /users/:id/activate,hrms_backend/src/modules/core/routes.ts,186,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /users/:id/deactivate,hrms_backend/src/modules/core/routes.ts,196,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /users/:id/login/enable,hrms_backend/src/modules/core/routes.ts,206,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /users/:id/login/disable,hrms_backend/src/modules/core/routes.ts,216,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,PUT /users/:id/roles,hrms_backend/src/modules/core/routes.ts,226,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /users/:id/roles/history,hrms_backend/src/modules/core/routes.ts,236,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /users/:id/audit,hrms_backend/src/modules/core/routes.ts,246,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /users/imports,hrms_backend/src/modules/core/routes.ts,256,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /users/imports/:job_id,hrms_backend/src/modules/core/routes.ts,265,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /users/exports,hrms_backend/src/modules/core/routes.ts,274,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /users/:id/subtree,hrms_backend/src/modules/core/routes.ts,283,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+file,modules/core/schemas.ts,hrms_backend/src/modules/core/schemas.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/core/service.ts,hrms_backend/src/modules/core/service.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/core/state-machine.ts,hrms_backend/src/modules/core/state-machine.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/dashboard/index.ts,hrms_backend/src/modules/dashboard/index.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/dashboard/routes.ts,hrms_backend/src/modules/dashboard/routes.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+route,GET /summary,hrms_backend/src/modules/dashboard/routes.ts,7,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+file,modules/dashboard/service.ts,hrms_backend/src/modules/dashboard/service.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+file,modules/documents/errors.ts,hrms_backend/src/modules/documents/errors.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/documents/events.ts,hrms_backend/src/modules/documents/events.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/documents/index.ts,hrms_backend/src/modules/documents/index.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/documents/policy.ts,hrms_backend/src/modules/documents/policy.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+file,modules/documents/repository.ts,hrms_backend/src/modules/documents/repository.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/documents/routes.ts,hrms_backend/src/modules/documents/routes.ts,,partially reviewed,docs/discovery/session-media-failure-boundaries.md,Selected failure path read at 6a8d11f7; outage/provider execution and full API matrix remain open.
+route,POST /documents,hrms_backend/src/modules/documents/routes.ts,14,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /expenses/:id/documents,hrms_backend/src/modules/documents/routes.ts,26,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /documents,hrms_backend/src/modules/documents/routes.ts,43,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /documents/upload-policy,hrms_backend/src/modules/documents/routes.ts,51,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /documents/:id,hrms_backend/src/modules/documents/routes.ts,58,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /documents/:id/download-url,hrms_backend/src/modules/documents/routes.ts,66,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /documents/:id/content,hrms_backend/src/modules/documents/routes.ts,74,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,DELETE /documents/:id,hrms_backend/src/modules/documents/routes.ts,87,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /documents/:id/verify,hrms_backend/src/modules/documents/routes.ts,95,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /documents/:id/access-log,hrms_backend/src/modules/documents/routes.ts,103,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+file,modules/documents/schemas.ts,hrms_backend/src/modules/documents/schemas.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/documents/service.ts,hrms_backend/src/modules/documents/service.ts,,partially reviewed,docs/discovery/session-media-failure-boundaries.md,Selected failure path read at 6a8d11f7; outage/provider execution and full API matrix remain open.
+file,modules/documents/state-machine.ts,hrms_backend/src/modules/documents/state-machine.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/ems/events.ts,hrms_backend/src/modules/ems/events.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/ems/index.ts,hrms_backend/src/modules/ems/index.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/ems/policy.ts,hrms_backend/src/modules/ems/policy.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/ems/repository.ts,hrms_backend/src/modules/ems/repository.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/ems/routes.ts,hrms_backend/src/modules/ems/routes.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+route,GET /ems/profile/me,hrms_backend/src/modules/ems/routes.ts,39,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,PATCH /ems/profile/me,hrms_backend/src/modules/ems/routes.ts,44,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /ems/profile-change-requests,hrms_backend/src/modules/ems/routes.ts,52,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /ems/profile-change-requests/my,hrms_backend/src/modules/ems/routes.ts,60,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /ems/profile-change-requests/queue/hr,hrms_backend/src/modules/ems/routes.ts,68,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /ems/profile-change-requests/:id/decision,hrms_backend/src/modules/ems/routes.ts,76,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /ems/requests,hrms_backend/src/modules/ems/routes.ts,86,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /ems/requests/my,hrms_backend/src/modules/ems/routes.ts,94,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /ems/requests/queue/hr,hrms_backend/src/modules/ems/routes.ts,102,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /ems/requests/:id/decision,hrms_backend/src/modules/ems/routes.ts,110,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /ems/admin/onboarding,hrms_backend/src/modules/ems/routes.ts,120,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,PATCH /ems/admin/onboarding/:id,hrms_backend/src/modules/ems/routes.ts,129,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /ems/admin/probation,hrms_backend/src/modules/ems/routes.ts,140,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /ems/admin/probation/:id/decision,hrms_backend/src/modules/ems/routes.ts,148,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /ems/admin/exits,hrms_backend/src/modules/ems/routes.ts,158,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,PATCH /ems/admin/exits/:id,hrms_backend/src/modules/ems/routes.ts,167,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /ems/letters,hrms_backend/src/modules/ems/routes.ts,178,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /ems/letters/:id/acknowledge,hrms_backend/src/modules/ems/routes.ts,186,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /ems/policies,hrms_backend/src/modules/ems/routes.ts,197,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /ems/policies/:id/acknowledge,hrms_backend/src/modules/ems/routes.ts,205,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,PUT /ems/policies/:id,hrms_backend/src/modules/ems/routes.ts,216,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /ems/employees/:user_id/documents,hrms_backend/src/modules/ems/routes.ts,226,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /ems/employees/:user_id/documents,hrms_backend/src/modules/ems/routes.ts,236,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+file,modules/ems/service.ts,hrms_backend/src/modules/ems/service.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/expenses/errors.ts,hrms_backend/src/modules/expenses/errors.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/expenses/events.ts,hrms_backend/src/modules/expenses/events.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/expenses/index.ts,hrms_backend/src/modules/expenses/index.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/expenses/policy.ts,hrms_backend/src/modules/expenses/policy.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/expenses/repository.ts,hrms_backend/src/modules/expenses/repository.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/expenses/routes.ts,hrms_backend/src/modules/expenses/routes.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+route,POST /expenses,hrms_backend/src/modules/expenses/routes.ts,90,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /expenses/my,hrms_backend/src/modules/expenses/routes.ts,99,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /expenses/metadata,hrms_backend/src/modules/expenses/routes.ts,107,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /expenses/dashboard-summary,hrms_backend/src/modules/expenses/routes.ts,114,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /expenses/:id,hrms_backend/src/modules/expenses/routes.ts,122,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /expenses/:id/submit,hrms_backend/src/modules/expenses/routes.ts,130,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /expenses/:id/withdraw,hrms_backend/src/modules/expenses/routes.ts,139,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /expenses/:id/clarifications,hrms_backend/src/modules/expenses/routes.ts,148,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /expenses/queue/manager,hrms_backend/src/modules/expenses/routes.ts,157,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /expenses/:id/manager/verify,hrms_backend/src/modules/expenses/routes.ts,165,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /expenses/queue/finance,hrms_backend/src/modules/expenses/routes.ts,174,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /expenses/:id/finance-detail,hrms_backend/src/modules/expenses/routes.ts,182,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /expenses/:id/finance/approve,hrms_backend/src/modules/expenses/routes.ts,190,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /expenses/:id/finance/payment,hrms_backend/src/modules/expenses/routes.ts,199,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /expenses/:id/bills,hrms_backend/src/modules/expenses/routes.ts,214,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /expenses/:id/documents/:documentId/verify,hrms_backend/src/modules/expenses/routes.ts,223,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /expenses/:id/settlement,hrms_backend/src/modules/expenses/routes.ts,231,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /expenses/:id/timeline,hrms_backend/src/modules/expenses/routes.ts,240,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /expenses/:id/audit,hrms_backend/src/modules/expenses/routes.ts,248,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /manager-backups,hrms_backend/src/modules/expenses/routes.ts,257,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /manager-backups,hrms_backend/src/modules/expenses/routes.ts,265,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,DELETE /manager-backups/:id,hrms_backend/src/modules/expenses/routes.ts,273,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,PATCH /expenses/:id,hrms_backend/src/modules/expenses/routes.ts,282,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+file,modules/expenses/schemas.ts,hrms_backend/src/modules/expenses/schemas.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/expenses/service.ts,hrms_backend/src/modules/expenses/service.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+file,modules/expenses/state-machine.ts,hrms_backend/src/modules/expenses/state-machine.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/health/errors.ts,hrms_backend/src/modules/health/errors.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/health/events.ts,hrms_backend/src/modules/health/events.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/health/index.ts,hrms_backend/src/modules/health/index.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/health/policy.ts,hrms_backend/src/modules/health/policy.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/health/repository.ts,hrms_backend/src/modules/health/repository.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/health/routes.ts,hrms_backend/src/modules/health/routes.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+route,GET /health/live,hrms_backend/src/modules/health/routes.ts,34,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /health/ready,hrms_backend/src/modules/health/routes.ts,35,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /api/v1/health/live,hrms_backend/src/modules/health/routes.ts,36,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /api/v1/health/ready,hrms_backend/src/modules/health/routes.ts,37,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+file,modules/health/schemas.ts,hrms_backend/src/modules/health/schemas.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/health/service.ts,hrms_backend/src/modules/health/service.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+file,modules/health/state-machine.ts,hrms_backend/src/modules/health/state-machine.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/helpdesk/index.ts,hrms_backend/src/modules/helpdesk/index.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/helpdesk/policy.ts,hrms_backend/src/modules/helpdesk/policy.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/helpdesk/repository.ts,hrms_backend/src/modules/helpdesk/repository.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/helpdesk/routes.ts,hrms_backend/src/modules/helpdesk/routes.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+route,POST /helpdesk/tickets,hrms_backend/src/modules/helpdesk/routes.ts,96,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /helpdesk/tickets,hrms_backend/src/modules/helpdesk/routes.ts,104,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /helpdesk/tickets/:id,hrms_backend/src/modules/helpdesk/routes.ts,112,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,PATCH /helpdesk/tickets/:id,hrms_backend/src/modules/helpdesk/routes.ts,118,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /helpdesk/tickets/:id/comments,hrms_backend/src/modules/helpdesk/routes.ts,128,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /helpdesk/tickets/:id/internal-notes,hrms_backend/src/modules/helpdesk/routes.ts,138,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /helpdesk/tickets/:id/attachments,hrms_backend/src/modules/helpdesk/routes.ts,148,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /helpdesk/tickets/:id/assign,hrms_backend/src/modules/helpdesk/routes.ts,158,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /helpdesk/tickets/:id/priority,hrms_backend/src/modules/helpdesk/routes.ts,168,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /helpdesk/tickets/:id/status,hrms_backend/src/modules/helpdesk/routes.ts,178,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /helpdesk/tickets/:id/resolve,hrms_backend/src/modules/helpdesk/routes.ts,188,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /helpdesk/tickets/:id/close,hrms_backend/src/modules/helpdesk/routes.ts,198,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /helpdesk/tickets/:id/reopen,hrms_backend/src/modules/helpdesk/routes.ts,208,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /helpdesk/categories,hrms_backend/src/modules/helpdesk/routes.ts,218,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /helpdesk/categories,hrms_backend/src/modules/helpdesk/routes.ts,226,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,PATCH /helpdesk/categories/:id,hrms_backend/src/modules/helpdesk/routes.ts,234,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /helpdesk/sla-report,hrms_backend/src/modules/helpdesk/routes.ts,244,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+file,modules/helpdesk/service.ts,hrms_backend/src/modules/helpdesk/service.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/leave-wfh/events.ts,hrms_backend/src/modules/leave-wfh/events.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/leave-wfh/index.ts,hrms_backend/src/modules/leave-wfh/index.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/leave-wfh/policy.ts,hrms_backend/src/modules/leave-wfh/policy.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+file,modules/leave-wfh/repository.ts,hrms_backend/src/modules/leave-wfh/repository.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/leave-wfh/routes.ts,hrms_backend/src/modules/leave-wfh/routes.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+route,GET /leave/balances/my,hrms_backend/src/modules/leave-wfh/routes.ts,35,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /leave/balances/:user_id,hrms_backend/src/modules/leave-wfh/routes.ts,45,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /leave/requests,hrms_backend/src/modules/leave-wfh/routes.ts,57,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /leave/requests/my,hrms_backend/src/modules/leave-wfh/routes.ts,67,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /leave/requests/queue/manager,hrms_backend/src/modules/leave-wfh/routes.ts,77,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /leave/requests/:id/decision,hrms_backend/src/modules/leave-wfh/routes.ts,87,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /leave/requests/:id/cancel,hrms_backend/src/modules/leave-wfh/routes.ts,99,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /wfh/requests,hrms_backend/src/modules/leave-wfh/routes.ts,111,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /wfh/requests/my,hrms_backend/src/modules/leave-wfh/routes.ts,121,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /wfh/requests/queue/manager,hrms_backend/src/modules/leave-wfh/routes.ts,131,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /wfh/requests/:id/decision,hrms_backend/src/modules/leave-wfh/routes.ts,141,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /leave-wfh/hr-monitor,hrms_backend/src/modules/leave-wfh/routes.ts,153,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /leave-wfh/exports,hrms_backend/src/modules/leave-wfh/routes.ts,163,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /holidays,hrms_backend/src/modules/leave-wfh/routes.ts,173,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,PUT /holidays/:id,hrms_backend/src/modules/leave-wfh/routes.ts,183,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+file,modules/leave-wfh/service.ts,hrms_backend/src/modules/leave-wfh/service.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/locations/index.ts,hrms_backend/src/modules/locations/index.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/locations/india-locations.ts,hrms_backend/src/modules/locations/india-locations.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/locations/routes.ts,hrms_backend/src/modules/locations/routes.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+route,GET /india,hrms_backend/src/modules/locations/routes.ts,12,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+file,modules/notifications/index.ts,hrms_backend/src/modules/notifications/index.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/notifications/repository.ts,hrms_backend/src/modules/notifications/repository.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+file,modules/notifications/routes.ts,hrms_backend/src/modules/notifications/routes.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+route,GET /notifications,hrms_backend/src/modules/notifications/routes.ts,24,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /notifications/unread-count,hrms_backend/src/modules/notifications/routes.ts,32,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /notifications/:id/read,hrms_backend/src/modules/notifications/routes.ts,37,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /notifications/read-all,hrms_backend/src/modules/notifications/routes.ts,47,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+file,modules/notifications/service.ts,hrms_backend/src/modules/notifications/service.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/platform/device-signature-verifier.ts,hrms_backend/src/modules/platform/device-signature-verifier.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/platform/errors.ts,hrms_backend/src/modules/platform/errors.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/platform/events.ts,hrms_backend/src/modules/platform/events.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/platform/index.ts,hrms_backend/src/modules/platform/index.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/platform/policy.ts,hrms_backend/src/modules/platform/policy.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/platform/repository.ts,hrms_backend/src/modules/platform/repository.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+file,modules/platform/routes.ts,hrms_backend/src/modules/platform/routes.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+route,POST /devices,hrms_backend/src/modules/platform/routes.ts,15,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /devices,hrms_backend/src/modules/platform/routes.ts,27,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /admin/devices,hrms_backend/src/modules/platform/routes.ts,34,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /devices/:deviceId/revoke,hrms_backend/src/modules/platform/routes.ts,45,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /devices/:deviceId/suspend,hrms_backend/src/modules/platform/routes.ts,58,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /devices/:deviceId/restore,hrms_backend/src/modules/platform/routes.ts,71,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /finance-governance,hrms_backend/src/modules/platform/routes.ts,84,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,PUT /finance-governance,hrms_backend/src/modules/platform/routes.ts,91,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+file,modules/platform/schemas.ts,hrms_backend/src/modules/platform/schemas.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/platform/service.ts,hrms_backend/src/modules/platform/service.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+file,modules/projects/events.ts,hrms_backend/src/modules/projects/events.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/projects/index.ts,hrms_backend/src/modules/projects/index.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/projects/policy.ts,hrms_backend/src/modules/projects/policy.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/projects/repository.ts,hrms_backend/src/modules/projects/repository.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/projects/routes.ts,hrms_backend/src/modules/projects/routes.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+route,POST /projects,hrms_backend/src/modules/projects/routes.ts,36,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /projects,hrms_backend/src/modules/projects/routes.ts,44,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /projects/:id,hrms_backend/src/modules/projects/routes.ts,52,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,PATCH /projects/:id,hrms_backend/src/modules/projects/routes.ts,62,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /projects/:id/archive,hrms_backend/src/modules/projects/routes.ts,72,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /projects/:id/members,hrms_backend/src/modules/projects/routes.ts,82,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /projects/:id/members,hrms_backend/src/modules/projects/routes.ts,92,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,PATCH /projects/:id/members/:member_id,hrms_backend/src/modules/projects/routes.ts,102,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /projects/:id/allocations,hrms_backend/src/modules/projects/routes.ts,113,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /projects/:id/allocations,hrms_backend/src/modules/projects/routes.ts,123,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /projects/:id/milestones,hrms_backend/src/modules/projects/routes.ts,133,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /projects/:id/milestones,hrms_backend/src/modules/projects/routes.ts,143,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /projects/:id/documents,hrms_backend/src/modules/projects/routes.ts,153,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /projects/:id/summary,hrms_backend/src/modules/projects/routes.ts,163,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /team-utilization/summary,hrms_backend/src/modules/projects/routes.ts,173,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+file,modules/projects/service.ts,hrms_backend/src/modules/projects/service.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+file,modules/reports/errors.ts,hrms_backend/src/modules/reports/errors.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/reports/events.ts,hrms_backend/src/modules/reports/events.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/reports/index.ts,hrms_backend/src/modules/reports/index.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/reports/policy.ts,hrms_backend/src/modules/reports/policy.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/reports/repository.ts,hrms_backend/src/modules/reports/repository.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/reports/routes.ts,hrms_backend/src/modules/reports/routes.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+route,GET /expenses/my,hrms_backend/src/modules/reports/routes.ts,76,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /expenses/manager-queue,hrms_backend/src/modules/reports/routes.ts,82,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /expenses/manager-history,hrms_backend/src/modules/reports/routes.ts,88,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /expenses/finance-dashboard,hrms_backend/src/modules/reports/routes.ts,94,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /expenses/finance-history,hrms_backend/src/modules/reports/routes.ts,100,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /expenses/finance-analytics,hrms_backend/src/modules/reports/routes.ts,106,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /expenses/register,hrms_backend/src/modules/reports/routes.ts,111,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /expenses/advance-aging,hrms_backend/src/modules/reports/routes.ts,117,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /expenses/payments,hrms_backend/src/modules/reports/routes.ts,123,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /expenses/audit,hrms_backend/src/modules/reports/routes.ts,129,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /hr/employees,hrms_backend/src/modules/reports/routes.ts,135,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /attendance/summary,hrms_backend/src/modules/reports/routes.ts,140,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /leave-wfh/summary,hrms_backend/src/modules/reports/routes.ts,154,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /projects/summary,hrms_backend/src/modules/reports/routes.ts,159,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /timesheets/summary,hrms_backend/src/modules/reports/routes.ts,164,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /assets/summary,hrms_backend/src/modules/reports/routes.ts,169,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /helpdesk/summary,hrms_backend/src/modules/reports/routes.ts,174,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /audit,hrms_backend/src/modules/reports/routes.ts,179,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /exports,hrms_backend/src/modules/reports/routes.ts,191,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /exports/:id,hrms_backend/src/modules/reports/routes.ts,202,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /exports,hrms_backend/src/modules/reports/routes.ts,211,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+file,modules/reports/schemas.ts,hrms_backend/src/modules/reports/schemas.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/reports/service.ts,hrms_backend/src/modules/reports/service.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+file,modules/reports/state-machine.ts,hrms_backend/src/modules/reports/state-machine.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/timesheets/errors.ts,hrms_backend/src/modules/timesheets/errors.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/timesheets/events.ts,hrms_backend/src/modules/timesheets/events.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/timesheets/index.ts,hrms_backend/src/modules/timesheets/index.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/timesheets/policy.ts,hrms_backend/src/modules/timesheets/policy.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/timesheets/repository.ts,hrms_backend/src/modules/timesheets/repository.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+file,modules/timesheets/routes.ts,hrms_backend/src/modules/timesheets/routes.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+route,POST /work-segments,hrms_backend/src/modules/timesheets/routes.ts,57,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /work-segments,hrms_backend/src/modules/timesheets/routes.ts,64,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /submissions,hrms_backend/src/modules/timesheets/routes.ts,72,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /submissions/my,hrms_backend/src/modules/timesheets/routes.ts,79,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /queue/approver,hrms_backend/src/modules/timesheets/routes.ts,87,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /projects/summary,hrms_backend/src/modules/timesheets/routes.ts,95,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /missing-submissions,hrms_backend/src/modules/timesheets/routes.ts,103,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /productivity-summary,hrms_backend/src/modules/timesheets/routes.ts,111,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /selectors,hrms_backend/src/modules/timesheets/routes.ts,119,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /submissions/:id,hrms_backend/src/modules/timesheets/routes.ts,127,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /submissions/:id/approve,hrms_backend/src/modules/timesheets/routes.ts,135,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,GET /workflow-definitions,hrms_backend/src/modules/timesheets/routes.ts,150,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+route,POST /workflow-definitions,hrms_backend/src/modules/timesheets/routes.ts,155,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+file,modules/timesheets/schemas.ts,hrms_backend/src/modules/timesheets/schemas.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/timesheets/service.ts,hrms_backend/src/modules/timesheets/service.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/timesheets/state-machine.ts,hrms_backend/src/modules/timesheets/state-machine.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/webhooks/index.ts,hrms_backend/src/modules/webhooks/index.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,modules/webhooks/resend-routes.ts,hrms_backend/src/modules/webhooks/resend-routes.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+route,POST /resend,hrms_backend/src/modules/webhooks/resend-routes.ts,10,unreviewed,,"Registration indexed; auth, object ownership, side effects and contract need per-route review."
+file,platform/company-membership-context.ts,hrms_backend/src/platform/company-membership-context.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+file,platform/data-store.ts,hrms_backend/src/platform/data-store.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+file,platform/decorators.ts,hrms_backend/src/platform/decorators.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,platform/email/email-delivery-service.ts,hrms_backend/src/platform/email/email-delivery-service.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,platform/email/resend-email-provider.ts,hrms_backend/src/platform/email/resend-email-provider.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,platform/email/resend-webhook-service.ts,hrms_backend/src/platform/email/resend-webhook-service.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,platform/email/template-renderer.ts,hrms_backend/src/platform/email/template-renderer.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,platform/email/types.ts,hrms_backend/src/platform/email/types.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,platform/errors.ts,hrms_backend/src/platform/errors.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,platform/generated-exports.ts,hrms_backend/src/platform/generated-exports.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+file,platform/logger-redaction.ts,hrms_backend/src/platform/logger-redaction.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,platform/object-storage.ts,hrms_backend/src/platform/object-storage.ts,,partially reviewed,docs/discovery/session-media-failure-boundaries.md,Selected failure path read at 6a8d11f7; outage/provider execution and full API matrix remain open.
+file,platform/openapi.ts,hrms_backend/src/platform/openapi.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,platform/pdf-compression.ts,hrms_backend/src/platform/pdf-compression.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,platform/postgres-data-store.ts,hrms_backend/src/platform/postgres-data-store.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+file,platform/seed-dev.ts,hrms_backend/src/platform/seed-dev.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,platform/seed-personas.ts,hrms_backend/src/platform/seed-personas.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,platform/tenant-db-context.ts,hrms_backend/src/platform/tenant-db-context.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,platform/valkey-client.ts,hrms_backend/src/platform/valkey-client.ts,,partially reviewed,docs/discovery/session-media-failure-boundaries.md,Selected failure path read at 6a8d11f7; outage/provider execution and full API matrix remain open.
+file,platform/work-schedule.ts,hrms_backend/src/platform/work-schedule.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,plugins/auth.ts,hrms_backend/src/plugins/auth.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+file,plugins/compress.ts,hrms_backend/src/plugins/compress.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,plugins/config.ts,hrms_backend/src/plugins/config.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,plugins/cookies.ts,hrms_backend/src/plugins/cookies.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,plugins/errors.ts,hrms_backend/src/plugins/errors.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,plugins/rate-limit.ts,hrms_backend/src/plugins/rate-limit.ts,,partially reviewed,docs/discovery/session-media-failure-boundaries.md,Selected failure path read at 6a8d11f7; outage/provider execution and full API matrix remain open.
+file,plugins/request-context.ts,hrms_backend/src/plugins/request-context.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,plugins/security-headers.ts,hrms_backend/src/plugins/security-headers.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,server.ts,hrms_backend/src/server.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,shared/attendance-contract.ts,hrms_backend/src/shared/attendance-contract.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,shared/constants.ts,hrms_backend/src/shared/constants.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,shared/index.ts,hrms_backend/src/shared/index.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,shared/money.ts,hrms_backend/src/shared/money.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,shared/schemas.ts,hrms_backend/src/shared/schemas.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+file,shared/types.ts,hrms_backend/src/shared/types.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+file,testing/index.ts,hrms_backend/src/testing/index.ts,,excluded,,Test support barrel; outside runtime boundary.
+file,workers/attendance-auto-punchout-worker.ts,hrms_backend/src/workers/attendance-auto-punchout-worker.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+job-entry,attendance-auto-punchout-worker,hrms_backend/src/workers/attendance-auto-punchout-worker.ts,,unreviewed,docs/architecture/current-runtime-source-2026-11-09.md,"Entrypoint/file indexed; scheduling, retries and idempotency require path trace."
+file,workers/attendance-coordinate-purge-worker.ts,hrms_backend/src/workers/attendance-coordinate-purge-worker.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+job-entry,attendance-coordinate-purge-worker,hrms_backend/src/workers/attendance-coordinate-purge-worker.ts,,unreviewed,docs/architecture/current-runtime-source-2026-11-09.md,"Entrypoint/file indexed; scheduling, retries and idempotency require path trace."
+file,workers/cloudflare-jobs.ts,hrms_backend/src/workers/cloudflare-jobs.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+job-entry,cloudflare-jobs,hrms_backend/src/workers/cloudflare-jobs.ts,,partially reviewed,docs/architecture/current-runtime-source-2026-11-09.md,"Entrypoint/file indexed; scheduling, retries and idempotency require path trace."
+file,workers/cloudflare-worker.ts,hrms_backend/src/workers/cloudflare-worker.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+job-entry,cloudflare-worker,hrms_backend/src/workers/cloudflare-worker.ts,,partially reviewed,docs/architecture/current-runtime-source-2026-11-09.md,"Entrypoint/file indexed; scheduling, retries and idempotency require path trace."
+file,workers/outbox-worker.ts,hrms_backend/src/workers/outbox-worker.ts,,partially reviewed,docs/discovery/*journey.md or direct source review at 6a8d11f7,Selected source path traced; exhaustive edge cases and runtime behavior remain open.
+job-entry,outbox-worker,hrms_backend/src/workers/outbox-worker.ts,,partially reviewed,docs/architecture/current-runtime-source-2026-11-09.md,"Entrypoint/file indexed; scheduling, retries and idempotency require path trace."
+file,workers/run-outbox-worker.ts,hrms_backend/src/workers/run-outbox-worker.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+job-entry,run-outbox-worker,hrms_backend/src/workers/run-outbox-worker.ts,,unreviewed,docs/architecture/current-runtime-source-2026-11-09.md,"Entrypoint/file indexed; scheduling, retries and idempotency require path trace."
+file,workers/safe-error.ts,hrms_backend/src/workers/safe-error.ts,,unreviewed,,Indexed only; individual source path has not been traced.
+job-entry,safe-error,hrms_backend/src/workers/safe-error.ts,,unreviewed,docs/architecture/current-runtime-source-2026-11-09.md,"Entrypoint/file indexed; scheduling, retries and idempotency require path trace."
+table,core.departments,hrms_backend/src/db/schema.ts,46,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,core.designations,hrms_backend/src/db/schema.ts,68,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,core.users,hrms_backend/src/db/schema.ts,88,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,core.roles,hrms_backend/src/db/schema.ts,123,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,core.role_permissions,hrms_backend/src/db/schema.ts,136,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,core.user_roles,hrms_backend/src/db/schema.ts,153,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,platform.user_sessions,hrms_backend/src/db/schema.ts,169,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,platform.company_profiles,hrms_backend/src/db/schema.ts,189,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,platform.user_session_preferences,hrms_backend/src/db/schema.ts,227,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,platform.registered_devices,hrms_backend/src/db/schema.ts,248,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,platform.registered_device_key_versions,hrms_backend/src/db/schema.ts,286,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,platform.user_credentials,hrms_backend/src/db/schema.ts,322,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,platform.idempotency_keys,hrms_backend/src/db/schema.ts,339,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,platform.outbox_events,hrms_backend/src/db/schema.ts,365,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,platform.notifications,hrms_backend/src/db/schema.ts,390,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,platform.email_deliveries,hrms_backend/src/db/schema.ts,410,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,platform.email_events,hrms_backend/src/db/schema.ts,444,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,platform.admin_workflows,hrms_backend/src/db/schema.ts,465,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,platform.admin_policies,hrms_backend/src/db/schema.ts,485,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,platform.admin_email_templates,hrms_backend/src/db/schema.ts,506,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,platform.admin_notification_channels,hrms_backend/src/db/schema.ts,528,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,platform.admin_master_data_items,hrms_backend/src/db/schema.ts,550,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,platform.admin_security_settings,hrms_backend/src/db/schema.ts,572,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,platform.processed_events,hrms_backend/src/db/schema.ts,594,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.punch_events,hrms_backend/src/db/schema.ts,604,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.sessions,hrms_backend/src/db/schema.ts,632,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.break_segments,hrms_backend/src/db/schema.ts,660,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.employee_command_states,hrms_backend/src/db/schema.ts,677,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.command_executions,hrms_backend/src/db/schema.ts,691,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.command_decisions,hrms_backend/src/db/schema.ts,738,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.attendance_events,hrms_backend/src/db/schema.ts,763,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.offline_event_inbox,hrms_backend/src/db/schema.ts,793,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.offline_sync_security_audit_logs,hrms_backend/src/db/schema.ts,841,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.location_evidence,hrms_backend/src/db/schema.ts,872,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.attestation_evidence,hrms_backend/src/db/schema.ts,959,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.location_access_audit_logs,hrms_backend/src/db/schema.ts,997,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.location_retention_actions,hrms_backend/src/db/schema.ts,1040,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.attendance_decisions,hrms_backend/src/db/schema.ts,1082,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.decision_reasons,hrms_backend/src/db/schema.ts,1118,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.daily_records,hrms_backend/src/db/schema.ts,1142,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.regularization_requests,hrms_backend/src/db/schema.ts,1194,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.regularization_request_items,hrms_backend/src/db/schema.ts,1221,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.regularization_actions,hrms_backend/src/db/schema.ts,1246,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.regularization_correction_applications,hrms_backend/src/db/schema.ts,1271,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.geo_fallback_reviews,hrms_backend/src/db/schema.ts,1295,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.projection_rebuild_runs,hrms_backend/src/db/schema.ts,1332,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.payroll_periods,hrms_backend/src/db/schema.ts,1366,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.payroll_period_actions,hrms_backend/src/db/schema.ts,1389,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.payroll_attendance_snapshots,hrms_backend/src/db/schema.ts,1409,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.payroll_attendance_adjustments,hrms_backend/src/db/schema.ts,1455,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.policies,hrms_backend/src/db/schema.ts,1485,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.policy_versions,hrms_backend/src/db/schema.ts,1510,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.policy_assignments,hrms_backend/src/db/schema.ts,1529,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.shift_templates,hrms_backend/src/db/schema.ts,1553,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.shift_template_versions,hrms_backend/src/db/schema.ts,1581,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.shift_assignments,hrms_backend/src/db/schema.ts,1606,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.shift_instances,hrms_backend/src/db/schema.ts,1629,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.work_sites,hrms_backend/src/db/schema.ts,1658,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.geofences,hrms_backend/src/db/schema.ts,1696,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,attendance.geofence_versions,hrms_backend/src/db/schema.ts,1737,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,leaveWfh.leave_requests,hrms_backend/src/db/schema.ts,1788,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,leaveWfh.wfh_requests,hrms_backend/src/db/schema.ts,1819,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,leaveWfh.holidays,hrms_backend/src/db/schema.ts,1849,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,expenses.expense_tickets,hrms_backend/src/db/schema.ts,1869,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,expenses.expense_line_items,hrms_backend/src/db/schema.ts,1919,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,expenses.expense_approvals,hrms_backend/src/db/schema.ts,1934,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,expenses.employee_reviewer_mappings,hrms_backend/src/db/schema.ts,1956,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,expenses.expense_documents,hrms_backend/src/db/schema.ts,1977,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,expenses.expense_payments,hrms_backend/src/db/schema.ts,1991,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,expenses.expense_audit_logs,hrms_backend/src/db/schema.ts,2015,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,expenses.expense_policy_rules,hrms_backend/src/db/schema.ts,2035,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,documents.doc_metadata,hrms_backend/src/db/schema.ts,2050,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,documents.doc_versions,hrms_backend/src/db/schema.ts,2079,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,documents.doc_permissions,hrms_backend/src/db/schema.ts,2098,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,documents.doc_access_logs,hrms_backend/src/db/schema.ts,2111,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,assets.assets,hrms_backend/src/db/schema.ts,2128,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,assets.asset_assignments,hrms_backend/src/db/schema.ts,2153,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,assets.asset_recovery_tickets,hrms_backend/src/db/schema.ts,2165,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,assets.asset_requests,hrms_backend/src/db/schema.ts,2180,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,assets.asset_acknowledgements,hrms_backend/src/db/schema.ts,2210,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,assets.asset_maintenance_records,hrms_backend/src/db/schema.ts,2230,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,assets.software_vendors,hrms_backend/src/db/schema.ts,2253,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,assets.license_entitlements,hrms_backend/src/db/schema.ts,2270,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,assets.license_activations,hrms_backend/src/db/schema.ts,2279,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,assets.compromised_keys,hrms_backend/src/db/schema.ts,2289,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,timesheets.work_segments,hrms_backend/src/db/schema.ts,2297,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,timesheets.workflow_definitions,hrms_backend/src/db/schema.ts,2318,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,timesheets.timesheet_submissions,hrms_backend/src/db/schema.ts,2329,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,timesheets.timesheet_approval_actions,hrms_backend/src/db/schema.ts,2353,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,projects.projects,hrms_backend/src/db/schema.ts,2362,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,projects.project_members,hrms_backend/src/db/schema.ts,2397,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,projects.project_allocations,hrms_backend/src/db/schema.ts,2421,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,projects.project_milestones,hrms_backend/src/db/schema.ts,2443,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,helpdesk.categories,hrms_backend/src/db/schema.ts,2464,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,helpdesk.tickets,hrms_backend/src/db/schema.ts,2487,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,helpdesk.ticket_comments,hrms_backend/src/db/schema.ts,2526,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,helpdesk.ticket_attachments,hrms_backend/src/db/schema.ts,2545,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,helpdesk.ticket_events,hrms_backend/src/db/schema.ts,2564,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,ems.employee_profiles,hrms_backend/src/db/schema.ts,2580,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,ems.profile_change_requests,hrms_backend/src/db/schema.ts,2606,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,ems.service_requests,hrms_backend/src/db/schema.ts,2635,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,ems.letters,hrms_backend/src/db/schema.ts,2662,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,ems.policies,hrms_backend/src/db/schema.ts,2682,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,ems.policy_acknowledgements,hrms_backend/src/db/schema.ts,2704,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,ems.admin_checklists,hrms_backend/src/db/schema.ts,2719,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+table,ems.probation_reviews,hrms_backend/src/db/schema.ts,2741,partially reviewed,hrms_backend/src/db/schema.ts,"Declared Drizzle table indexed; constraints, migration parity and tenant ownership not exhaustively reviewed."
+data-boundary,HTTP/Fastify lifecycle,hrms_backend/src/app.ts,,partially reviewed,docs/architecture/current-runtime-source-2026-11-09.md,onSend flush and module registration; complete local/hosted proof pending.
+data-boundary,authentication/session,hrms_backend/src/plugins/auth.ts,,partially reviewed,docs/architecture/current-runtime-source-2026-11-09.md,cookie/session/role validation; complete local/hosted proof pending.
+data-boundary,tenant context,hrms_backend/src/platform/company-membership-context.ts,,partially reviewed,docs/architecture/current-runtime-source-2026-11-09.md,company and role resolution; complete local/hosted proof pending.
+data-boundary,tenant DB context,hrms_backend/src/platform/tenant-db-context.ts,,partially reviewed,docs/architecture/current-runtime-source-2026-11-09.md,SQL tenant scope; complete local/hosted proof pending.
+data-boundary,PostgreSQL hydration/read,hrms_backend/src/platform/postgres-data-store.ts,,partially reviewed,docs/architecture/current-runtime-source-2026-11-09.md,process snapshot and request-local reads; complete local/hosted proof pending.
+data-boundary,PostgreSQL flush/write,hrms_backend/src/platform/postgres-data-store.ts,,partially reviewed,docs/architecture/current-runtime-source-2026-11-09.md,whole-domain persistence; complete local/hosted proof pending.
+data-boundary,Valkey sessions,hrms_backend/src/platform/valkey-client.ts,,partially reviewed,docs/architecture/current-runtime-source-2026-11-09.md,session/cache outage behavior; complete local/hosted proof pending.
+data-boundary,object storage,hrms_backend/src/platform/object-storage.ts,,partially reviewed,docs/architecture/current-runtime-source-2026-11-09.md,upload and deletion consistency; complete local/hosted proof pending.
+data-boundary,email provider,hrms_backend/src/platform/email/email-delivery-service.ts,,partially reviewed,docs/architecture/current-runtime-source-2026-11-09.md,external delivery/retry; complete local/hosted proof pending.
+data-boundary,Resend webhook,hrms_backend/src/platform/email/resend-webhook-service.ts,,partially reviewed,docs/architecture/current-runtime-source-2026-11-09.md,signature and event processing; complete local/hosted proof pending.
+data-boundary,outbox/queue,hrms_backend/src/workers/outbox-worker.ts,,partially reviewed,docs/architecture/current-runtime-source-2026-11-09.md,event delivery and retry; complete local/hosted proof pending.
+data-boundary,Cloudflare queue/cron,hrms_backend/src/workers/cloudflare-worker.ts,,partially reviewed,docs/architecture/current-runtime-source-2026-11-09.md,bounded scheduling and retry; complete local/hosted proof pending.
+data-boundary,attendance scheduled jobs,hrms_backend/src/workers/cloudflare-jobs.ts,,partially reviewed,docs/architecture/current-runtime-source-2026-11-09.md,auto-punchout and purge; complete local/hosted proof pending.
+data-boundary,report/export,hrms_backend/src/platform/generated-exports.ts,,partially reviewed,docs/architecture/current-runtime-source-2026-11-09.md,"tenant scope, size and formula safety; complete local/hosted proof pending."
+data-boundary,public asset QR,hrms_backend/src/modules/assets/routes.ts,,partially reviewed,docs/architecture/current-runtime-source-2026-11-09.md,unauthenticated capability response; complete local/hosted proof pending.
+data-boundary,cross-domain audit,hrms_backend/src/modules/reports/service.ts,,partially reviewed,docs/architecture/current-runtime-source-2026-11-09.md,immutable scope and history; complete local/hosted proof pending.
+table,platform.finance_governance_config,hrms_backend/src/db/migrations/0001_initial.sql,117,unreviewed,,Migration-declared table absent from Drizzle schema; determine intentional SQL-only ownership and current shape.
+table,assets.asset_state_events,hrms_backend/src/db/migrations/0001_initial.sql,507,unreviewed,,Migration-declared table absent from Drizzle schema; determine intentional SQL-only ownership and current shape.
+table,assets.software_products,hrms_backend/src/db/migrations/0001_initial.sql,545,unreviewed,,Migration-declared table absent from Drizzle schema; determine intentional SQL-only ownership and current shape.
+table,platform.auth_tokens,hrms_backend/src/db/migrations/0002_auth_onboarding.sql,17,unreviewed,,Migration-declared table absent from Drizzle schema; determine intentional SQL-only ownership and current shape.
+table,attendance.mobile_evidence_warnings,hrms_backend/src/db/migrations/0062_attendance_mobile_evidence_warnings.sql,1,unreviewed,,Migration-declared table absent from Drizzle schema; determine intentional SQL-only ownership and current shape.
+job,outbox drain,hrms_backend/src/workers/cloudflare-jobs.ts,25,partially reviewed,docs/discovery/saas-rule-traceability.md,50-row bounded drain; send-before-commit duplicate risk; DLQ and hosted recovery unverified.
+job,attendance auto-checkout sweep,hrms_backend/src/workers/cloudflare-jobs.ts,71,partially reviewed,docs/discovery/saas-rule-traceability.md,25-session bounded cursor sweep; per-item failure and follow-up; DLQ and hosted recovery unverified.
+job,coordinate purge,hrms_backend/src/workers/cloudflare-jobs.ts,112,partially reviewed,docs/discovery/saas-rule-traceability.md,500-row bounded purge and follow-up; DLQ and hosted recovery unverified.
+job,published business event delivery,hrms_backend/src/workers/cloudflare-worker.ts,123,partially reviewed,docs/discovery/saas-rule-traceability.md,Queue handler reads published event and logs; no business consumer in repository; DLQ and hosted recovery unverified.

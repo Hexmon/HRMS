@@ -860,13 +860,29 @@ describe("platform device registration API", () => {
     const originalRoles = [...user.roles];
     const originalActiveRole = preference.active_role;
     user.roles = [role];
+    user.version += 1;
     preference.active_role = role;
+    preference.version += 1;
+    await app.store.persistence?.flushAuth?.({
+      userIds: [user.id],
+      ...(preference.company_id ? { companyIds: [preference.company_id] } : {}),
+    });
     try {
       const login = await loginAs(app, employeeCode);
       return await fn(login.token);
     } finally {
-      user.roles = originalRoles;
-      preference.active_role = originalActiveRole;
+      const currentUser = app.store.users.find((candidate) => candidate.id === user.id)!;
+      const currentPreference = app.store.userSessionPreferences.find(
+        (candidate) => candidate.user_id === user.id,
+      )!;
+      currentUser.roles = originalRoles;
+      currentUser.version += 1;
+      currentPreference.active_role = originalActiveRole;
+      currentPreference.version += 1;
+      await app.store.persistence?.flushAuth?.({
+        userIds: [user.id],
+        ...(currentPreference.company_id ? { companyIds: [currentPreference.company_id] } : {}),
+      });
     }
   }
 

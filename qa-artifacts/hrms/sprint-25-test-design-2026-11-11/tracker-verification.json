@@ -1,0 +1,70 @@
+{
+  "date": "2026-11-11",
+  "workbook_id": "1dr5qLKxq5IGIZAyIAdMlcDYDfld-LYxfvSHkKw1jBnA",
+  "case_gid": 90130750,
+  "sprint_gid": 1812876151,
+  "case_count": 482,
+  "leaf_tasks": 128,
+  "parent_rows": 12,
+  "task_links": 140,
+  "existing_authored_value_or_formula_changes_outside_O_P": 0,
+  "formula_cache_changes": [],
+  "new_case_cell_mismatches": 0,
+  "original_statuses_and_story_points_preserved": true,
+  "all_cases": "Not Tested",
+  "unapproved_oracle_cases": 188,
+  "case_layout": {
+    "filter": {
+      "ref": "$A$1:$T$483"
+    },
+    "pane": [
+      {
+        "xSplit": "2.0",
+        "ySplit": "1.0",
+        "topLeftCell": "C2",
+        "activePane": "bottomRight",
+        "state": "frozen"
+      }
+    ],
+    "cols": [
+      {
+        "customWidth": "1",
+        "min": "1",
+        "max": "2",
+        "width": "18.88"
+      },
+      {
+        "customWidth": "1",
+        "min": "3",
+        "max": "3",
+        "width": "37.63"
+      },
+      {
+        "customWidth": "1",
+        "min": "4",
+        "max": "5",
+        "width": "14.5"
+      },
+      {
+        "customWidth": "1",
+        "min": "6",
+        "max": "9",
+        "width": "37.63"
+      },
+      {
+        "customWidth": "1",
+        "min": "10",
+        "max": "11",
+        "width": "68.88"
+      },
+      {
+        "customWidth": "1",
+        "min": "12",
+        "max": "20",
+        "width": "37.63"
+      }
+    ],
+    "links": {}
+  },
+  "application_tests_executed": false
+}
