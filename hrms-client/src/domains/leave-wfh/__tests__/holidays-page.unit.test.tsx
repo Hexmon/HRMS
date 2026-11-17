@@ -237,6 +237,14 @@ describe("holiday create form retry", () => {
     fireEvent.click(screen.getByRole("button", { name: "Next month" }));
     expect(screen.getByRole("heading", { name: "January 2027" })).toBeInTheDocument();
     expect(window.location.search).toBe("?month=2027-01");
+
+    fireEvent.click(screen.getByRole("button", { name: "Next month" }));
+    expect(screen.getByRole("heading", { name: "February 2027" })).toBeInTheDocument();
+    expect(window.location.search).toBe("?month=2027-02");
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous month" }));
+    expect(screen.getByRole("heading", { name: "January 2027" })).toBeInTheDocument();
+    expect(window.location.search).toBe("?month=2027-01");
   });
 
   it("falls back to the current month when rendered without a browser window", () => {
