@@ -1553,26 +1553,33 @@ function eligibleDepartmentParentIds(
   if (!byId.has(currentDepartmentId)) return new Set();
 
   const eligibility = new Map<string, boolean>([[currentDepartmentId, false]]);
-  const visiting = new Set<string>();
-  const resolveEligibility = (departmentId: string): boolean => {
-    if (eligibility.has(departmentId)) return eligibility.get(departmentId)!;
-    if (visiting.has(departmentId)) {
-      eligibility.set(departmentId, false);
-      return false;
-    }
-    const department = byId.get(departmentId);
-    if (!department) return false;
-    visiting.add(departmentId);
-    const parentId = department.parent_department_id;
-    const eligible = parentId === null ? true : resolveEligibility(parentId);
-    visiting.delete(departmentId);
-    eligibility.set(departmentId, eligible);
-    return eligible;
-  };
-
   const eligibleIds = new Set<string>();
   for (const department of departments) {
-    if (resolveEligibility(department.id)) eligibleIds.add(department.id);
+    if (!eligibility.has(department.id)) {
+      const path: string[] = [];
+      const pathIds = new Set<string>();
+      let cursorId: string | null = department.id;
+      let isEligible = false;
+
+      while (cursorId !== null) {
+        const resolved = eligibility.get(cursorId);
+        if (resolved !== undefined) {
+          isEligible = resolved;
+          break;
+        }
+        if (pathIds.has(cursorId)) break;
+
+        const cursor = byId.get(cursorId);
+        if (!cursor) break;
+        path.push(cursorId);
+        pathIds.add(cursorId);
+        cursorId = cursor.parent_department_id;
+        if (cursorId === null) isEligible = true;
+      }
+
+      for (const pathId of path) eligibility.set(pathId, isEligible);
+    }
+    if (eligibility.get(department.id)) eligibleIds.add(department.id);
   }
   return eligibleIds;
 }

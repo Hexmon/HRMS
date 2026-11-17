@@ -84,7 +84,7 @@ describe("admin company-scoped master data", () => {
     expect(store.outbox).toEqual(outboxBefore);
   });
 
-  it("filters a large parent-candidate hierarchy in bounded time", async () => {
+  it("filters reverse and arbitrary ordered large parent-candidate hierarchies without stack growth", async () => {
     const store = createMemoryDataStore();
     const service = new AdminService(store);
     const admin = store.users.find((user) => user.id === seedIds.admin)!;
@@ -103,16 +103,46 @@ describe("admin company-scoped master data", () => {
       parentId = id;
     }
 
+    const unrelatedDepartments = store.departments.filter(
+      (department) => department.company_id !== companyA,
+    );
+    const hierarchy = store.departments.filter(
+      (department) => department.company_id === companyA,
+    );
+    store.departments.splice(0, store.departments.length, ...unrelatedDepartments, ...hierarchy.reverse());
+
     const startedAt = performance.now();
-    const result = await service.listDepartments(admin, {
+    const reverseOrderedResult = await service.listDepartments(admin, {
       page: 1,
       page_size: 25,
       active_only: true,
       parent_candidate_for: root.id,
     });
 
-    expect(result).toMatchObject({ items: [], total: 0 });
+    expect(reverseOrderedResult).toMatchObject({ items: [], total: 0 });
     expect(performance.now() - startedAt).toBeLessThan(1_000);
+
+    let randomState = 0x5eed1234;
+    const nextRandom = (): number => {
+      randomState = (Math.imul(randomState, 1_664_525) + 1_013_904_223) >>> 0;
+      return randomState / 0x1_0000_0000;
+    };
+    for (let index = hierarchy.length - 1; index > 0; index -= 1) {
+      const swapIndex = Math.floor(nextRandom() * (index + 1));
+      [hierarchy[index], hierarchy[swapIndex]] = [hierarchy[swapIndex]!, hierarchy[index]!];
+    }
+    store.departments.splice(0, store.departments.length, ...unrelatedDepartments, ...hierarchy);
+
+    const shuffledStartedAt = performance.now();
+    const arbitraryOrderedResult = await service.listDepartments(admin, {
+      page: 1,
+      page_size: 25,
+      active_only: true,
+      parent_candidate_for: root.id,
+    });
+
+    expect(arbitraryOrderedResult).toMatchObject({ items: [], total: 0 });
+    expect(performance.now() - shuffledStartedAt).toBeLessThan(1_000);
   });
 
   it("rejects a stale in-memory department update before hierarchy or outbox mutation", async () => {
