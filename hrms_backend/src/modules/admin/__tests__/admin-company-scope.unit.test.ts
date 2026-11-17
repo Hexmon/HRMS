@@ -115,6 +115,35 @@ describe("admin company-scoped master data", () => {
     expect(performance.now() - startedAt).toBeLessThan(1_000);
   });
 
+  it("rejects a stale in-memory department update before hierarchy or outbox mutation", async () => {
+    const store = createMemoryDataStore();
+    const service = new AdminService(store);
+    const admin = store.users.find((user) => user.id === seedIds.admin)!;
+    assignCompany(store, admin.id, companyA);
+    const department = addCompanyMasterData(store, companyA, "STALE_UPDATE").department;
+    department.version = 3;
+    const departmentsBefore = structuredClone(store.departments);
+    const outboxBefore = structuredClone(store.outbox);
+
+    await expect(
+      service.updateDepartment(admin, department.id, {
+        expected_version: 2,
+        name: "Stale name",
+      }),
+    ).rejects.toMatchObject({
+      statusCode: 409,
+      details: {
+        aggregate: "department",
+        id: department.id,
+        expected_version: 2,
+        current_version: 3,
+      },
+    });
+
+    expect(store.departments).toEqual(departmentsBefore);
+    expect(store.outbox).toEqual(outboxBefore);
+  });
+
   it("rejects self, descendant, inactive, foreign-company, and orphaned department parents while preserving valid chains", async () => {
     const store = createMemoryDataStore();
     const service = new AdminService(store);
