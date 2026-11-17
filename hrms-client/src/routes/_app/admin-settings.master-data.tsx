@@ -120,12 +120,12 @@ function MasterDataScreen() {
   const { masters, addMaster, updateMaster, toggleMasterActive, deleteMaster } = useAdminSettings();
   const navigate = useNavigate();
   const search = Route.useSearch();
+  let activeKey: MasterKey = toMasterKey(search.tab) ?? "departments";
   const apiEnabled = useApiRouteEnabled(["/admin-settings"]);
-  const requestedKey = toMasterKey(search.tab) ?? "departments";
-  const activeKey: MasterKey =
-    apiEnabled && !CORE_MASTER_KEYS.includes(requestedKey as CoreApiMasterKey)
-      ? "departments"
-      : requestedKey;
+  const requestedKey = activeKey;
+  if (apiEnabled && !CORE_MASTER_KEYS.includes(requestedKey as CoreApiMasterKey)) {
+    activeKey = "departments";
+  }
   const page = search.page ?? 1;
   const serverSearch = search.q ?? "";
   const [parentSearch, setParentSearch] = useState("");
@@ -909,8 +909,6 @@ function MasterDataScreen() {
     </Tabs>
   );
 }
-
-export { MasterDataScreen };
 
 function normalizeCode(value: string): string {
   return value
