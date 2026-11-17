@@ -28,6 +28,8 @@ import {
   resolveCoveragePython,
   resolveTrustedExecutable,
   sanitizedCoverageEnvironment,
+  semanticPlanBase,
+  semanticPlanHistoryLimit,
   selectCoverageIntegrationPool,
   selectCoverageIntegrationValkey,
   selectFinalizerDependencies,
@@ -75,6 +77,62 @@ test("semantic contracts validate supported non-line coverage paths and reject p
   const workflow = `name: test\non:\n  pull_request: {}\njobs:\n  changed-coverage:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: node scripts/agent/changed-coverage.mjs --run-full-suite --confirm-disposable-services --base "$COVERAGE_BASE" --head HEAD\n  deploy-backend:\n    needs: [changed-coverage]\n    runs-on: ubuntu-latest\n`;
   assert.match(validateSemanticPath(root, ".github/workflows/branch-ci-cd.yml", workflow, "base"), /semantic contract passed/);
   assert.throws(() => validateSemanticPath(root, ".github/workflows/branch-ci-cd.yml", workflow.replace("--head HEAD", "--head HEAD\n        continue-on-error: true"), "base"), /continue-on-error/);
+});
+
+test("semantic verifier selects committed changes for identical-tree promotion commits", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-semantic-promotion-"));
+  roots.push(root);
+  git(root, "init", "-q");
+  const sourceRoot = process.cwd();
+  const shell = readFileSync(join(sourceRoot, "scripts/agent/verify-change.sh"), "utf8");
+  write(root, "scripts/agent/verify-change.sh", shell);
+  write(root, "scripts/agent/lib.sh", readFileSync(join(sourceRoot, "scripts/agent/lib.sh"), "utf8"));
+  write(root, "marker.txt", "before\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "initial tree");
+  const changedBase = git(root, "rev-parse", "HEAD");
+  git(root, "switch", "-qc", "release");
+  write(root, "marker.txt", "release\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "release change");
+  const releaseBase = git(root, "rev-parse", "HEAD");
+  git(root, "switch", "-qc", "qa", changedBase);
+  git(root, "merge", "--no-ff", "-qm", "history-preserving promotion", "release");
+
+  assert.equal(semanticPlanBase(root, changedBase), changedBase);
+  assert.equal(semanticPlanBase(root, releaseBase), changedBase);
+  assert.doesNotThrow(() => validateSemanticPath(root, "scripts/agent/verify-change.sh", shell, releaseBase));
+  assert.throws(() => validateSemanticPath(root, "scripts/agent/verify-change.sh", shell.replace("Selected verification plan:", "Other plan:"), releaseBase), /protected checks/);
+
+  const boundedRoot = mkdtempSync(join(tmpdir(), "hrms-semantic-bounded-"));
+  roots.push(boundedRoot);
+  git(boundedRoot, "init", "-q");
+  write(boundedRoot, "marker.txt", "before\n");
+  git(boundedRoot, "add", ".");
+  git(boundedRoot, "commit", "-qm", "meaningful ancestor");
+  const meaningfulBase = git(boundedRoot, "rev-parse", "HEAD");
+  write(boundedRoot, "marker.txt", "release\n");
+  git(boundedRoot, "add", ".");
+  git(boundedRoot, "commit", "-qm", "release change");
+  for (let index = 1; index < semanticPlanHistoryLimit; index += 1) {
+    git(boundedRoot, "commit", "--allow-empty", "-qm", `history-only ${index}`);
+  }
+  const boundedBase = git(boundedRoot, "rev-parse", "HEAD");
+  git(boundedRoot, "commit", "--allow-empty", "-qm", "bounded promotion");
+  assert.equal(semanticPlanBase(boundedRoot, boundedBase), meaningfulBase);
+  const overLimitBase = git(boundedRoot, "rev-parse", "HEAD");
+  git(boundedRoot, "commit", "--allow-empty", "-qm", "over-limit promotion");
+  assert.throws(() => semanticPlanBase(boundedRoot, overLimitBase), /exceeded 64 identical-tree commits/);
+
+  const unchangedRoot = mkdtempSync(join(tmpdir(), "hrms-semantic-unchanged-"));
+  roots.push(unchangedRoot);
+  git(unchangedRoot, "init", "-q");
+  write(unchangedRoot, "marker.txt", "unchanged\n");
+  git(unchangedRoot, "add", ".");
+  git(unchangedRoot, "commit", "-qm", "only tree");
+  const unchangedBase = git(unchangedRoot, "rev-parse", "HEAD");
+  git(unchangedRoot, "commit", "--allow-empty", "-qm", "empty promotion");
+  assert.throws(() => semanticPlanBase(unchangedRoot, unchangedBase), /requires an ancestor with committed changes/);
 });
 
 test("semantic contracts fail closed for each workflow, manifest, lock, runner and shell invariant", () => {
