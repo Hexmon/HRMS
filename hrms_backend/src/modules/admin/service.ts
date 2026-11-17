@@ -796,8 +796,7 @@ export class AdminService {
         current_version: existing.version,
       });
     }
-    const parentId =
-      input.parent_department_id !== undefined || input.parent_id !== undefined
+    const parentId = input.parent_department_id !== undefined || input.parent_id !== undefined
         ? (input.parent_department_id ?? input.parent_id ?? null)
         : existing.parent_department_id;
     this.assertValidDepartmentParent(companyId, parentId, id);
