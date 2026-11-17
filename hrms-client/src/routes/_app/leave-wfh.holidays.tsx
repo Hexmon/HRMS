@@ -399,8 +399,7 @@ export function HolidaysPage() {
   );
 }
 
-function initialHolidayCursor(): { y: number; m: number } {
-  const today = new Date();
+export function initialHolidayCursor(today = new Date()): { y: number; m: number } {
   if (typeof window === "undefined") return { y: today.getFullYear(), m: today.getMonth() };
   return holidayCursorFromHref(window.location.href, today);
 }

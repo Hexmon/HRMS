@@ -33,6 +33,7 @@ import {
   holidayCursorFromHref,
   HolidaysPage,
   hrefWithHolidayCursor,
+  initialHolidayCursor,
 } from "@/routes/_app/leave-wfh.holidays";
 
 const firstId = "11111111-1111-4111-8111-111111111111";
@@ -187,7 +188,10 @@ describe("holiday create form retry", () => {
       },
     ];
     render(<HolidaysPage />);
-    fireEvent.click(screen.getByRole("tab", { name: "Calendar" }));
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Calendar" }), {
+      button: 0,
+      ctrlKey: false,
+    });
     expect(screen.getByText("Regional Day")).toBeInTheDocument();
     expect(screen.getByText("Optional Day")).toBeInTheDocument();
   });
@@ -203,6 +207,44 @@ describe("holiday create form retry", () => {
     expect(
       hrefWithHolidayCursor("https://hrms.example/leave-wfh/holidays", { y: 2026, m: 11 }).search,
     ).toBe("?month=2026-12");
+  });
+
+  it("preserves calendar navigation across January and December URL boundaries", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-17T12:00:00.000Z"));
+    window.history.replaceState({}, "", "/leave-wfh/holidays?month=2027-01");
+    mock.holidays = [
+      {
+        id: firstId,
+        name: "January Boundary Day",
+        date: "2027-01-01",
+        region: "All",
+        optional: false,
+        expectedVersion: 1,
+      },
+    ];
+    render(<HolidaysPage />);
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Calendar" }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    expect(screen.getByRole("heading", { name: "January 2027" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous month" }));
+    expect(screen.getByRole("heading", { name: "December 2026" })).toBeInTheDocument();
+    expect(window.location.search).toBe("?month=2026-12");
+
+    fireEvent.click(screen.getByRole("button", { name: "Next month" }));
+    expect(screen.getByRole("heading", { name: "January 2027" })).toBeInTheDocument();
+    expect(window.location.search).toBe("?month=2027-01");
+  });
+
+  it("falls back to the current month when rendered without a browser window", () => {
+    const originalWindow = window;
+    const today = new Date("2026-11-17T12:00:00.000Z");
+    vi.stubGlobal("window", undefined);
+    expect(initialHolidayCursor(today)).toEqual({ y: 2026, m: 10 });
+    vi.stubGlobal("window", originalWindow);
   });
 
   it("edits with the displayed version and keeps the draft after a stale conflict", async () => {
