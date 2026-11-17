@@ -141,6 +141,7 @@ When backend routes/schemas change:
 cd hrms_backend
 pnpm api:docs:generate
 pnpm api:docs:verify
+cd ..
 ```
 
 This updates:
@@ -149,7 +150,17 @@ This updates:
 - `hrms_backend/docs/api/frontend-contract/openapi.json`
 - `hrms_backend/docs/api/frontend-contract/ENDPOINT_INDEX.md`
 
-The frontend has mirrored API docs under `hrms-client/docs/api/`; keep them in sync if the project process requires mirrored client-side references.
+The frontend has generated mirrors under `hrms-client/docs/api/`. After generation,
+copy the canonical artifacts rather than hand-editing their contents:
+
+```bash
+cp hrms_backend/docs/api/openapi.json hrms-client/docs/api/openapi.json
+cp hrms_backend/docs/api/frontend-contract/openapi.json hrms-client/docs/api/frontend-contract/openapi.json
+cp hrms_backend/docs/api/frontend-contract/ENDPOINT_INDEX.md hrms-client/docs/api/frontend-contract/ENDPOINT_INDEX.md
+```
+
+The backend unit suite compares these mirrors byte-for-byte and fails when a
+frontend copy is stale.
 
 ## Local Troubleshooting
 
