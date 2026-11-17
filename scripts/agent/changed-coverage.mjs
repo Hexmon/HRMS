@@ -1443,6 +1443,21 @@ function validateVitestConfig(path, content, frontend) {
   }
 }
 
+export const semanticPlanHistoryLimit = 64;
+
+export function semanticPlanBase(root, base) {
+  const headTree = git(root, "rev-parse", "HEAD^{tree}").trim();
+  const baseTree = git(root, "rev-parse", `${base}^{tree}`).trim();
+  if (baseTree !== headTree) return base;
+  const history = git(root, "log", "--first-parent", `--max-count=${semanticPlanHistoryLimit + 1}`, "--format=%H %T", base).trim().split("\n");
+  for (const entry of history) {
+    const [commit, tree] = entry.split(" ");
+    if (tree !== headTree) return commit;
+  }
+  if (history.length > semanticPlanHistoryLimit) throw new Error(`Semantic verifier plan exceeded ${semanticPlanHistoryLimit} identical-tree commits`);
+  throw new Error("Semantic verifier plan requires an ancestor with committed changes");
+}
+
 function validateShellVerifier(root, path, content, base) {
   requireText(path, content, /^set -euo pipefail$/m, "strict shell mode is missing");
   requireText(path, content, /source\s+.*BASH_SOURCE\[0\]/, "shared shell helpers are not loaded safely");
@@ -1461,7 +1476,7 @@ function validateShellVerifier(root, path, content, base) {
     writeFileSync(join(semanticLibDir, "lib.sh"), sharedLib, { mode: 0o644 });
     const syntax = spawnSync("bash", ["-n", semanticScript], { encoding: "utf8" });
     if (syntax.status !== 0) semanticFailure(path, `bash -n failed: ${syntax.stderr.trim()}`);
-    const plan = spawnSync("bash", [semanticScript, "--plan", "--base", base], {
+    const plan = spawnSync("bash", [semanticScript, "--plan", "--base", semanticPlanBase(root, base)], {
       cwd: root,
       env: { ...process.env, HRMS_REPO_ROOT: root },
       encoding: "utf8",
