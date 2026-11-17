@@ -287,6 +287,7 @@ test.describe("holiday real-user journey", () => {
       ).status,
     ).toBe(200);
 
+    await page.goto("/leave-wfh/holidays?month=2026-11", { waitUntil: "networkidle" });
     await page.getByRole("tab", { name: "Calendar" }).click();
     await page.getByRole("button", { name: "Next month" }).click();
     await expect(page.getByRole("heading", { name: "December 2026" })).toBeVisible();

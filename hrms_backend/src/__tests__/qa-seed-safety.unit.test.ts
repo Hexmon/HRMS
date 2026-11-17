@@ -265,6 +265,33 @@ describe("QA seed target guard", () => {
     expect(calls).toEqual(["preflight", "release", "extras"]);
   });
 
+  it("prevents both mutation phases when remote QA marker preflight fails", async () => {
+    const calls: string[] = [];
+    const remoteQa = {
+      ...safe,
+      APP_ENV: "qa",
+      DATABASE_URL: "postgresql://qa:sample@qa-db.example/hrms_qa",
+      HRMS_QA_SEED_CONFIRM_DATABASE: "hrms_qa",
+      HRMS_QA_SEED_DATABASE_FINGERPRINT: "qa-project-42",
+    };
+    const query = vi.fn().mockResolvedValue({
+      rows: [{ database_name: "hrms_qa", database_marker: "hawkaii-qa:wrong-project" }],
+    });
+
+    await expect(
+      runGuardedQaSeed(remoteQa, {
+        preflight: async () => {
+          calls.push("preflight");
+          await verifyQaSeedDatabaseIdentity({ query }, remoteQa);
+        },
+        releaseSeed: async () => calls.push("release"),
+        extrasSeed: async () => calls.push("extras"),
+      }),
+    ).rejects.toThrow(/independently provisioned QA marker/);
+
+    expect(calls).toEqual(["preflight"]);
+  });
+
   it("rejects an inactive or non-admin preflight context", async () => {
     const inactive = vi.fn()
       .mockResolvedValueOnce({ rows: [] })
