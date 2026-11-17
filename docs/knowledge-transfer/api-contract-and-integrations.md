@@ -127,7 +127,7 @@ Frontend config keys:
 | Integration | Required In Hosted Environments | Notes |
 | --- | --- | --- |
 | PostgreSQL / Neon | Yes | Each env must have its own connection string or Neon branch. |
-| Valkey / Render Key Value | Yes | Used for sessions, rate-limit state, and outbox streams. Do not share across environments. |
+| Upstash Redis / Valkey | Yes | Used for sessions, rate-limit state, and outbox streams. Use the TLS TCP URL and do not share across environments. |
 | Cloudinary | Yes for real media persistence | Hosted envs must set `CLOUDINARY_MOCK_UPLOADS=false`. |
 | Resend | Required when email send mode is enabled | App owns token validity; Resend is only transport/delivery telemetry. |
 | Vercel | Frontend hosting | One project per hosted environment is recommended. |

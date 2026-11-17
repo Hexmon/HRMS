@@ -2,7 +2,7 @@
 
 Last verified from the repository: 2026-06-30.
 
-This is the short implementation index. The detailed historical log remains in `HRMS_PRODUCTION_TASK_SHEET.md`.
+This is the short implementation index. The detailed historical log remains in `HRMS_PRODUCTION_TASK_SHEET.md`; current sprint ownership and delivery status live in the [shared task sheet](https://docs.google.com/spreadsheets/d/1dr5qLKxq5IGIZAyIAdMlcDYDfld-LYxfvSHkKw1jBnA/edit?usp=sharing).
 
 ## Current Verified Snapshot
 
@@ -26,6 +26,7 @@ This is the short implementation index. The detailed historical log remains in `
 | Which DB schema exists? | `hrms_backend/src/db/schema.ts`, `hrms_backend/src/db/migrations/` |
 | Which hosted environments exist? | `docs/deployment/environment-matrix.md` |
 | Which work remains or was deferred historically? | `HRMS_PRODUCTION_TASK_SHEET.md`, `qa/FUTURE_SCOPE_AFTER_TEST_SHEET.md` |
+| Which tasks are assigned in the current sprint? | Shared task sheet, using `docs/process/task-tracker.md` for dates, points, and evidence rules. |
 
 ## Verification Commands
 

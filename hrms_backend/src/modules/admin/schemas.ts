@@ -5,7 +5,8 @@ export const masterDataQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   page_size: z.coerce.number().int().min(1).max(100).default(25),
   active_only: z.coerce.boolean().optional(),
-  search: z.string().max(160).optional()
+  search: z.string().max(160).optional(),
+  parent_candidate_for: z.uuid().optional()
 });
 
 export const rbacRolesQuerySchema = z.object({

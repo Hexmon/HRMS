@@ -4,6 +4,7 @@ import { AssetStatuses, EmploymentStatuses, Roles } from "#shared";
 import { seedIds } from "../src/platform/data-store.js";
 import { getReleaseSeedEmails } from "../src/platform/seed-personas.js";
 import { loadRuntimeEnv, requireEnv } from "./env.js";
+import { rethrowAfterQaSeedRollback } from "./qa-seed-safety.js";
 
 loadRuntimeEnv();
 const localDemoPassword = getLocalDemoPassword();
@@ -207,8 +208,7 @@ try {
   await client.query("COMMIT");
   console.log("Release seed data inserted or already present.");
 } catch (error) {
-  await client.query("ROLLBACK");
-  throw error;
+  await rethrowAfterQaSeedRollback(client, error);
 } finally {
   await client.end();
 }

@@ -1,5 +1,6 @@
 import { randomBytes, randomUUID, createHash } from "node:crypto";
 import type { Pool } from "pg";
+import type { Redis as Valkey } from "iovalkey";
 import type {
   AssetRecord,
   AttendanceDayRecord,
@@ -34,6 +35,7 @@ import type {
   ExpenseSubType,
   ExpenseTicket,
   Holiday,
+  HolidayUpsertInput,
   LeaveRequest,
   ManagerBackupAssignment,
   OutboxEvent,
@@ -101,6 +103,12 @@ import {
   type PdfCompressionOptions,
 } from "./pdf-compression.js";
 import type { EmailDeliveryRecord, EmailEventRecord } from "./email/types.js";
+import type {
+  DepartmentCreateInput,
+  DepartmentUpdateInput,
+  DesignationCreateInput,
+  DesignationUpdateInput,
+} from "../modules/admin/schemas.js";
 
 export interface NotificationRecord {
   id: UUID;
@@ -430,8 +438,27 @@ export interface ObjectStoragePort {
   removeObject(key: string): Promise<void>;
 }
 
+export interface AuthMutationScopeHandle {
+  userIds: UUID[];
+  signupEmployeeCode?: string;
+  flushAuth(options: AuthPersistenceFlushOptions): Promise<void>;
+  flushCompanyBootstrap(options: AuthPersistenceFlushOptions): Promise<void>;
+  release(): Promise<void>;
+}
+
+export type DepartmentMutationRecord = Department & {
+  parent_department_name: string | null;
+};
+
 export interface DataStorePersistence {
   flush(): Promise<void>;
+  acquireAuthMutationScope?(scope: {
+    userIds: readonly UUID[];
+    emails: readonly string[];
+    employeeCodes: readonly string[];
+    tokenHashes: readonly string[];
+    companySlugs?: readonly string[];
+  }): Promise<AuthMutationScopeHandle>;
   flushAuth?(options?: AuthPersistenceFlushOptions): Promise<void>;
   flushCompanyBootstrap?(options?: AuthPersistenceFlushOptions): Promise<void>;
   flushCompanyLogo?(
@@ -442,6 +469,21 @@ export interface DataStorePersistence {
     options?: DomainPersistenceFlushOptions,
   ): Promise<void>;
   reload(): Promise<void>;
+  /** Transaction-owned holiday command; current actor/company/role are read from SQL. */
+  upsertHoliday?(actorUserId: UUID, id: UUID, input: HolidayUpsertInput): Promise<Holiday>;
+  /** Request-local company-scoped read, not a hydrated startup snapshot. */
+  holidaysForActor?(actorUserId: UUID, year: number): Promise<Holiday[]>;
+  /** Request-local working-week read paired with the actor's company context. */
+  workingWeekForActor?(actorUserId: UUID): Promise<string>;
+  departmentsForActor?(actorUserId: UUID): Promise<Department[]>;
+  createDepartmentForActor?(actorUserId: UUID, input: DepartmentCreateInput): Promise<DepartmentMutationRecord>;
+  updateDepartmentForActor?(actorUserId: UUID, id: UUID, input: DepartmentUpdateInput): Promise<DepartmentMutationRecord>;
+  designationsForActor?(actorUserId: UUID): Promise<Designation[]>;
+  createDesignationForActor?(actorUserId: UUID, input: DesignationCreateInput): Promise<Designation>;
+  updateDesignationForActor?(actorUserId: UUID, id: UUID, input: DesignationUpdateInput): Promise<Designation>;
+  attendanceReadStore?(scope: { companyId: UUID; employeeUserIds?: UUID[]; includePendingOutbox?: boolean }): Promise<DataStore>;
+  reportExportReadStore?(scope: { companyId?: UUID; exportId?: UUID }): Promise<DataStore>;
+  auditReportReadContext?(userId: UUID): Promise<{ actor: AuthUser; companyId: UUID; store: DataStore }>;
   close(): Promise<void>;
 }
 
@@ -588,6 +630,7 @@ export interface DataStore {
   documentProcessing: DocumentProcessingConfig;
   persistence: DataStorePersistence | null;
   pgPool: Pool | null;
+  valkey: Valkey | null;
   nextOutboxId: number;
   nextTicketNo: number;
 }
@@ -2500,6 +2543,7 @@ export function createMemoryDataStore(): MemoryDataStore {
     },
     persistence: null,
     pgPool: null,
+    valkey: null,
     nextOutboxId: 1,
     nextTicketNo: 1,
   };

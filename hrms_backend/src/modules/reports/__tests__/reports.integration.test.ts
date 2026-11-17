@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { authHeader, loginAs, projectTravelPayload } from "#testing";
 import { buildRealApp } from "../../../__tests__/real-infra.js";
+import { appendOutboxEvent } from "../../expenses/events.js";
 
 const originalDatabaseUrl = process.env.DATABASE_URL;
 
@@ -162,6 +164,202 @@ describe("non-expense reports", () => {
     }
   });
 
+  it("keeps audit rows in their original company and fails closed without company context", async () => {
+    const admin = await loginAs(app, "ADM");
+    const employee = await loginAs(app, "E1");
+    const adminPreference = app.store.userSessionPreferences.find((row) => row.user_id === admin.user.id)!;
+    const employeePreference = app.store.userSessionPreferences.find((row) => row.user_id === employee.user.id)!;
+    const originalCompanyId = adminPreference.company_id!;
+    const otherCompanyId = randomUUID();
+    app.store.companyProfiles.push({
+      ...app.store.companyProfiles.find((row) => row.id === originalCompanyId)!,
+      id: otherCompanyId,
+      company_slug: `audit-test-${otherCompanyId}`,
+    });
+
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/v1/expenses",
+      headers: authHeader(employee.token),
+      payload: projectTravelPayload,
+    });
+    expect(created.statusCode).toBe(200);
+    const ticketId = created.json().id as string;
+    expect(app.store.tickets.find((ticket) => ticket.id === ticketId)?.context_payload.company_id).toBe(originalCompanyId);
+
+    const foreignEvent = appendOutboxEvent(app.store, {
+      aggregateType: "report_export",
+      aggregateId: randomUUID(),
+      eventType: "reports.export.requested",
+      payload: { company_id: otherCompanyId, actor_user_id: admin.user.id },
+      idempotencyKey: `audit-foreign-${randomUUID()}`,
+    });
+    const unscopedEvent = appendOutboxEvent(app.store, {
+      aggregateType: "report_export",
+      aggregateId: randomUUID(),
+      eventType: "reports.export.requested",
+      payload: { actor_user_id: admin.user.id },
+      idempotencyKey: `audit-unscoped-${randomUUID()}`,
+    });
+    const unscopedAssetEventId = randomUUID();
+    const unscopedHelpdeskEventId = randomUUID();
+    app.store.assetStateEvents.push({
+      id: unscopedAssetEventId,
+      asset_id: randomUUID(),
+      actor_user_id: admin.user.id,
+      event_type: "asset.test_unscoped",
+      payload: {},
+      created_at: new Date().toISOString(),
+    });
+    app.store.helpdeskEvents.push({
+      id: unscopedHelpdeskEventId,
+      ticket_id: randomUUID(),
+      actor_user_id: admin.user.id,
+      actor_name: admin.user.full_name,
+      action: "helpdesk.test_unscoped",
+      detail: null,
+      created_at: new Date().toISOString(),
+    });
+    await app.store.persistence!.flush();
+    const readAudit = () => app.inject({
+      method: "GET",
+      url: "/api/v1/reports/audit?page=1&page_size=100",
+      headers: authHeader(admin.token),
+    });
+
+    employeePreference.company_id = otherCompanyId;
+    const originalCompanyAudit = await readAudit();
+    expect(originalCompanyAudit.statusCode).toBe(200);
+    expect(originalCompanyAudit.json().items.some((row: { target: string }) => row.target === ticketId)).toBe(true);
+    expect(originalCompanyAudit.json().items.some((row: { id: string }) => [
+      foreignEvent.event_id,
+      unscopedEvent.event_id,
+      unscopedAssetEventId,
+      unscopedHelpdeskEventId,
+    ].includes(row.id))).toBe(false);
+
+    adminPreference.company_id = otherCompanyId;
+    await app.store.pgPool!.query(
+      "UPDATE platform.user_session_preferences SET company_id = $1 WHERE user_id = $2",
+      [otherCompanyId, admin.user.id],
+    );
+    const otherCompanyAudit = await readAudit();
+    expect(otherCompanyAudit.statusCode).toBe(200);
+    expect(otherCompanyAudit.json().items.some((row: { id: string }) => row.id === foreignEvent.event_id)).toBe(true);
+    expect(otherCompanyAudit.json().items.some((row: { target: string }) => row.target === ticketId)).toBe(false);
+
+    adminPreference.company_id = null;
+    await app.store.pgPool!.query(
+      "UPDATE platform.user_session_preferences SET company_id = NULL WHERE user_id = $1",
+      [admin.user.id],
+    );
+    const noCompanyAudit = await readAudit();
+    expect(noCompanyAudit.statusCode).toBe(400);
+    expect(noCompanyAudit.json().code).toBe("COMPANY_CONTEXT_REQUIRED");
+
+    employeePreference.company_id = null;
+    const noCompanyExpense = await app.inject({
+      method: "POST",
+      url: "/api/v1/expenses",
+      headers: authHeader(employee.token),
+      payload: projectTravelPayload,
+    });
+    expect(noCompanyExpense.statusCode).toBe(400);
+    expect(noCompanyExpense.json().code).toBe("COMPANY_CONTEXT_REQUIRED");
+  });
+
+  it("uses committed audit events and current company and role after another process changes them", async () => {
+    const auditor = await loginAs(app, "AUD");
+    const preference = app.store.userSessionPreferences.find((row) => row.user_id === auditor.user.id)!;
+    const originalCompanyId = preference.company_id!;
+    const otherCompanyId = randomUUID();
+    const originalEventId = randomUUID();
+    const otherEventId = randomUUID();
+    await app.store.pgPool!.query(
+      `INSERT INTO platform.company_profiles (id, company_name, company_slug, status)
+       VALUES ($1, 'Audit transfer company', $2, 'active')`,
+      [otherCompanyId, `audit-transfer-${otherCompanyId}`],
+    );
+    for (const [eventId, companyId] of [[originalEventId, originalCompanyId], [otherEventId, otherCompanyId]]) {
+      await app.store.pgPool!.query(
+        `INSERT INTO platform.outbox_events (event_id, aggregate_type, aggregate_id, event_type, payload, idempotency_key)
+         VALUES ($1, 'report_export', $2, 'reports.export.requested', $3::jsonb, $4)`,
+        [eventId, randomUUID(), JSON.stringify({ company_id: companyId, actor_user_id: auditor.user.id }), `audit-fresh-${eventId}`],
+      );
+    }
+    const readAudit = () => app.inject({
+      method: "GET", url: "/api/v1/reports/audit?page=1&page_size=100", headers: authHeader(auditor.token),
+    });
+
+    const original = await readAudit();
+    expect(original.statusCode).toBe(200);
+    expect(original.json().items.some((row: { id: string }) => row.id === originalEventId)).toBe(true);
+    expect(original.json().items.some((row: { id: string }) => row.id === otherEventId)).toBe(false);
+
+    await app.store.pgPool!.query(
+      "UPDATE platform.user_session_preferences SET company_id = $1 WHERE user_id = $2",
+      [otherCompanyId, auditor.user.id],
+    );
+    const transferred = await readAudit();
+    expect(transferred.statusCode).toBe(200);
+    expect(transferred.json().items.some((row: { id: string }) => row.id === otherEventId)).toBe(true);
+    expect(transferred.json().items.some((row: { id: string }) => row.id === originalEventId)).toBe(false);
+
+    await app.store.pgPool!.query(
+      "UPDATE core.user_roles SET status = 'inactive' WHERE user_id = $1 AND role_key = 'Auditor'",
+      [auditor.user.id],
+    );
+    const revoked = await readAudit();
+    expect(revoked.statusCode).toBe(403);
+
+    await app.store.pgPool!.query(
+      "UPDATE core.user_roles SET status = 'active' WHERE user_id = $1 AND role_key = 'Auditor'",
+      [auditor.user.id],
+    );
+    await app.store.pgPool!.query(
+      "UPDATE platform.company_profiles SET status = 'inactive' WHERE id = $1",
+      [otherCompanyId],
+    );
+    const inactiveCompany = await readAudit();
+    expect(inactiveCompany.statusCode).toBe(400);
+    expect(inactiveCompany.json().code).toBe("COMPANY_CONTEXT_REQUIRED");
+
+    await app.store.pgPool!.query(
+      "UPDATE platform.company_profiles SET status = 'active' WHERE id = $1",
+      [otherCompanyId],
+    );
+    await app.store.pgPool!.query(
+      "UPDATE core.users SET employment_status = 'inactive' WHERE id = $1",
+      [auditor.user.id],
+    );
+    const inactiveUser = await readAudit();
+    expect(inactiveUser.statusCode).toBe(401);
+  });
+
+  it("requires active company context before attendance reporting or export creation", async () => {
+    const admin = await loginAs(app, "ADM");
+    const preference = app.store.userSessionPreferences.find((candidate) => candidate.user_id === admin.user.id);
+    expect(preference).toBeDefined();
+    preference!.company_id = null;
+
+    const summary = await app.inject({
+      method: "GET",
+      url: "/api/v1/reports/attendance/summary?page=1&page_size=10",
+      headers: authHeader(admin.token),
+    });
+    expect(summary.statusCode).toBe(400);
+    expect(summary.json().code).toBe("COMPANY_CONTEXT_REQUIRED");
+
+    const exportRequest = await app.inject({
+      method: "POST",
+      url: "/api/v1/reports/exports",
+      headers: authHeader(admin.token),
+      payload: { report_type: "attendance", format: "csv", filters: {} },
+    });
+    expect(exportRequest.statusCode).toBe(400);
+    expect(exportRequest.json().code).toBe("COMPANY_CONTEXT_REQUIRED");
+  });
+
   it("returns non-expense summary reports and document-backed export jobs", async () => {
     const admin = await loginAs(app, "ADM");
     const employee = await loginAs(app, "E1");
@@ -263,6 +461,43 @@ describe("non-expense reports", () => {
     expect(detail.statusCode).toBe(200);
     expect(detail.json().event_id).toBe(createExport.json().event_id);
     expect(detail.json().download_document_id).toBe(createExport.json().download_document_id);
+
+    // Fresh PostgreSQL export reads must not make an admin's export visible
+    // after the actor switches to a different company context.
+    const adminPreference = app.store.userSessionPreferences.find((preference) => preference.user_id === admin.user.id)!;
+    const originalCompanyId = adminPreference.company_id;
+    adminPreference.company_id = randomUUID();
+    try {
+      const otherCompanyList = await app.inject({
+        method: "GET", url: "/api/v1/reports/exports?page=1&page_size=10",
+        headers: authHeader(admin.token)
+      });
+      expect(otherCompanyList.statusCode).toBe(200);
+      expect(otherCompanyList.json().items).toEqual([]);
+      const otherCompanyDetail = await app.inject({
+        method: "GET", url: `/api/v1/reports/exports/${createExport.json().id}`,
+        headers: authHeader(admin.token)
+      });
+      expect(otherCompanyDetail.statusCode).toBe(403);
+    } finally {
+      adminPreference.company_id = originalCompanyId;
+    }
+
+    await app.store.pgPool!.query(
+      "UPDATE platform.outbox_events SET payload = payload - 'company_id' WHERE event_id = $1",
+      [createExport.json().event_id],
+    );
+    const legacyList = await app.inject({
+      method: "GET", url: "/api/v1/reports/exports?page=1&page_size=10",
+      headers: authHeader(admin.token)
+    });
+    expect(legacyList.statusCode).toBe(200);
+    expect(legacyList.json().items.some((item: { id: string }) => item.id === createExport.json().id)).toBe(false);
+    const legacyDetail = await app.inject({
+      method: "GET", url: `/api/v1/reports/exports/${createExport.json().id}`,
+      headers: authHeader(admin.token)
+    });
+    expect(legacyDetail.statusCode).toBe(403);
 
     const audit = await app.inject({
       method: "GET",

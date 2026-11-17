@@ -97,7 +97,7 @@ function listFromEnv(name: string, fallback: string): string[] {
     .filter(Boolean);
 }
 
-const publisher = new ValkeyStreamPublisher(valkeyUrl);
+const publisher = new ValkeyStreamPublisher(store.valkey ?? valkeyUrl);
 const worker = new OutboxWorker(store, publisher);
 const attendanceAutoPunchoutWorker = new AttendanceAutoPunchoutWorker(store);
 const attendanceCoordinatePurgeWorker = new AttendanceCoordinatePurgeWorker(store);

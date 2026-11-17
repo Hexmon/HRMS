@@ -39,6 +39,7 @@ import type {
   EmailDeliveryStatus,
 } from "../../platform/email/types.js";
 import { DocumentService } from "../documents/service.js";
+import { normalizeCompanySlug } from "./company-slug.js";
 import { AuthRepository } from "./repository.js";
 import type {
   CompanyBootstrapInput,
@@ -115,6 +116,7 @@ interface GeneratedToken {
 interface AuthRequestContext {
   ip?: string;
   userAgent?: string;
+  signupEmployeeCode?: string;
 }
 
 interface VerificationEmailSendInput {
@@ -202,6 +204,11 @@ export class AuthService {
         email: maskEmail(email),
       });
     }
+    if (existingCompany && !existingUser) {
+      throw conflict("Company workspace is already reserved by another signup.", {
+        company_slug: companySlug,
+      });
+    }
 
     if (existingUser) {
       if (isPendingEmailVerification(existingUser)) {
@@ -266,6 +273,7 @@ export class AuthService {
       fullName: input.full_name,
       timezone: input.timezone,
       now,
+      employeeCode: context.signupEmployeeCode,
     });
     const verification = await this.sendVerificationEmail({
       user,
@@ -802,8 +810,9 @@ export class AuthService {
     fullName: string;
     timezone: string;
     now: string;
+    employeeCode?: string;
   }): CoreUser {
-    const employeeCode = nextSignupEmployeeCode(this.store);
+    const employeeCode = input.employeeCode ?? nextSignupEmployeeCode(this.store);
     const user: CoreUser = {
       id: randomUUID(),
       employee_code: employeeCode,
@@ -940,6 +949,7 @@ export class AuthService {
     if (!company) {
       return null;
     }
+    this.revokeActiveTokensForUser(user.id, "company_bootstrap");
     return this.createToken({
       type: "company_bootstrap",
       userId: user.id,
@@ -1429,12 +1439,7 @@ function maskEmail(email: string): string {
 }
 
 function slugify(value: string): string {
-  const slug = value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/gu, "-")
-    .replace(/^-+|-+$/gu, "");
-  return slug || "hrms";
+  return normalizeCompanySlug(value);
 }
 
 function tokenHash(token: string): string {
@@ -1456,6 +1461,9 @@ function nextSignupEmployeeCode(store: MemoryDataStore): string {
 }
 
 function devOnly(value: Record<string, unknown>): Record<string, unknown> {
+  // A production runtime must never reveal raw verification/reset tokens,
+  // even if APP_ENV was accidentally left at a local-development value.
+  if (process.env.NODE_ENV === "production") return {};
   const appEnv =
     process.env.APP_ENV ??
     (process.env.NODE_ENV === "production" ? "production" : "local");

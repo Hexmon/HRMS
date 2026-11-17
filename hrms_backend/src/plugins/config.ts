@@ -1,8 +1,22 @@
 import fp from "fastify-plugin";
 import { z } from "zod";
 import { runtimeDefaults } from "../config/runtime-defaults.js";
+import { validateValkeyUrl } from "../platform/valkey-client.js";
 
 const optionalUrl = z.preprocess((value) => value === "" ? undefined : value, z.string().url().optional());
+const optionalValkeyUrl = z.preprocess(
+  (value) => value === "" ? undefined : value,
+  z.string().superRefine((value, context) => {
+    try {
+      validateValkeyUrl(value);
+    } catch (error) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: error instanceof Error ? error.message : "Invalid VALKEY_URL.",
+      });
+    }
+  }).optional(),
+);
 const booleanEnv = z.preprocess((value) => {
   if (typeof value !== "string") return value;
   const normalized = value.trim().toLowerCase();
@@ -24,7 +38,7 @@ const configSchema = z.object({
   COOKIE_SECURE: booleanEnv.default(false),
   DATABASE_URL: z.string().optional(),
   TEST_DATABASE_URL: z.string().optional(),
-  VALKEY_URL: z.string().optional(),
+  VALKEY_URL: optionalValkeyUrl,
   HRMS_SEED_IF_EMPTY: booleanEnv.default(false),
   CLOUDINARY_CLOUD_NAME: z.string().default("local-cloudinary-mock"),
   CLOUDINARY_API_KEY: z.string().default("local-cloudinary-key"),

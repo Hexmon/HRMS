@@ -2,6 +2,7 @@ import type { OutboxEvent } from "#shared";
 import { Redis as Valkey } from "iovalkey";
 import type { MemoryDataStore } from "../platform/data-store.js";
 import { nowIso } from "../platform/data-store.js";
+import { createValkeyClient } from "../platform/valkey-client.js";
 import { safeOutboxLastError } from "./safe-error.js";
 
 export interface StreamPublisher {
@@ -18,21 +19,14 @@ export class MemoryStreamPublisher implements StreamPublisher {
 
 export class ValkeyStreamPublisher implements StreamPublisher {
   private readonly valkey: Valkey;
+  private readonly ownsClient: boolean;
 
-  constructor(valkeyUrl: string) {
-    this.valkey = new Valkey(valkeyUrl, {
-      lazyConnect: true,
-      maxRetriesPerRequest: 2
-    });
+  constructor(valkey: string | Valkey) {
+    this.ownsClient = typeof valkey === "string";
+    this.valkey = typeof valkey === "string" ? createValkeyClient(valkey) : valkey;
   }
 
   async publish(stream: string, event: OutboxEvent): Promise<void> {
-    await this.valkey.connect().catch((error: unknown) => {
-      if (error instanceof Error && /already connecting|already connected/iu.test(error.message)) {
-        return;
-      }
-      throw error;
-    });
     await this.valkey.xadd(
       stream,
       "*",
@@ -52,7 +46,9 @@ export class ValkeyStreamPublisher implements StreamPublisher {
   }
 
   close(): void {
-    this.valkey.disconnect();
+    if (this.ownsClient) {
+      this.valkey.disconnect();
+    }
   }
 }
 

@@ -83,13 +83,13 @@ if (!/HRMS_ALLOW_MEMORY_STORE/u.test(appBootstrap)) {
   violations.push("src/app.ts: memory store mode must require an explicit guard variable");
 }
 
-const outboxWorker = read("src/workers/outbox-worker.ts");
-if (/constructor\([^)]*new MemoryStreamPublisher\(\)/su.test(outboxWorker)) {
-  violations.push("src/workers/outbox-worker.ts: runtime outbox worker must not default to MemoryStreamPublisher");
+const cloudflareWorker = read("src/workers/cloudflare-worker.ts");
+const boundedJobs = read("src/workers/cloudflare-jobs.ts");
+if (!/async scheduled\(/u.test(cloudflareWorker) || !/async queue\(/u.test(cloudflareWorker)) {
+  violations.push("src/workers/cloudflare-worker.ts: runtime worker must expose Cron and Queue handlers");
 }
-const outboxRunner = read("src/workers/run-outbox-worker.ts");
-if (!/new ValkeyStreamPublisher\(valkeyUrl\)/u.test(outboxRunner) || /new MemoryStreamPublisher/u.test(outboxRunner)) {
-  violations.push("src/workers/run-outbox-worker.ts: runtime worker must use ValkeyStreamPublisher");
+if (!/FOR UPDATE SKIP LOCKED/u.test(boundedJobs) || !/OUTBOX_BATCH_SIZE/u.test(boundedJobs)) {
+  violations.push("src/workers/cloudflare-jobs.ts: outbox drain must remain bounded and row-coordinated");
 }
 
 const documentService = read("src/modules/documents/service.ts");

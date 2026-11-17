@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import {
   AttendanceApprovalKinds,
@@ -58,6 +58,12 @@ function dayRecord(
 }
 
 describe("AttendanceService team summary reporting evidence", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-01T00:00:00.000Z"));
+  });
+  afterEach(() => vi.useRealTimers());
+
   it("returns evidence category counts without changing attendance totals", () => {
     const store = createMemoryDataStore();
     const companyId = store.companyProfiles[0]!.id;

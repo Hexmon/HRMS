@@ -1,86 +1,32 @@
-# Worker Operations Runbook
+# Background Worker Operations
 
-Last verified from the repository: 2026-06-30.
+Last reviewed on 2026-10-23. Hosted Cloudflare cutover has **not** been executed. For provisioning, activation, reconciliation, replay, and rollback, use the [Cloudflare cutover runbook](../deployment/cloudflare-worker-cutover.md); this page is the day-to-day index, not authority to activate a Worker.
 
-This runbook covers backend background workers.
+## Current topology and transition
 
-## Workers
-
-| Worker | Main Files | Purpose |
+| Job | Before cutover: legacy Render worker | After reviewed cutover: Cloudflare Worker |
 | --- | --- | --- |
-| Outbox worker | `src/workers/outbox-worker.ts`, `src/workers/run-outbox-worker.ts` | Publishes pending business events to Valkey streams. |
-| Attendance auto punch-out worker | `src/workers/attendance-auto-punchout-worker.ts` | Closes expired attendance sessions according to policy/timezone. |
+| Outbox | `run-outbox-worker.ts` polls PostgreSQL and publishes `hrms.*` Redis Streams. No consumer is known; recheck before cutover. | One-minute Cron or best-effort API post-commit signal starts a bounded outbox drain. It sends durable `event_id` values to the business-event Queue, then marks accepted rows `published`. |
+| Attendance auto-checkout | The long-running worker checks overdue sessions. | Five-minute Cron starts bounded session batches. The existing transactional attendance command evaluates the original company's effective policy and timezone; PostgreSQL row locks and idempotency prevent duplicate checkout punches. No Hyperdrive advisory lock is used. |
+| Location cleanup | The long-running worker periodically purges expired coordinates. | Hourly Cron starts bounded transactional purge batches and continuation jobs. |
 
-## Local Outbox Worker
+The Cloudflare Worker defaults to inactive until the cutover gate is completed. Its Queues may already exist during staging, but they should have no production traffic; an unexpected delivery is deferred for retry rather than processed. Do not run both publishers indefinitely. Upstash Redis remains in use by the Render API for sessions and rate limiting; it is not the intended event transport after cutover.
 
-```bash
-cd hrms_backend
-pnpm worker:outbox
-```
+## Normal checks
 
-Production worker command:
+1. Identify the target environment, deployed API and Worker revisions, and whether its Render legacy worker or Cloudflare Worker is active. Do not infer deployed state from repository configuration.
+2. Check API readiness and the Worker's `/health` response. Query authenticated `/internal/lag` for pending outbox count/age, database `dead_letter` rows, open sessions, and expired unpurged coordinates. Monitor source Queue/DLQ backlog and Worker errors separately; a `published` outbox row means Queue acceptance, not downstream business completion.
+3. If a job is delayed, compare the last successful natural one-, five-, or sixty-minute Cron run with PostgreSQL state and Queue attempts. Business-event Queue failure logs include a validated `event_id` when one is available; use it to correlate the durable outbox row and later successful delivery. The logged error is deliberately redacted and may not establish the cause. Check Hyperdrive/Neon connectivity, Queue delivery pause state, and Render post-commit signal warnings. Do not reset rows or replay messages before identifying the affected event IDs and cause.
+4. Confirm user-visible results: one closed attendance session and checkout punch under its original company; no duplicate payroll punch after retry; expired precise coordinates redacted with one retention action; expense approval visible to the authorized manager. Keep tenant and payroll/location data out of ordinary logs.
 
-```bash
-pnpm worker:start
-```
+The `platform.outbox_events` states are `pending`, `retry`, `published`, and `dead_letter`. Database dead-letter rows and Cloudflare DLQ messages are different recovery surfaces. Follow the exact-ID replay procedures in the cutover runbook; never bulk-reset dead-letter rows.
 
-## Outbox Event States
+## Local synthetic verification
 
-```text
-pending
-retry
-published
-dead_letter
-```
+The isolated Docker stack and browser command are documented under “Provision one isolated environment at a time” in the [cutover runbook](../deployment/cloudflare-worker-cutover.md). They use local PostGIS, Valkey, API, Wrangler Queue/Cron emulation, and synthetic users. Local success does not establish hosted Neon/Hyperdrive connectivity, natural Cron timing, or human acceptance.
 
-If publishing fails repeatedly, events become `dead_letter`.
-
-## Worker Deployment
-
-Hosted Render uses a separate worker service. Deploy the API and worker from compatible commits because they share:
-
-- database schema
-- event payload shapes
-- Valkey stream names
-- shared package code
-
-## Troubleshooting Outbox
-
-Symptoms:
-
-- notifications or async side effects delayed
-- Valkey errors in logs
-- dead-letter count grows
-- worker crashes after API deploy
-
-Checks:
-
-1. Confirm worker service is running.
-2. Confirm `VALKEY_URL` is correct for the environment.
-3. Confirm DB migrations applied.
-4. Inspect worker logs for payload/schema errors.
-5. Check whether API and worker are on compatible deploys.
-6. Roll back worker with API if schema/event mismatch is suspected.
-
-## Attendance Auto Punch-Out
-
-The attendance worker reads active attendance policy and company timezone. It uses a PostgreSQL advisory lock in Postgres mode to avoid duplicate runs.
-
-Checks:
-
-- attendance policy is active and enabled
-- company timezone is correct
-- worker lock is not held by another process
-- generated checkout punches are not duplicated
-- daily records recompute after closure
+For a legacy-only rollback drill, the old worker entrypoint remains `pnpm worker:start`; it must not be launched against an active Cloudflare publisher. Use the reviewed rollback sequence in the cutover runbook, including pausing both source Queues before deploying an inactive Worker.
 
 ## Escalation
 
-If worker behavior risks data integrity:
-
-1. Stop or pause worker service.
-2. Keep API available if safe.
-3. Preserve logs and affected event IDs.
-4. Fix code/config/schema.
-5. Restart worker after validation.
-
+If a worker threatens attendance, payroll, privacy, or tenant integrity, pause the appropriate delivery path without deleting Queue/DLQ contents, preserve affected IDs and redacted logs, and keep the API available only if safe. Record the failure and recovery evidence with the SRE/HR owner before resuming. Do not claim production readiness until hosted cutover, natural Cron, DLQ/rollback, and human UAT evidence are signed off.

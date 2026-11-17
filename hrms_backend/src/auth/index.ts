@@ -82,33 +82,17 @@ export class MemorySessionStore implements SessionStore {
 }
 
 export class ValkeySessionStore implements SessionStore {
-  private readonly valkey: Valkey;
-
-  constructor(valkeyUrl: string, private readonly keyPrefix = "hrms:session") {
-    this.valkey = new Valkey(valkeyUrl, {
-      lazyConnect: true,
-      maxRetriesPerRequest: 2
-    });
-  }
+  constructor(
+    private readonly valkey: Valkey,
+    private readonly keyPrefix = "hrms:session",
+  ) {}
 
   async create(session: SessionRecord): Promise<void> {
-    await this.valkey.connect().catch((error: unknown) => {
-      if (error instanceof Error && /already connecting|already connected/iu.test(error.message)) {
-        return;
-      }
-      throw error;
-    });
     const ttlSeconds = Math.max(1, Math.floor((Date.parse(session.expires_at) - Date.now()) / 1000));
     await this.valkey.set(this.key(session.jti), JSON.stringify(session), "EX", ttlSeconds);
   }
 
   async get(jti: string): Promise<SessionRecord | null> {
-    await this.valkey.connect().catch((error: unknown) => {
-      if (error instanceof Error && /already connecting|already connected/iu.test(error.message)) {
-        return;
-      }
-      throw error;
-    });
     const value = await this.valkey.get(this.key(jti));
     return value ? (JSON.parse(value) as SessionRecord) : null;
   }
@@ -126,12 +110,6 @@ export class ValkeySessionStore implements SessionStore {
   }
 
   async revokeUser(userId: UUID, reason: string): Promise<number> {
-    await this.valkey.connect().catch((error: unknown) => {
-      if (error instanceof Error && /already connecting|already connected/iu.test(error.message)) {
-        return;
-      }
-      throw error;
-    });
     const keys = await this.valkey.keys(`${this.keyPrefix}:*`);
     let revoked = 0;
     for (const key of keys) {
@@ -150,10 +128,6 @@ export class ValkeySessionStore implements SessionStore {
       }
     }
     return revoked;
-  }
-
-  async close(): Promise<void> {
-    this.valkey.disconnect();
   }
 
   private key(jti: string): string {

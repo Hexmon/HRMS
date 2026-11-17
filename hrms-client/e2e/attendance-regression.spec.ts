@@ -127,6 +127,59 @@ test("shows a deterministic punch rejection and keeps the valid action available
   expect(requests).toBe(1);
 });
 
+for (const path of ["/attendance", "/dashboard"]) {
+  for (const geoPolicy of [
+    { allowed: true, factual_outcome: "not_required", reason_code: "geo_not_required" },
+    { allowed: true, factual_outcome: "inside_confident", reason_code: "geo_inside_fence" },
+    {
+      allowed: true,
+      factual_outcome: "missing",
+      selected_action: "manual_fallback",
+      fallback_used: true,
+      reason_code: "geo_manual_fallback_allowed",
+    },
+  ]) {
+    test(`shows the attendance conflict despite ${geoPolicy.reason_code} on ${path}`, async ({
+      page,
+    }) => {
+      await prepareAttendancePage(page);
+      let state: ManualSessionState = "not_started";
+      let requests = 0;
+      await page.route("**/api/v1/attendance/summary/my**", async (route) => {
+        await route.fulfill({ json: attendanceSummary(state) });
+      });
+      await page.route("**/api/v1/attendance/punches", async (route) => {
+        requests += 1;
+        state = "open";
+        await route.fulfill({
+          status: 409,
+          json: {
+            code: "CONFLICT",
+            message: "The employee already has an open attendance session.",
+            details: {
+              reason_code: "already_checked_in",
+              next_allowed_actions: ["break_start", "check_out"],
+              geo_policy: geoPolicy,
+            },
+          },
+        });
+      });
+
+      await openAttendance(page, path);
+      await page.getByRole("button", { name: "Clock in", exact: true }).click();
+
+      const result = page.getByRole("alert").filter({ hasText: "Clock-in was not recorded" });
+      await expect(result).toBeVisible();
+      await expect(result).toContainText("The employee already has an open attendance session.");
+      await expect(result.getByText("Rejected", { exact: true })).toBeVisible();
+      await expect(result).not.toContainText("Your punch was recorded");
+      await expect(page.getByRole("button", { name: "Clock in", exact: true })).toBeHidden();
+      await expect(page.getByRole("button", { name: "Clock out", exact: true })).toBeEnabled();
+      expect(requests).toBe(1);
+    });
+  }
+}
+
 test("submits a normalized historical regularization request", async ({ page }) => {
   await prepareAttendancePage(page);
   const workDate = previousLocalDate();

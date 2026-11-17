@@ -1,0 +1,183 @@
+schema_version: "qa-master-checklist-project-profile-v2.1"
+artifact_version: "v001"
+artifact_status: "STAGE_1_DISCOVERY"
+gate_status: "G1_HOLD_PENDING_OWNER_DECISIONS"
+analysis_date: "2026-10-19"
+timezone: "Asia/Kolkata"
+
+project:
+  name: "Hawkaii HRMS"
+  business_domain: "B2B HRMS / workforce management"
+  repository_url: "https://github.com/Hexmon/HRMS"
+  repository_root: "/home/hexmon/Desktop/HRMS"
+  target_branch: "release-01"
+  inspected_commit_sha: "18fdc1bfd9144e98628d96411942918470a593f1"
+  inspected_commit_short_sha: "18fdc1b"
+  inspected_commit_date: "2026-10-15T01:37:15+05:30"
+  inspected_commit_subject: "fix(tests): stabilize database integration checks"
+  scope: "enterprise-wide Release-01 Stage 1 discovery"
+  lifecycle: "TBD — owner confirmation required"
+
+git_baseline:
+  local_branch_matches_local_origin_tracking_ref: true
+  comparison: "HEAD...refs/remotes/origin/release-01 = 0 ahead / 0 behind"
+  live_remote_freshness_verified: false
+  reason_remote_unverified: "No fetch or network verification was authorized or performed."
+  tracked_worktree_changes_observed: false
+  unrelated_untracked_paths:
+    - ".agents/"
+    - "qa-masterclass/"
+  codex_archive_present: false
+
+authorization:
+  planning_only: true
+  approved_output_directory: "qa-artifacts/hrms/release-01/v001-2026-10-19-18fdc1b-stage1-discovery/"
+  application_code_changes_allowed: false
+  test_execution_allowed: false
+  service_start_allowed: false
+  dependency_install_allowed: false
+  endpoint_probe_allowed: false
+  load_or_security_probe_allowed: false
+  stage_2_allowed: false
+
+architecture:
+  classification: "schema-per-domain modular monolith with separate worker process"
+  classification_confidence: "High from source/config; deployed topology unverified"
+  deployment_units:
+    - "TanStack Start / React web and Vercel SSR output"
+    - "Fastify API on Render"
+    - "Combined Render worker for outbox, attendance coordinate purge, and attendance auto-punchout"
+    - "PostgreSQL / Neon design"
+    - "Valkey / Upstash TCP design"
+    - "Cloudinary object storage"
+    - "Resend transactional email"
+  backend_stack:
+    - "Fastify 5.6.2"
+    - "TypeScript"
+    - "PostgreSQL via pg 8.16.3"
+    - "Drizzle ORM 0.44.7 schema definitions"
+  frontend_stack:
+    - "TanStack Start 1.168.60"
+    - "React 19.2.0"
+    - "Vite / Nitro Vercel preset"
+  data_strategy: "Hydrated in-memory repositories plus targeted PostgreSQL flush for most domains; PostgreSQL-first direct transactions for selected Attendance commands."
+  cross_schema_foreign_keys: false
+  cross_schema_integrity_strategy: "Application checks plus selected paired validation/restrict triggers in migration 0063."
+  why_architecture_was_selected: "Partially documented for Attendance and schema autonomy; general hydrated-store rationale requires Engineering Lead confirmation."
+
+multi_tenancy:
+  intended_model: "One active company assignment resolved from user session preferences"
+  end_to_end_enforcement_verified: false
+  strongly_scoped_areas:
+    - "Core user directory and mutations"
+    - "Modern Attendance command/device/payroll paths"
+    - "Dashboard source paths inspected in discovery"
+  inconsistent_or_unconfirmed_areas:
+    - "Documents"
+    - "Assets"
+    - "EMS"
+    - "Expenses"
+    - "Leave/WFH calculations and request records"
+    - "Projects"
+    - "Timesheets"
+    - "Helpdesk"
+    - "Cross-module reports and exports"
+
+personas:
+  - "Employee"
+  - "Reviewer / user-facing Manager"
+  - "Director"
+  - "Finance Manager"
+  - "Admin"
+  - "Auditor"
+  - "Asset Manager"
+  - "HR Manager"
+  - "Helpdesk operator through category-management roles/designations"
+  - "Platform/SRE operator"
+  - "QA Lead / release approver"
+
+channels_and_contexts:
+  web_desktop: "present"
+  responsive_mobile_web: "present"
+  native_mobile: "not claimed as shipped"
+  offline_attendance_api: "present for registered devices"
+  api_integrations: "OpenAPI present; external consumers unverified"
+  accessibility_expectation: "TBD — source contains attendance accessibility checks but no owner-approved product baseline"
+  browsers_and_devices: "TBD — no owner-approved support matrix"
+  locales_and_timezones: "timezone-aware implementation present; supported business matrix TBD"
+
+source_inventory:
+  tracked_files_total_observed: 1020
+  backend_source_files_observed: 362
+  frontend_source_files_observed: 333
+  backend_test_files_observed: 98
+  frontend_playwright_spec_files_observed: 20
+  source_migrations_observed: 63
+  generated_openapi_paths_observed: 240
+  generated_openapi_operations_observed: 281
+  generated_openapi_mirrors_observed: 4
+  openapi_mirrors_byte_identical: true
+  critical_journeys_traced: 10
+  historical_blqs_mapped: 25
+  preliminary_risks_accounted_for: 15
+
+evidence_classes:
+  - id: "E1"
+    description: "Current source, schema, migration, package, deployment and CI configuration at inspected SHA"
+    authority: "Implementation evidence; not business intent or deployed-state proof"
+  - id: "E2"
+    description: "Generated OpenAPI mirrors"
+    authority: "Client contract evidence only"
+  - id: "E3"
+    description: "Automated test source"
+    authority: "Prior assumption/coverage evidence; not execution evidence"
+  - id: "E4"
+    description: "Architecture, runbook and QA documents"
+    authority: "Dated design/historical evidence; freshness varies"
+  - id: "E5"
+    description: "Historical BLQ comments and BUSINESS_RULES_CONFIRMED.md"
+    authority: "Historical comment only because owner/date metadata is absent"
+
+owners:
+  product_owner: "TBD"
+  engineering_lead_or_architect: "TBD"
+  hr_payroll_owner: "TBD"
+  finance_owner: "TBD"
+  security_privacy_owner: "TBD"
+  platform_sre_owner: "TBD"
+  qa_lead: "TBD"
+  release_approver: "TBD"
+
+nfrs:
+  employee_population: "TBD"
+  peak_concurrency: "TBD"
+  availability_slo: "TBD"
+  latency_slo: "TBD"
+  event_delivery_lag_slo: "TBD"
+  rpo: "TBD"
+  rto: "TBD"
+  data_retention_policy: "TBD"
+  regulatory_and_contractual_scope: "TBD — Legal/Privacy review required"
+  safe_fault_test_environment: "TBD"
+
+coverage_omissions_and_boundaries:
+  - "No product test was executed."
+  - "No live environment, GitHub settings, Vercel project, Render dashboard, Neon, Upstash, Cloudinary, or Resend account was inspected."
+  - "The live GitHub release-01 branch freshness was not fetched."
+  - "The original standalone 16-page SOP source was not present in the checkout; the skill's preserved governance and artifact conventions were used."
+  - "Generated dist files, vendored dependencies, and every UI styling component were not reviewed line-by-line."
+  - "Automated tests were inventoried and representative high-risk bodies inspected; existence does not imply execution or success."
+  - "Historical XLSX/DOCX evidence was preserved and not treated as current execution proof."
+
+unresolved_decision_ids:
+  - "DEC-PO-01"
+  - "DEC-ARCH-01"
+  - "DEC-HR-01"
+  - "DEC-FIN-01"
+  - "DEC-SEC-01"
+  - "DEC-SRE-01"
+  - "DEC-QA-01"
+
+artifact_scope:
+  included: "Discovery facts, provisional risks, implementation-vs-intent gaps, stakeholder questions, coverage candidates and trace inventory"
+  excluded: "Approved test cases, invented expected results, execution status, release recommendation and Stage 2 planning"

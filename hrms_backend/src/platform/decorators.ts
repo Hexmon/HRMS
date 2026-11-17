@@ -83,5 +83,6 @@ declare module "fastify" {
   interface FastifyRequest {
     requestId: string;
     actor?: AuthUser;
+    signupEmployeeCode?: string;
   }
 }

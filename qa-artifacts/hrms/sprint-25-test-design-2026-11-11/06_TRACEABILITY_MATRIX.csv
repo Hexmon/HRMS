@@ -1,0 +1,483 @@
+Test Case ID,Business Rule,Risk ID,Coverage Status,Task ID,Task Sheet Row,Layer
+S25-002-D1,AGENTS evidence policy,RISK-HIST-S25-002,Planned — Not Tested,HIST-S25-002,2,Documentation review
+S25-002-D2,AGENTS evidence policy,RISK-HIST-S25-002,Planned — Not Tested,HIST-S25-002,2,Documentation review
+S25-003-D1,AGENTS evidence policy,RISK-HIST-S25-003,Planned — Not Tested,HIST-S25-003,3,Documentation review
+S25-003-D2,AGENTS evidence policy,RISK-HIST-S25-003,Planned — Not Tested,HIST-S25-003,3,Documentation review
+S25-004-D1,AGENTS evidence policy,RISK-HIST-S25-004,Planned — Not Tested,HIST-S25-004,4,Documentation review
+S25-004-D2,AGENTS evidence policy,RISK-HIST-S25-004,Planned — Not Tested,HIST-S25-004,4,Documentation review
+S25-005-D1,AGENTS evidence policy,RISK-HIST-S25-005,Planned — Not Tested,HIST-S25-005,5,Documentation review
+S25-005-D2,AGENTS evidence policy,RISK-HIST-S25-005,Planned — Not Tested,HIST-S25-005,5,Documentation review
+S25-006-D1,AGENTS evidence policy,RISK-HIST-S25-006,Planned — Not Tested,HIST-S25-006,6,Documentation review
+S25-006-D2,AGENTS evidence policy,RISK-HIST-S25-006,Planned — Not Tested,HIST-S25-006,6,Documentation review
+S25-007-D1,AGENTS evidence policy,RISK-HIST-S25-007,Planned — Not Tested,HIST-S25-007,7,Documentation review
+S25-007-D2,AGENTS evidence policy,RISK-HIST-S25-007,Planned — Not Tested,HIST-S25-007,7,Documentation review
+S25-008-D1,AGENTS evidence policy,RISK-HIST-S25-008,Planned — Not Tested,HIST-S25-008,8,Documentation review
+S25-008-D2,AGENTS evidence policy,RISK-HIST-S25-008,Planned — Not Tested,HIST-S25-008,8,Documentation review
+S25-020-U,AGENTS tenant/transaction invariants,RISK-TEN-S25-001,Planned — Not Tested,TEN-S25-001,20,Unit
+S25-020-P,AGENTS tenant/transaction invariants,RISK-TEN-S25-001,Planned — Not Tested,TEN-S25-001,20,Integration
+S25-020-N,AGENTS tenant/transaction invariants,RISK-TEN-S25-001,Planned — Not Tested,TEN-S25-001,20,API
+S25-020-F,AGENTS tenant/transaction invariants,RISK-TEN-S25-001,Planned — Not Tested,TEN-S25-001,20,Integration
+S25-021-U,DEC-002/003/004/005/006; DEC-Q01/02/04,RISK-TEN-S25-002,Planned — Not Tested,TEN-S25-002,21,Unit
+S25-021-P,DEC-002/003/004/005/006; DEC-Q01/02/04,RISK-TEN-S25-002,Planned — Not Tested,TEN-S25-002,21,Browser
+S25-021-N,DEC-002/003/004/005/006; DEC-Q01/02/04,RISK-TEN-S25-002,Planned — Not Tested,TEN-S25-002,21,API
+S25-021-F,DEC-002/003/004/005/006; DEC-Q01/02/04,RISK-TEN-S25-002,Planned — Not Tested,TEN-S25-002,21,Integration
+S25-022-U,DEC-007/044/046; DEC-Q05; DEC-BQ13,RISK-TEN-S25-003,Planned — Not Tested,TEN-S25-003,22,Unit
+S25-022-P,DEC-007/044/046; DEC-Q05; DEC-BQ13,RISK-TEN-S25-003,Planned — Not Tested,TEN-S25-003,22,Browser
+S25-022-N,DEC-007/044/046; DEC-Q05; DEC-BQ13,RISK-TEN-S25-003,Planned — Not Tested,TEN-S25-003,22,API
+S25-022-F,DEC-007/044/046; DEC-Q05; DEC-BQ13,RISK-TEN-S25-003,Planned — Not Tested,TEN-S25-003,22,Integration
+S25-023-U,DEC-003/005; employee-code format decision pending,RISK-TEN-S25-004,Planned — Not Tested,TEN-S25-004,23,Unit
+S25-023-P,DEC-003/005; employee-code format decision pending,RISK-TEN-S25-004,Planned — Not Tested,TEN-S25-004,23,Browser
+S25-023-N,DEC-003/005; employee-code format decision pending,RISK-TEN-S25-004,Planned — Not Tested,TEN-S25-004,23,API
+S25-023-F,DEC-003/005; employee-code format decision pending,RISK-TEN-S25-004,Planned — Not Tested,TEN-S25-004,23,Integration
+S25-024-U,DEC-013/015/031,RISK-TEN-S25-005,Planned — Not Tested,TEN-S25-005,24,Unit
+S25-024-P,DEC-013/015/031,RISK-TEN-S25-005,Planned — Not Tested,TEN-S25-005,24,Browser
+S25-024-N,DEC-013/015/031,RISK-TEN-S25-005,Planned — Not Tested,TEN-S25-005,24,API
+S25-024-F,DEC-013/015/031,RISK-TEN-S25-005,Planned — Not Tested,TEN-S25-005,24,Integration
+S25-025-U,DEC-011; AGENTS tenant/audit invariants,RISK-TEN-S25-006,Planned — Not Tested,TEN-S25-006,25,Unit
+S25-025-P,DEC-011; AGENTS tenant/audit invariants,RISK-TEN-S25-006,Planned — Not Tested,TEN-S25-006,25,Browser
+S25-025-N,DEC-011; AGENTS tenant/audit invariants,RISK-TEN-S25-006,Planned — Not Tested,TEN-S25-006,25,API
+S25-025-F,DEC-011; AGENTS tenant/audit invariants,RISK-TEN-S25-006,Planned — Not Tested,TEN-S25-006,25,Integration
+S25-026-U,DEC-012; AGENTS related-ID authorization,RISK-TEN-S25-007,Planned — Not Tested,TEN-S25-007,26,Unit
+S25-026-P,DEC-012; AGENTS related-ID authorization,RISK-TEN-S25-007,Planned — Not Tested,TEN-S25-007,26,Browser
+S25-026-N,DEC-012; AGENTS related-ID authorization,RISK-TEN-S25-007,Planned — Not Tested,TEN-S25-007,26,API
+S25-026-F,DEC-012; AGENTS related-ID authorization,RISK-TEN-S25-007,Planned — Not Tested,TEN-S25-007,26,Integration
+S25-027-U,DEC-004; AGENTS tenant/input invariants,RISK-TEN-S25-008,Planned — Not Tested,TEN-S25-008,27,Unit
+S25-027-P,DEC-004; AGENTS tenant/input invariants,RISK-TEN-S25-008,Planned — Not Tested,TEN-S25-008,27,Browser
+S25-027-N,DEC-004; AGENTS tenant/input invariants,RISK-TEN-S25-008,Planned — Not Tested,TEN-S25-008,27,API
+S25-027-F,DEC-004; AGENTS tenant/input invariants,RISK-TEN-S25-008,Planned — Not Tested,TEN-S25-008,27,Integration
+S25-028-U,DEC-004; AGENTS tenant/outbox invariants,RISK-TEN-S25-009,Planned — Not Tested,TEN-S25-009,28,Unit
+S25-028-P,DEC-004; AGENTS tenant/outbox invariants,RISK-TEN-S25-009,Planned — Not Tested,TEN-S25-009,28,Browser
+S25-028-N,DEC-004; AGENTS tenant/outbox invariants,RISK-TEN-S25-009,Planned — Not Tested,TEN-S25-009,28,API
+S25-028-F,DEC-004; AGENTS tenant/outbox invariants,RISK-TEN-S25-009,Planned — Not Tested,TEN-S25-009,28,Integration
+S25-029-U,DEC-025; AGENTS service-principal authorization,RISK-TEN-S25-010,Planned — Not Tested,TEN-S25-010,29,Unit
+S25-029-P,DEC-025; AGENTS service-principal authorization,RISK-TEN-S25-010,Planned — Not Tested,TEN-S25-010,29,Browser
+S25-029-N,DEC-025; AGENTS service-principal authorization,RISK-TEN-S25-010,Planned — Not Tested,TEN-S25-010,29,API
+S25-029-F,DEC-025; AGENTS service-principal authorization,RISK-TEN-S25-010,Planned — Not Tested,TEN-S25-010,29,Integration
+S25-030-U,DEC-016; DEC-Q13,RISK-TEN-S25-011,Planned — Not Tested,TEN-S25-011,30,Unit
+S25-030-P,DEC-016; DEC-Q13,RISK-TEN-S25-011,Planned — Not Tested,TEN-S25-011,30,Browser
+S25-030-N,DEC-016; DEC-Q13,RISK-TEN-S25-011,Planned — Not Tested,TEN-S25-011,30,API
+S25-030-F,DEC-016; DEC-Q13,RISK-TEN-S25-011,Planned — Not Tested,TEN-S25-011,30,Integration
+S25-031-U,AGENTS tenant/related-ID invariants,RISK-TEN-S25-012,Planned — Not Tested,TEN-S25-012,31,Unit
+S25-031-P,AGENTS tenant/related-ID invariants,RISK-TEN-S25-012,Planned — Not Tested,TEN-S25-012,31,Browser
+S25-031-N,AGENTS tenant/related-ID invariants,RISK-TEN-S25-012,Planned — Not Tested,TEN-S25-012,31,API
+S25-031-F,AGENTS tenant/related-ID invariants,RISK-TEN-S25-012,Planned — Not Tested,TEN-S25-012,31,Integration
+S25-032-U,DEC-004,RISK-TEN-S25-013,Planned — Not Tested,TEN-S25-013,32,Unit
+S25-032-P,DEC-004,RISK-TEN-S25-013,Planned — Not Tested,TEN-S25-013,32,Browser
+S25-032-N,DEC-004,RISK-TEN-S25-013,Planned — Not Tested,TEN-S25-013,32,API
+S25-032-F,DEC-004,RISK-TEN-S25-013,Planned — Not Tested,TEN-S25-013,32,Integration
+S25-033-U,DEC-004/008; AGENTS tenant invariants,RISK-TEN-S25-014,Planned — Not Tested,TEN-S25-014,33,Unit
+S25-033-P,DEC-004/008; AGENTS tenant invariants,RISK-TEN-S25-014,Planned — Not Tested,TEN-S25-014,33,Browser
+S25-033-N,DEC-004/008; AGENTS tenant invariants,RISK-TEN-S25-014,Planned — Not Tested,TEN-S25-014,33,API
+S25-033-F,DEC-004/008; AGENTS tenant invariants,RISK-TEN-S25-014,Planned — Not Tested,TEN-S25-014,33,Integration
+S25-034-U,DEC-028; AGENTS self-processing invariant,RISK-TEN-S25-015,Planned — Not Tested,TEN-S25-015,34,Unit
+S25-034-P,DEC-028; AGENTS self-processing invariant,RISK-TEN-S25-015,Planned — Not Tested,TEN-S25-015,34,Browser
+S25-034-N,DEC-028; AGENTS self-processing invariant,RISK-TEN-S25-015,Planned — Not Tested,TEN-S25-015,34,API
+S25-034-F,DEC-028; AGENTS self-processing invariant,RISK-TEN-S25-015,Planned — Not Tested,TEN-S25-015,34,Integration
+S25-035-U,DEC-031; AGENTS tenant invariants,RISK-TEN-S25-016,Planned — Not Tested,TEN-S25-016,35,Unit
+S25-035-P,DEC-031; AGENTS tenant invariants,RISK-TEN-S25-016,Planned — Not Tested,TEN-S25-016,35,Browser
+S25-035-N,DEC-031; AGENTS tenant invariants,RISK-TEN-S25-016,Planned — Not Tested,TEN-S25-016,35,API
+S25-035-F,DEC-031; AGENTS tenant invariants,RISK-TEN-S25-016,Planned — Not Tested,TEN-S25-016,35,Integration
+S25-036-U,AGENTS tenant/database invariants,RISK-TEN-S25-017,Planned — Not Tested,TEN-S25-017,36,Unit
+S25-036-P,AGENTS tenant/database invariants,RISK-TEN-S25-017,Planned — Not Tested,TEN-S25-017,36,Integration
+S25-036-N,AGENTS tenant/database invariants,RISK-TEN-S25-017,Planned — Not Tested,TEN-S25-017,36,API
+S25-036-F,AGENTS tenant/database invariants,RISK-TEN-S25-017,Planned — Not Tested,TEN-S25-017,36,Integration
+S25-037-U,AGENTS transaction/outbox invariants,RISK-TEN-S25-018,Planned — Not Tested,TEN-S25-018,37,Unit
+S25-037-P,AGENTS transaction/outbox invariants,RISK-TEN-S25-018,Planned — Not Tested,TEN-S25-018,37,Integration
+S25-037-N,AGENTS transaction/outbox invariants,RISK-TEN-S25-018,Planned — Not Tested,TEN-S25-018,37,API
+S25-037-F,AGENTS transaction/outbox invariants,RISK-TEN-S25-018,Planned — Not Tested,TEN-S25-018,37,Integration
+S25-038-U,DEC-BQ06; current plan proposed next-request denial,RISK-TEN-S25-019,Planned — Not Tested,TEN-S25-019,38,Unit
+S25-038-P,DEC-BQ06; current plan proposed next-request denial,RISK-TEN-S25-019,Planned — Not Tested,TEN-S25-019,38,Browser
+S25-038-N,DEC-BQ06; current plan proposed next-request denial,RISK-TEN-S25-019,Planned — Not Tested,TEN-S25-019,38,API
+S25-038-F,DEC-BQ06; current plan proposed next-request denial,RISK-TEN-S25-019,Planned — Not Tested,TEN-S25-019,38,Integration
+S25-039-U,DEC-011; protected URL lifetime decision,RISK-TEN-S25-020,Planned — Not Tested,TEN-S25-020,39,Unit
+S25-039-P,DEC-011; protected URL lifetime decision,RISK-TEN-S25-020,Planned — Not Tested,TEN-S25-020,39,Browser
+S25-039-N,DEC-011; protected URL lifetime decision,RISK-TEN-S25-020,Planned — Not Tested,TEN-S25-020,39,API
+S25-039-F,DEC-011; protected URL lifetime decision,RISK-TEN-S25-020,Planned — Not Tested,TEN-S25-020,39,Integration
+S25-040-U,AGENTS retry/outbox invariants; R2 plan,RISK-TEN-S25-021,Planned — Not Tested,TEN-S25-021,40,Unit
+S25-040-P,AGENTS retry/outbox invariants; R2 plan,RISK-TEN-S25-021,Planned — Not Tested,TEN-S25-021,40,Browser
+S25-040-N,AGENTS retry/outbox invariants; R2 plan,RISK-TEN-S25-021,Planned — Not Tested,TEN-S25-021,40,API
+S25-040-F,AGENTS retry/outbox invariants; R2 plan,RISK-TEN-S25-021,Planned — Not Tested,TEN-S25-021,40,Integration
+S25-041-U,AGENTS soft-delete/audit invariants; retention decision,RISK-TEN-S25-022,Planned — Not Tested,TEN-S25-022,41,Unit
+S25-041-P,AGENTS soft-delete/audit invariants; retention decision,RISK-TEN-S25-022,Planned — Not Tested,TEN-S25-022,41,Browser
+S25-041-N,AGENTS soft-delete/audit invariants; retention decision,RISK-TEN-S25-022,Planned — Not Tested,TEN-S25-022,41,API
+S25-041-F,AGENTS soft-delete/audit invariants; retention decision,RISK-TEN-S25-022,Planned — Not Tested,TEN-S25-022,41,Integration
+S25-042-U,AGENTS transactional-outbox/idempotency invariants,RISK-TEN-S25-023,Planned — Not Tested,TEN-S25-023,42,Unit
+S25-042-P,AGENTS transactional-outbox/idempotency invariants,RISK-TEN-S25-023,Planned — Not Tested,TEN-S25-023,42,Integration
+S25-042-N,AGENTS transactional-outbox/idempotency invariants,RISK-TEN-S25-023,Planned — Not Tested,TEN-S25-023,42,API
+S25-042-F,AGENTS transactional-outbox/idempotency invariants,RISK-TEN-S25-023,Planned — Not Tested,TEN-S25-023,42,Integration
+S25-043-U,AGENTS company ownership; sequence format decision,RISK-TEN-S25-024,Planned — Not Tested,TEN-S25-024,43,Unit
+S25-043-P,AGENTS company ownership; sequence format decision,RISK-TEN-S25-024,Planned — Not Tested,TEN-S25-024,43,Integration
+S25-043-N,AGENTS company ownership; sequence format decision,RISK-TEN-S25-024,Planned — Not Tested,TEN-S25-024,43,API
+S25-043-F,AGENTS company ownership; sequence format decision,RISK-TEN-S25-024,Planned — Not Tested,TEN-S25-024,43,Integration
+S25-044-U,DEC-008; DEC-Q11,RISK-TEN-S25-025,Planned — Not Tested,TEN-S25-025,44,Unit
+S25-044-P,DEC-008; DEC-Q11,RISK-TEN-S25-025,Planned — Not Tested,TEN-S25-025,44,Browser
+S25-044-N,DEC-008; DEC-Q11,RISK-TEN-S25-025,Planned — Not Tested,TEN-S25-025,44,API
+S25-044-F,DEC-008; DEC-Q11,RISK-TEN-S25-025,Planned — Not Tested,TEN-S25-025,44,Integration
+S25-045-U,DEC-009/021,RISK-TEN-S25-026,Planned — Not Tested,TEN-S25-026,45,Unit
+S25-045-P,DEC-009/021,RISK-TEN-S25-026,Planned — Not Tested,TEN-S25-026,45,Browser
+S25-045-N,DEC-009/021,RISK-TEN-S25-026,Planned — Not Tested,TEN-S25-026,45,API
+S25-045-F,DEC-009/021,RISK-TEN-S25-026,Planned — Not Tested,TEN-S25-026,45,Integration
+S25-046-U,DEC-022; DEC-BQ01,RISK-TEN-S25-027,Planned — Not Tested,TEN-S25-027,46,Unit
+S25-046-P,DEC-022; DEC-BQ01,RISK-TEN-S25-027,Planned — Not Tested,TEN-S25-027,46,Browser
+S25-046-N,DEC-022; DEC-BQ01,RISK-TEN-S25-027,Planned — Not Tested,TEN-S25-027,46,API
+S25-046-F,DEC-022; DEC-BQ01,RISK-TEN-S25-027,Planned — Not Tested,TEN-S25-027,46,Integration
+S25-047-U,AUTH plan; approved budget/outage policy pending,RISK-TEN-S25-028,Planned — Not Tested,TEN-S25-028,47,Unit
+S25-047-P,AUTH plan; approved budget/outage policy pending,RISK-TEN-S25-028,Planned — Not Tested,TEN-S25-028,47,Integration
+S25-047-N,AUTH plan; approved budget/outage policy pending,RISK-TEN-S25-028,Planned — Not Tested,TEN-S25-028,47,API
+S25-047-F,AUTH plan; approved budget/outage policy pending,RISK-TEN-S25-028,Planned — Not Tested,TEN-S25-028,47,Integration
+S25-048-U,AGENTS bounded resources; measurement targets pending,RISK-TEN-S25-029,Planned — Not Tested,TEN-S25-029,48,Unit
+S25-048-P,AGENTS bounded resources; measurement targets pending,RISK-TEN-S25-029,Planned — Not Tested,TEN-S25-029,48,Integration
+S25-048-N,AGENTS bounded resources; measurement targets pending,RISK-TEN-S25-029,Planned — Not Tested,TEN-S25-029,48,API
+S25-048-F,AGENTS bounded resources; measurement targets pending,RISK-TEN-S25-029,Planned — Not Tested,TEN-S25-029,48,Integration
+S25-049-U,DEC-004/031; AGENTS async ownership,RISK-TEN-S25-030,Planned — Not Tested,TEN-S25-030,49,Unit
+S25-049-P,DEC-004/031; AGENTS async ownership,RISK-TEN-S25-030,Planned — Not Tested,TEN-S25-030,49,Browser
+S25-049-N,DEC-004/031; AGENTS async ownership,RISK-TEN-S25-030,Planned — Not Tested,TEN-S25-030,49,API
+S25-049-F,DEC-004/031; AGENTS async ownership,RISK-TEN-S25-030,Planned — Not Tested,TEN-S25-030,49,Integration
+S25-050-U,DEC-030/032; platform-support policy pending,RISK-TEN-S25-031,Planned — Not Tested,TEN-S25-031,50,Unit
+S25-050-P,DEC-030/032; platform-support policy pending,RISK-TEN-S25-031,Planned — Not Tested,TEN-S25-031,50,Browser
+S25-050-N,DEC-030/032; platform-support policy pending,RISK-TEN-S25-031,Planned — Not Tested,TEN-S25-031,50,API
+S25-050-F,DEC-030/032; platform-support policy pending,RISK-TEN-S25-031,Planned — Not Tested,TEN-S25-031,50,Integration
+S25-051-U,DEC-004; retention/offboarding policy pending,RISK-TEN-S25-032,Planned — Not Tested,TEN-S25-032,51,Unit
+S25-051-P,DEC-004; retention/offboarding policy pending,RISK-TEN-S25-032,Planned — Not Tested,TEN-S25-032,51,Browser
+S25-051-N,DEC-004; retention/offboarding policy pending,RISK-TEN-S25-032,Planned — Not Tested,TEN-S25-032,51,API
+S25-051-F,DEC-004; retention/offboarding policy pending,RISK-TEN-S25-032,Planned — Not Tested,TEN-S25-032,51,Integration
+S25-052-U,DEC-017; DEC-Q01/03,RISK-TEN-S25-033,Planned — Not Tested,TEN-S25-033,52,Unit
+S25-052-P,DEC-017; DEC-Q01/03,RISK-TEN-S25-033,Planned — Not Tested,TEN-S25-033,52,Browser
+S25-052-N,DEC-017; DEC-Q01/03,RISK-TEN-S25-033,Planned — Not Tested,TEN-S25-033,52,API
+S25-052-F,DEC-017; DEC-Q01/03,RISK-TEN-S25-033,Planned — Not Tested,TEN-S25-033,52,Integration
+S25-053-U,DEC-017; DEC-Q04/05,RISK-TEN-S25-034,Planned — Not Tested,TEN-S25-034,53,Unit
+S25-053-P,DEC-017; DEC-Q04/05,RISK-TEN-S25-034,Planned — Not Tested,TEN-S25-034,53,Browser
+S25-053-N,DEC-017; DEC-Q04/05,RISK-TEN-S25-034,Planned — Not Tested,TEN-S25-034,53,API
+S25-053-F,DEC-017; DEC-Q04/05,RISK-TEN-S25-034,Planned — Not Tested,TEN-S25-034,53,Integration
+S25-054-U,DEC-006; DEC-Q02,RISK-TEN-S25-035,Planned — Not Tested,TEN-S25-035,54,Unit
+S25-054-P,DEC-006; DEC-Q02,RISK-TEN-S25-035,Planned — Not Tested,TEN-S25-035,54,Browser
+S25-054-N,DEC-006; DEC-Q02,RISK-TEN-S25-035,Planned — Not Tested,TEN-S25-035,54,API
+S25-054-F,DEC-006; DEC-Q02,RISK-TEN-S25-035,Planned — Not Tested,TEN-S25-035,54,Integration
+S25-055-D1,AGENTS evidence policy,RISK-SAAS-S25-PLAN-001,Planned — Not Tested,SAAS-S25-PLAN-001,55,Documentation review
+S25-055-D2,AGENTS evidence policy,RISK-SAAS-S25-PLAN-001,Planned — Not Tested,SAAS-S25-PLAN-001,55,Documentation review
+S25-056-G1,DEC-020; test/QA completion policy,RISK-QA-S25-PLAN-002,Planned — Not Tested,QA-S25-PLAN-002,56,QA gate review
+S25-056-G2,DEC-020; linked task rules,RISK-QA-S25-PLAN-002,Planned — Not Tested,QA-S25-PLAN-002,56,QA gate review
+S25-056-G3,DEC-020,RISK-QA-S25-PLAN-002,Planned — Not Tested,QA-S25-PLAN-002,56,QA gate review
+S25-057-U,DEC-020; test/QA completion policy,RISK-QA-S25-003,Planned — Not Tested,QA-S25-003,57,Unit
+S25-057-P,DEC-020; test/QA completion policy,RISK-QA-S25-003,Planned — Not Tested,QA-S25-003,57,Integration
+S25-057-N,DEC-020; test/QA completion policy,RISK-QA-S25-003,Planned — Not Tested,QA-S25-003,57,API
+S25-057-F,DEC-020; test/QA completion policy,RISK-QA-S25-003,Planned — Not Tested,QA-S25-003,57,Integration
+S25-058-D1,AGENTS evidence policy,RISK-BR-S25-001,Planned — Not Tested,BR-S25-001,58,Documentation review
+S25-058-D2,AGENTS evidence policy,RISK-BR-S25-001,Planned — Not Tested,BR-S25-001,58,Documentation review
+S25-059-U,DEC-033/034/036/040; DEC-BQ05,RISK-BIZ-S25-004,Planned — Not Tested,BIZ-S25-004,59,Unit
+S25-059-P,DEC-033/034/036/040; DEC-BQ05,RISK-BIZ-S25-004,Planned — Not Tested,BIZ-S25-004,59,Browser
+S25-059-N,DEC-033/034/036/040; DEC-BQ05,RISK-BIZ-S25-004,Planned — Not Tested,BIZ-S25-004,59,API
+S25-059-F,DEC-033/034/036/040; DEC-BQ05,RISK-BIZ-S25-004,Planned — Not Tested,BIZ-S25-004,59,Integration
+S25-060-U,DEC-BQ07; AGENTS document authorization,RISK-BIZ-S25-006,Planned — Not Tested,BIZ-S25-006,60,Unit
+S25-060-P,DEC-BQ07; AGENTS document authorization,RISK-BIZ-S25-006,Planned — Not Tested,BIZ-S25-006,60,Browser
+S25-060-N,DEC-BQ07; AGENTS document authorization,RISK-BIZ-S25-006,Planned — Not Tested,BIZ-S25-006,60,API
+S25-060-F,DEC-BQ07; AGENTS document authorization,RISK-BIZ-S25-006,Planned — Not Tested,BIZ-S25-006,60,Integration
+S25-061-U,DEC-030/032; DEC-BQ13,RISK-BIZ-S25-007,Planned — Not Tested,BIZ-S25-007,61,Unit
+S25-061-P,DEC-030/032; DEC-BQ13,RISK-BIZ-S25-007,Planned — Not Tested,BIZ-S25-007,61,Browser
+S25-061-N,DEC-030/032; DEC-BQ13,RISK-BIZ-S25-007,Planned — Not Tested,BIZ-S25-007,61,API
+S25-061-F,DEC-030/032; DEC-BQ13,RISK-BIZ-S25-007,Planned — Not Tested,BIZ-S25-007,61,Integration
+S25-062-U,DEC-BQ02,RISK-BIZ-S25-008,Planned — Not Tested,BIZ-S25-008,62,Unit
+S25-062-P,DEC-BQ02,RISK-BIZ-S25-008,Planned — Not Tested,BIZ-S25-008,62,Browser
+S25-062-N,DEC-BQ02,RISK-BIZ-S25-008,Planned — Not Tested,BIZ-S25-008,62,API
+S25-062-F,DEC-BQ02,RISK-BIZ-S25-008,Planned — Not Tested,BIZ-S25-008,62,Integration
+S25-063-U,DEC-028; DEC-BQ04,RISK-BIZ-S25-009,Planned — Not Tested,BIZ-S25-009,63,Unit
+S25-063-P,DEC-028; DEC-BQ04,RISK-BIZ-S25-009,Planned — Not Tested,BIZ-S25-009,63,Browser
+S25-063-N,DEC-028; DEC-BQ04,RISK-BIZ-S25-009,Planned — Not Tested,BIZ-S25-009,63,API
+S25-063-F,DEC-028; DEC-BQ04,RISK-BIZ-S25-009,Planned — Not Tested,BIZ-S25-009,63,Integration
+S25-064-U,DEC-BQ02/08,RISK-BIZ-S25-010,Planned — Not Tested,BIZ-S25-010,64,Unit
+S25-064-P,DEC-BQ02/08,RISK-BIZ-S25-010,Planned — Not Tested,BIZ-S25-010,64,Browser
+S25-064-N,DEC-BQ02/08,RISK-BIZ-S25-010,Planned — Not Tested,BIZ-S25-010,64,API
+S25-064-F,DEC-BQ02/08,RISK-BIZ-S25-010,Planned — Not Tested,BIZ-S25-010,64,Integration
+S25-065-U,DEC-027; DEC-BQ02,RISK-BIZ-S25-011,Planned — Not Tested,BIZ-S25-011,65,Unit
+S25-065-P,DEC-027; DEC-BQ02,RISK-BIZ-S25-011,Planned — Not Tested,BIZ-S25-011,65,Browser
+S25-065-N,DEC-027; DEC-BQ02,RISK-BIZ-S25-011,Planned — Not Tested,BIZ-S25-011,65,API
+S25-065-F,DEC-027; DEC-BQ02,RISK-BIZ-S25-011,Planned — Not Tested,BIZ-S25-011,65,Integration
+S25-066-U,DEC-023; DEC-BQ03,RISK-BIZ-S25-012,Planned — Not Tested,BIZ-S25-012,66,Unit
+S25-066-P,DEC-023; DEC-BQ03,RISK-BIZ-S25-012,Planned — Not Tested,BIZ-S25-012,66,Browser
+S25-066-N,DEC-023; DEC-BQ03,RISK-BIZ-S25-012,Planned — Not Tested,BIZ-S25-012,66,API
+S25-066-F,DEC-023; DEC-BQ03,RISK-BIZ-S25-012,Planned — Not Tested,BIZ-S25-012,66,Integration
+S25-067-U,DEC-022/023; DEC-BQ03,RISK-BIZ-S25-013,Planned — Not Tested,BIZ-S25-013,67,Unit
+S25-067-P,DEC-022/023; DEC-BQ03,RISK-BIZ-S25-013,Planned — Not Tested,BIZ-S25-013,67,Browser
+S25-067-N,DEC-022/023; DEC-BQ03,RISK-BIZ-S25-013,Planned — Not Tested,BIZ-S25-013,67,API
+S25-067-F,DEC-022/023; DEC-BQ03,RISK-BIZ-S25-013,Planned — Not Tested,BIZ-S25-013,67,Integration
+S25-068-U,DEC-027; DEC-BQ03/04,RISK-BIZ-S25-014,Planned — Not Tested,BIZ-S25-014,68,Unit
+S25-068-P,DEC-027; DEC-BQ03/04,RISK-BIZ-S25-014,Planned — Not Tested,BIZ-S25-014,68,Browser
+S25-068-N,DEC-027; DEC-BQ03/04,RISK-BIZ-S25-014,Planned — Not Tested,BIZ-S25-014,68,API
+S25-068-F,DEC-027; DEC-BQ03/04,RISK-BIZ-S25-014,Planned — Not Tested,BIZ-S25-014,68,Integration
+S25-069-U,DEC-012/021/028; DEC-BQ04,RISK-BIZ-S25-015,Planned — Not Tested,BIZ-S25-015,69,Unit
+S25-069-P,DEC-012/021/028; DEC-BQ04,RISK-BIZ-S25-015,Planned — Not Tested,BIZ-S25-015,69,Browser
+S25-069-N,DEC-012/021/028; DEC-BQ04,RISK-BIZ-S25-015,Planned — Not Tested,BIZ-S25-015,69,API
+S25-069-F,DEC-012/021/028; DEC-BQ04,RISK-BIZ-S25-015,Planned — Not Tested,BIZ-S25-015,69,Integration
+S25-070-U,DEC-024; DEC-BQ09,RISK-BIZ-S25-016,Planned — Not Tested,BIZ-S25-016,70,Unit
+S25-070-P,DEC-024; DEC-BQ09,RISK-BIZ-S25-016,Planned — Not Tested,BIZ-S25-016,70,Browser
+S25-070-N,DEC-024; DEC-BQ09,RISK-BIZ-S25-016,Planned — Not Tested,BIZ-S25-016,70,API
+S25-070-F,DEC-024; DEC-BQ09,RISK-BIZ-S25-016,Planned — Not Tested,BIZ-S25-016,70,Integration
+S25-071-U,DEC-025; DEC-BQ10,RISK-BIZ-S25-017,Planned — Not Tested,BIZ-S25-017,71,Unit
+S25-071-P,DEC-025; DEC-BQ10,RISK-BIZ-S25-017,Planned — Not Tested,BIZ-S25-017,71,Browser
+S25-071-N,DEC-025; DEC-BQ10,RISK-BIZ-S25-017,Planned — Not Tested,BIZ-S25-017,71,API
+S25-071-F,DEC-025; DEC-BQ10,RISK-BIZ-S25-017,Planned — Not Tested,BIZ-S25-017,71,Integration
+S25-072-U,DEC-025; DEC-BQ10,RISK-BIZ-S25-018,Planned — Not Tested,BIZ-S25-018,72,Unit
+S25-072-P,DEC-025; DEC-BQ10,RISK-BIZ-S25-018,Planned — Not Tested,BIZ-S25-018,72,Browser
+S25-072-N,DEC-025; DEC-BQ10,RISK-BIZ-S25-018,Planned — Not Tested,BIZ-S25-018,72,API
+S25-072-F,DEC-025; DEC-BQ10,RISK-BIZ-S25-018,Planned — Not Tested,BIZ-S25-018,72,Integration
+S25-073-U,DEC-026,RISK-BIZ-S25-019,Planned — Not Tested,BIZ-S25-019,73,Unit
+S25-073-P,DEC-026,RISK-BIZ-S25-019,Planned — Not Tested,BIZ-S25-019,73,Browser
+S25-073-N,DEC-026,RISK-BIZ-S25-019,Planned — Not Tested,BIZ-S25-019,73,API
+S25-073-F,DEC-026,RISK-BIZ-S25-019,Planned — Not Tested,BIZ-S25-019,73,Integration
+S25-074-U,DEC-BQ11,RISK-BIZ-S25-020,Planned — Not Tested,BIZ-S25-020,74,Unit
+S25-074-P,DEC-BQ11,RISK-BIZ-S25-020,Planned — Not Tested,BIZ-S25-020,74,Browser
+S25-074-N,DEC-BQ11,RISK-BIZ-S25-020,Planned — Not Tested,BIZ-S25-020,74,API
+S25-074-F,DEC-BQ11,RISK-BIZ-S25-020,Planned — Not Tested,BIZ-S25-020,74,Integration
+S25-075-U,DEC-007/029; DEC-Q05/046,RISK-BIZ-S25-021,Planned — Not Tested,BIZ-S25-021,75,Unit
+S25-075-P,DEC-007/029; DEC-Q05/046,RISK-BIZ-S25-021,Planned — Not Tested,BIZ-S25-021,75,Browser
+S25-075-N,DEC-007/029; DEC-Q05/046,RISK-BIZ-S25-021,Planned — Not Tested,BIZ-S25-021,75,API
+S25-075-F,DEC-007/029; DEC-Q05/046,RISK-BIZ-S25-021,Planned — Not Tested,BIZ-S25-021,75,Integration
+S25-076-U,DEC-029; DEC-BQ12,RISK-BIZ-S25-022,Planned — Not Tested,BIZ-S25-022,76,Unit
+S25-076-P,DEC-029; DEC-BQ12,RISK-BIZ-S25-022,Planned — Not Tested,BIZ-S25-022,76,Browser
+S25-076-N,DEC-029; DEC-BQ12,RISK-BIZ-S25-022,Planned — Not Tested,BIZ-S25-022,76,API
+S25-076-F,DEC-029; DEC-BQ12,RISK-BIZ-S25-022,Planned — Not Tested,BIZ-S25-022,76,Integration
+S25-077-U,DEC-008; DEC-BQ08,RISK-BIZ-S25-023,Planned — Not Tested,BIZ-S25-023,77,Unit
+S25-077-P,DEC-008; DEC-BQ08,RISK-BIZ-S25-023,Planned — Not Tested,BIZ-S25-023,77,Browser
+S25-077-N,DEC-008; DEC-BQ08,RISK-BIZ-S25-023,Planned — Not Tested,BIZ-S25-023,77,API
+S25-077-F,DEC-008; DEC-BQ08,RISK-BIZ-S25-023,Planned — Not Tested,BIZ-S25-023,77,Integration
+S25-078-U,AGENTS validation; probation policy decision,RISK-BIZ-S25-024,Planned — Not Tested,BIZ-S25-024,78,Unit
+S25-078-P,AGENTS validation; probation policy decision,RISK-BIZ-S25-024,Planned — Not Tested,BIZ-S25-024,78,Browser
+S25-078-N,AGENTS validation; probation policy decision,RISK-BIZ-S25-024,Planned — Not Tested,BIZ-S25-024,78,API
+S25-078-F,AGENTS validation; probation policy decision,RISK-BIZ-S25-024,Planned — Not Tested,BIZ-S25-024,78,Integration
+S25-079-U,DEC-011; R2 remediation plan,RISK-R2-S25-001,Planned — Not Tested,R2-S25-001,79,Unit
+S25-079-P,DEC-011; R2 remediation plan,RISK-R2-S25-001,Planned — Not Tested,R2-S25-001,79,Integration
+S25-079-N,DEC-011; R2 remediation plan,RISK-R2-S25-001,Planned — Not Tested,R2-S25-001,79,API
+S25-079-F,DEC-011; R2 remediation plan,RISK-R2-S25-001,Planned — Not Tested,R2-S25-001,79,Integration
+S25-080-U,AGENTS upload safety; scanner/pixel policy pending,RISK-R2-S25-002,Planned — Not Tested,R2-S25-002,80,Unit
+S25-080-P,AGENTS upload safety; scanner/pixel policy pending,RISK-R2-S25-002,Planned — Not Tested,R2-S25-002,80,Browser
+S25-080-N,AGENTS upload safety; scanner/pixel policy pending,RISK-R2-S25-002,Planned — Not Tested,R2-S25-002,80,API
+S25-080-F,AGENTS upload safety; scanner/pixel policy pending,RISK-R2-S25-002,Planned — Not Tested,R2-S25-002,80,Integration
+S25-081-U,DEC-011; audit retention/failure decision,RISK-R2-S25-003,Planned — Not Tested,R2-S25-003,81,Unit
+S25-081-P,DEC-011; audit retention/failure decision,RISK-R2-S25-003,Planned — Not Tested,R2-S25-003,81,Browser
+S25-081-N,DEC-011; audit retention/failure decision,RISK-R2-S25-003,Planned — Not Tested,R2-S25-003,81,API
+S25-081-F,DEC-011; audit retention/failure decision,RISK-R2-S25-003,Planned — Not Tested,R2-S25-003,81,Integration
+S25-082-G1,DEC-020; test/QA completion policy,RISK-QA-R2-S25-001,Planned — Not Tested,QA-R2-S25-001,82,QA gate review
+S25-082-G2,DEC-020; linked task rules,RISK-QA-R2-S25-001,Planned — Not Tested,QA-R2-S25-001,82,QA gate review
+S25-082-G3,DEC-020,RISK-QA-R2-S25-001,Planned — Not Tested,QA-R2-S25-001,82,QA gate review
+S25-083-U,DEC-030; AUTH-RV-01/04,RISK-AUTH-S25-001,Planned — Not Tested,AUTH-S25-001,83,Unit
+S25-083-P,DEC-030; AUTH-RV-01/04,RISK-AUTH-S25-001,Planned — Not Tested,AUTH-S25-001,83,Browser
+S25-083-N,DEC-030; AUTH-RV-01/04,RISK-AUTH-S25-001,Planned — Not Tested,AUTH-S25-001,83,API
+S25-083-F,DEC-030; AUTH-RV-01/04,RISK-AUTH-S25-001,Planned — Not Tested,AUTH-S25-001,83,Integration
+S25-084-U,DEC-007/044/046; AUTH-RV-02/03,RISK-AUTH-S25-002,Planned — Not Tested,AUTH-S25-002,84,Unit
+S25-084-P,DEC-007/044/046; AUTH-RV-02/03,RISK-AUTH-S25-002,Planned — Not Tested,AUTH-S25-002,84,Browser
+S25-084-N,DEC-007/044/046; AUTH-RV-02/03,RISK-AUTH-S25-002,Planned — Not Tested,AUTH-S25-002,84,API
+S25-084-F,DEC-007/044/046; AUTH-RV-02/03,RISK-AUTH-S25-002,Planned — Not Tested,AUTH-S25-002,84,Integration
+S25-085-U,DEC-002/003/005/037/044/046,RISK-AUTH-S25-003,Planned — Not Tested,AUTH-S25-003,85,Unit
+S25-085-P,DEC-002/003/005/037/044/046,RISK-AUTH-S25-003,Planned — Not Tested,AUTH-S25-003,85,Browser
+S25-085-N,DEC-002/003/005/037/044/046,RISK-AUTH-S25-003,Planned — Not Tested,AUTH-S25-003,85,API
+S25-085-F,DEC-002/003/005/037/044/046,RISK-AUTH-S25-003,Planned — Not Tested,AUTH-S25-003,85,Integration
+S25-086-U,DEC-036/039; AUTH-RV-20/21,RISK-AUTH-S25-004,Planned — Not Tested,AUTH-S25-004,86,Unit
+S25-086-P,DEC-036/039; AUTH-RV-20/21,RISK-AUTH-S25-004,Planned — Not Tested,AUTH-S25-004,86,Browser
+S25-086-N,DEC-036/039; AUTH-RV-20/21,RISK-AUTH-S25-004,Planned — Not Tested,AUTH-S25-004,86,API
+S25-086-F,DEC-036/039; AUTH-RV-20/21,RISK-AUTH-S25-004,Planned — Not Tested,AUTH-S25-004,86,Integration
+S25-087-U,AGENTS config/input invariants,RISK-AUTH-S25-005,Planned — Not Tested,AUTH-S25-005,87,Unit
+S25-087-P,AGENTS config/input invariants,RISK-AUTH-S25-005,Planned — Not Tested,AUTH-S25-005,87,Integration
+S25-087-N,AGENTS config/input invariants,RISK-AUTH-S25-005,Planned — Not Tested,AUTH-S25-005,87,API
+S25-087-F,AGENTS config/input invariants,RISK-AUTH-S25-005,Planned — Not Tested,AUTH-S25-005,87,Integration
+S25-088-U,DEC-033/041; AUTH-Q05/07,RISK-AUTH-S25-006,Planned — Not Tested,AUTH-S25-006,88,Unit
+S25-088-P,DEC-033/041; AUTH-Q05/07,RISK-AUTH-S25-006,Planned — Not Tested,AUTH-S25-006,88,Browser
+S25-088-N,DEC-033/041; AUTH-Q05/07,RISK-AUTH-S25-006,Planned — Not Tested,AUTH-S25-006,88,API
+S25-088-F,DEC-033/041; AUTH-Q05/07,RISK-AUTH-S25-006,Planned — Not Tested,AUTH-S25-006,88,Integration
+S25-089-U,DEC-031/032; action/lifetime detail pending,RISK-AUTH-S25-007,Planned — Not Tested,AUTH-S25-007,89,Unit
+S25-089-P,DEC-031/032; action/lifetime detail pending,RISK-AUTH-S25-007,Planned — Not Tested,AUTH-S25-007,89,Browser
+S25-089-N,DEC-031/032; action/lifetime detail pending,RISK-AUTH-S25-007,Planned — Not Tested,AUTH-S25-007,89,API
+S25-089-F,DEC-031/032; action/lifetime detail pending,RISK-AUTH-S25-007,Planned — Not Tested,AUTH-S25-007,89,Integration
+S25-090-G1,DEC-020; test/QA completion policy,RISK-QA-AUTH-S25-001,Planned — Not Tested,QA-AUTH-S25-001,90,QA gate review
+S25-090-G2,DEC-020; linked task rules,RISK-QA-AUTH-S25-001,Planned — Not Tested,QA-AUTH-S25-001,90,QA gate review
+S25-090-G3,DEC-020,RISK-QA-AUTH-S25-001,Planned — Not Tested,QA-AUTH-S25-001,90,QA gate review
+S25-091-D1,AGENTS evidence policy,RISK-MAIL-S25-PLAN-001,Planned — Not Tested,MAIL-S25-PLAN-001,91,Documentation review
+S25-091-D2,AGENTS evidence policy,RISK-MAIL-S25-PLAN-001,Planned — Not Tested,MAIL-S25-PLAN-001,91,Documentation review
+S25-093-U,DEC-013/015/037/038,RISK-MAIL-S25-001,Planned — Not Tested,MAIL-S25-001,93,Unit
+S25-093-P,DEC-013/015/037/038,RISK-MAIL-S25-001,Planned — Not Tested,MAIL-S25-001,93,Browser
+S25-093-N,DEC-013/015/037/038,RISK-MAIL-S25-001,Planned — Not Tested,MAIL-S25-001,93,API
+S25-093-F,DEC-013/015/037/038,RISK-MAIL-S25-001,Planned — Not Tested,MAIL-S25-001,93,Integration
+S25-094-U,DEC-030/037; initial sender decision,RISK-MAIL-S25-002,Planned — Not Tested,MAIL-S25-002,94,Unit
+S25-094-P,DEC-030/037; initial sender decision,RISK-MAIL-S25-002,Planned — Not Tested,MAIL-S25-002,94,Browser
+S25-094-N,DEC-030/037; initial sender decision,RISK-MAIL-S25-002,Planned — Not Tested,MAIL-S25-002,94,API
+S25-094-F,DEC-030/037; initial sender decision,RISK-MAIL-S25-002,Planned — Not Tested,MAIL-S25-002,94,Integration
+S25-095-U,DEC-037/038/039,RISK-MAIL-S25-003,Planned — Not Tested,MAIL-S25-003,95,Unit
+S25-095-P,DEC-037/038/039,RISK-MAIL-S25-003,Planned — Not Tested,MAIL-S25-003,95,Browser
+S25-095-N,DEC-037/038/039,RISK-MAIL-S25-003,Planned — Not Tested,MAIL-S25-003,95,API
+S25-095-F,DEC-037/038/039,RISK-MAIL-S25-003,Planned — Not Tested,MAIL-S25-003,95,Integration
+S25-096-U,DEC-037/038/039,RISK-MAIL-S25-004,Planned — Not Tested,MAIL-S25-004,96,Unit
+S25-096-P,DEC-037/038/039,RISK-MAIL-S25-004,Planned — Not Tested,MAIL-S25-004,96,Browser
+S25-096-N,DEC-037/038/039,RISK-MAIL-S25-004,Planned — Not Tested,MAIL-S25-004,96,API
+S25-096-F,DEC-037/038/039,RISK-MAIL-S25-004,Planned — Not Tested,MAIL-S25-004,96,Integration
+S25-097-U,DEC-037/038/039,RISK-MAIL-S25-005,Planned — Not Tested,MAIL-S25-005,97,Unit
+S25-097-P,DEC-037/038/039,RISK-MAIL-S25-005,Planned — Not Tested,MAIL-S25-005,97,Browser
+S25-097-N,DEC-037/038/039,RISK-MAIL-S25-005,Planned — Not Tested,MAIL-S25-005,97,API
+S25-097-F,DEC-037/038/039,RISK-MAIL-S25-005,Planned — Not Tested,MAIL-S25-005,97,Integration
+S25-098-U,DEC-037/038/039,RISK-MAIL-S25-006,Planned — Not Tested,MAIL-S25-006,98,Unit
+S25-098-P,DEC-037/038/039,RISK-MAIL-S25-006,Planned — Not Tested,MAIL-S25-006,98,Browser
+S25-098-N,DEC-037/038/039,RISK-MAIL-S25-006,Planned — Not Tested,MAIL-S25-006,98,API
+S25-098-F,DEC-037/038/039,RISK-MAIL-S25-006,Planned — Not Tested,MAIL-S25-006,98,Integration
+S25-099-U,AGENTS signed callback/tenant/idempotency invariants,RISK-MAIL-S25-007,Planned — Not Tested,MAIL-S25-007,99,Unit
+S25-099-P,AGENTS signed callback/tenant/idempotency invariants,RISK-MAIL-S25-007,Planned — Not Tested,MAIL-S25-007,99,Integration
+S25-099-N,AGENTS signed callback/tenant/idempotency invariants,RISK-MAIL-S25-007,Planned — Not Tested,MAIL-S25-007,99,API
+S25-099-F,AGENTS signed callback/tenant/idempotency invariants,RISK-MAIL-S25-007,Planned — Not Tested,MAIL-S25-007,99,Integration
+S25-100-U,DEC-044/046; DEC-007,RISK-MAIL-S25-008,Planned — Not Tested,MAIL-S25-008,100,Unit
+S25-100-P,DEC-044/046; DEC-007,RISK-MAIL-S25-008,Planned — Not Tested,MAIL-S25-008,100,Browser
+S25-100-N,DEC-044/046; DEC-007,RISK-MAIL-S25-008,Planned — Not Tested,MAIL-S25-008,100,API
+S25-100-F,DEC-044/046; DEC-007,RISK-MAIL-S25-008,Planned — Not Tested,MAIL-S25-008,100,Integration
+S25-101-U,DEC-045; phone transport decision,RISK-MAIL-S25-009,Planned — Not Tested,MAIL-S25-009,101,Unit
+S25-101-P,DEC-045; phone transport decision,RISK-MAIL-S25-009,Planned — Not Tested,MAIL-S25-009,101,Browser
+S25-101-N,DEC-045; phone transport decision,RISK-MAIL-S25-009,Planned — Not Tested,MAIL-S25-009,101,API
+S25-101-F,DEC-045; phone transport decision,RISK-MAIL-S25-009,Planned — Not Tested,MAIL-S25-009,101,Integration
+S25-102-U,DEC-033/041,RISK-MAIL-S25-010,Planned — Not Tested,MAIL-S25-010,102,Unit
+S25-102-P,DEC-033/041,RISK-MAIL-S25-010,Planned — Not Tested,MAIL-S25-010,102,Browser
+S25-102-N,DEC-033/041,RISK-MAIL-S25-010,Planned — Not Tested,MAIL-S25-010,102,API
+S25-102-F,DEC-033/041,RISK-MAIL-S25-010,Planned — Not Tested,MAIL-S25-010,102,Integration
+S25-103-U,DEC-034; cadence/quiet-hours decision,RISK-MAIL-S25-011,Planned — Not Tested,MAIL-S25-011,103,Unit
+S25-103-P,DEC-034; cadence/quiet-hours decision,RISK-MAIL-S25-011,Planned — Not Tested,MAIL-S25-011,103,Integration
+S25-103-N,DEC-034; cadence/quiet-hours decision,RISK-MAIL-S25-011,Planned — Not Tested,MAIL-S25-011,103,API
+S25-103-F,DEC-034; cadence/quiet-hours decision,RISK-MAIL-S25-011,Planned — Not Tested,MAIL-S25-011,103,Integration
+S25-104-U,DEC-029/033/036; MAIL-S25-023,RISK-MAIL-S25-012,Planned — Not Tested,MAIL-S25-012,104,Unit
+S25-104-P,DEC-029/033/036; MAIL-S25-023,RISK-MAIL-S25-012,Planned — Not Tested,MAIL-S25-012,104,Browser
+S25-104-N,DEC-029/033/036; MAIL-S25-023,RISK-MAIL-S25-012,Planned — Not Tested,MAIL-S25-012,104,API
+S25-104-F,DEC-029/033/036; MAIL-S25-023,RISK-MAIL-S25-012,Planned — Not Tested,MAIL-S25-012,104,Integration
+S25-105-U,DEC-036/040; recipient matrix pending,RISK-MAIL-S25-013,Planned — Not Tested,MAIL-S25-013,105,Unit
+S25-105-P,DEC-036/040; recipient matrix pending,RISK-MAIL-S25-013,Planned — Not Tested,MAIL-S25-013,105,Browser
+S25-105-N,DEC-036/040; recipient matrix pending,RISK-MAIL-S25-013,Planned — Not Tested,MAIL-S25-013,105,API
+S25-105-F,DEC-036/040; recipient matrix pending,RISK-MAIL-S25-013,Planned — Not Tested,MAIL-S25-013,105,Integration
+S25-106-U,DEC-028/034/040; cadence decision,RISK-MAIL-S25-014,Planned — Not Tested,MAIL-S25-014,106,Unit
+S25-106-P,DEC-028/034/040; cadence decision,RISK-MAIL-S25-014,Planned — Not Tested,MAIL-S25-014,106,Browser
+S25-106-N,DEC-028/034/040; cadence decision,RISK-MAIL-S25-014,Planned — Not Tested,MAIL-S25-014,106,API
+S25-106-F,DEC-028/034/040; cadence decision,RISK-MAIL-S25-014,Planned — Not Tested,MAIL-S25-014,106,Integration
+S25-107-U,DEC-012/024/036/040,RISK-MAIL-S25-015,Planned — Not Tested,MAIL-S25-015,107,Unit
+S25-107-P,DEC-012/024/036/040,RISK-MAIL-S25-015,Planned — Not Tested,MAIL-S25-015,107,Browser
+S25-107-N,DEC-012/024/036/040,RISK-MAIL-S25-015,Planned — Not Tested,MAIL-S25-015,107,API
+S25-107-F,DEC-012/024/036/040,RISK-MAIL-S25-015,Planned — Not Tested,MAIL-S25-015,107,Integration
+S25-108-U,DEC-026/034/040; DEC-BQ11,RISK-MAIL-S25-016,Planned — Not Tested,MAIL-S25-016,108,Unit
+S25-108-P,DEC-026/034/040; DEC-BQ11,RISK-MAIL-S25-016,Planned — Not Tested,MAIL-S25-016,108,Browser
+S25-108-N,DEC-026/034/040; DEC-BQ11,RISK-MAIL-S25-016,Planned — Not Tested,MAIL-S25-016,108,API
+S25-108-F,DEC-026/034/040; DEC-BQ11,RISK-MAIL-S25-016,Planned — Not Tested,MAIL-S25-016,108,Integration
+S25-109-U,DEC-025/034; audience/cadence decision,RISK-MAIL-S25-017,Planned — Not Tested,MAIL-S25-017,109,Unit
+S25-109-P,DEC-025/034; audience/cadence decision,RISK-MAIL-S25-017,Planned — Not Tested,MAIL-S25-017,109,Browser
+S25-109-N,DEC-025/034; audience/cadence decision,RISK-MAIL-S25-017,Planned — Not Tested,MAIL-S25-017,109,API
+S25-109-F,DEC-025/034; audience/cadence decision,RISK-MAIL-S25-017,Planned — Not Tested,MAIL-S25-017,109,Integration
+S25-110-U,DEC-004/036; project audience decision,RISK-MAIL-S25-018,Planned — Not Tested,MAIL-S25-018,110,Unit
+S25-110-P,DEC-004/036; project audience decision,RISK-MAIL-S25-018,Planned — Not Tested,MAIL-S25-018,110,Browser
+S25-110-N,DEC-004/036; project audience decision,RISK-MAIL-S25-018,Planned — Not Tested,MAIL-S25-018,110,API
+S25-110-F,DEC-004/036; project audience decision,RISK-MAIL-S25-018,Planned — Not Tested,MAIL-S25-018,110,Integration
+S25-111-U,DEC-011/040; document/export audience decision,RISK-MAIL-S25-019,Planned — Not Tested,MAIL-S25-019,111,Unit
+S25-111-P,DEC-011/040; document/export audience decision,RISK-MAIL-S25-019,Planned — Not Tested,MAIL-S25-019,111,Browser
+S25-111-N,DEC-011/040; document/export audience decision,RISK-MAIL-S25-019,Planned — Not Tested,MAIL-S25-019,111,API
+S25-111-F,DEC-011/040; document/export audience decision,RISK-MAIL-S25-019,Planned — Not Tested,MAIL-S25-019,111,Integration
+S25-112-U,DEC-033/035; DEC-013/015,RISK-MAIL-S25-020,Planned — Not Tested,MAIL-S25-020,112,Unit
+S25-112-P,DEC-033/035; DEC-013/015,RISK-MAIL-S25-020,Planned — Not Tested,MAIL-S25-020,112,Browser
+S25-112-N,DEC-033/035; DEC-013/015,RISK-MAIL-S25-020,Planned — Not Tested,MAIL-S25-020,112,API
+S25-112-F,DEC-033/035; DEC-013/015,RISK-MAIL-S25-020,Planned — Not Tested,MAIL-S25-020,112,Integration
+S25-113-U,DEC-036/039; DEC-032,RISK-MAIL-S25-021,Planned — Not Tested,MAIL-S25-021,113,Unit
+S25-113-P,DEC-036/039; DEC-032,RISK-MAIL-S25-021,Planned — Not Tested,MAIL-S25-021,113,Browser
+S25-113-N,DEC-036/039; DEC-032,RISK-MAIL-S25-021,Planned — Not Tested,MAIL-S25-021,113,API
+S25-113-F,DEC-036/039; DEC-032,RISK-MAIL-S25-021,Planned — Not Tested,MAIL-S25-021,113,Integration
+S25-114-U,DEC-039/045,RISK-MAIL-S25-022,Planned — Not Tested,MAIL-S25-022,114,Unit
+S25-114-P,DEC-039/045,RISK-MAIL-S25-022,Planned — Not Tested,MAIL-S25-022,114,Browser
+S25-114-N,DEC-039/045,RISK-MAIL-S25-022,Planned — Not Tested,MAIL-S25-022,114,API
+S25-114-F,DEC-039/045,RISK-MAIL-S25-022,Planned — Not Tested,MAIL-S25-022,114,Integration
+S25-115-U,DEC-033-047; MAIL-Q04-10,RISK-MAIL-S25-023,Planned — Not Tested,MAIL-S25-023,115,Unit
+S25-115-P,DEC-033-047; MAIL-Q04-10,RISK-MAIL-S25-023,Planned — Not Tested,MAIL-S25-023,115,Browser
+S25-115-N,DEC-033-047; MAIL-Q04-10,RISK-MAIL-S25-023,Planned — Not Tested,MAIL-S25-023,115,API
+S25-115-F,DEC-033-047; MAIL-Q04-10,RISK-MAIL-S25-023,Planned — Not Tested,MAIL-S25-023,115,Integration
+S25-116-U,AGENTS evidence/config invariants; DEC-038,RISK-MAIL-S25-024,Planned — Not Tested,MAIL-S25-024,116,Unit
+S25-116-P,AGENTS evidence/config invariants; DEC-038,RISK-MAIL-S25-024,Planned — Not Tested,MAIL-S25-024,116,Browser
+S25-116-N,AGENTS evidence/config invariants; DEC-038,RISK-MAIL-S25-024,Planned — Not Tested,MAIL-S25-024,116,API
+S25-116-F,AGENTS evidence/config invariants; DEC-038,RISK-MAIL-S25-024,Planned — Not Tested,MAIL-S25-024,116,Integration
+S25-117-G1,DEC-020; test/QA completion policy,RISK-QA-MAIL-S25-001,Planned — Not Tested,QA-MAIL-S25-001,117,QA gate review
+S25-117-G2,DEC-020; linked task rules,RISK-QA-MAIL-S25-001,Planned — Not Tested,QA-MAIL-S25-001,117,QA gate review
+S25-117-G3,DEC-020,RISK-QA-MAIL-S25-001,Planned — Not Tested,QA-MAIL-S25-001,117,QA gate review
+S25-118-G1,DEC-020; test/QA completion policy,RISK-QA-MAIL-S25-002,Planned — Not Tested,QA-MAIL-S25-002,118,QA gate review
+S25-118-G2,DEC-020; linked task rules,RISK-QA-MAIL-S25-002,Planned — Not Tested,QA-MAIL-S25-002,118,QA gate review
+S25-118-G3,DEC-020,RISK-QA-MAIL-S25-002,Planned — Not Tested,QA-MAIL-S25-002,118,QA gate review
+S25-119-G1,DEC-020; test/QA completion policy,RISK-QA-MAIL-S25-003,Planned — Not Tested,QA-MAIL-S25-003,119,QA gate review
+S25-119-G2,DEC-020; linked task rules,RISK-QA-MAIL-S25-003,Planned — Not Tested,QA-MAIL-S25-003,119,QA gate review
+S25-119-G3,DEC-020,RISK-QA-MAIL-S25-003,Planned — Not Tested,QA-MAIL-S25-003,119,QA gate review
+S25-120-U,DEC-042/043/047; MAIL-Q02/03/06/08,RISK-PAY-S25-001,Planned — Not Tested,PAY-S25-001,120,Unit
+S25-120-P,DEC-042/043/047; MAIL-Q02/03/06/08,RISK-PAY-S25-001,Planned — Not Tested,PAY-S25-001,120,Browser
+S25-120-N,DEC-042/043/047; MAIL-Q02/03/06/08,RISK-PAY-S25-001,Planned — Not Tested,PAY-S25-001,120,API
+S25-120-F,DEC-042/043/047; MAIL-Q02/03/06/08,RISK-PAY-S25-001,Planned — Not Tested,PAY-S25-001,120,Integration
+S25-121-U,PAY-S25-001; DEC-047,RISK-PAY-S25-002,Planned — Not Tested,PAY-S25-002,121,Unit
+S25-121-P,PAY-S25-001; DEC-047,RISK-PAY-S25-002,Planned — Not Tested,PAY-S25-002,121,Browser
+S25-121-N,PAY-S25-001; DEC-047,RISK-PAY-S25-002,Planned — Not Tested,PAY-S25-002,121,API
+S25-121-F,PAY-S25-001; DEC-047,RISK-PAY-S25-002,Planned — Not Tested,PAY-S25-002,121,Integration
+S25-122-U,DEC-047; PAY-S25-001,RISK-PAY-S25-003,Planned — Not Tested,PAY-S25-003,122,Unit
+S25-122-P,DEC-047; PAY-S25-001,RISK-PAY-S25-003,Planned — Not Tested,PAY-S25-003,122,Browser
+S25-122-N,DEC-047; PAY-S25-001,RISK-PAY-S25-003,Planned — Not Tested,PAY-S25-003,122,API
+S25-122-F,DEC-047; PAY-S25-001,RISK-PAY-S25-003,Planned — Not Tested,PAY-S25-003,122,Integration
+S25-123-U,DEC-042/043/047; PAY-S25-001,RISK-PAY-S25-004,Planned — Not Tested,PAY-S25-004,123,Unit
+S25-123-P,DEC-042/043/047; PAY-S25-001,RISK-PAY-S25-004,Planned — Not Tested,PAY-S25-004,123,Browser
+S25-123-N,DEC-042/043/047; PAY-S25-001,RISK-PAY-S25-004,Planned — Not Tested,PAY-S25-004,123,API
+S25-123-F,DEC-042/043/047; PAY-S25-001,RISK-PAY-S25-004,Planned — Not Tested,PAY-S25-004,123,Integration
+S25-124-U,DEC-042; PAY-S25-001,RISK-PAY-S25-005,Planned — Not Tested,PAY-S25-005,124,Unit
+S25-124-P,DEC-042; PAY-S25-001,RISK-PAY-S25-005,Planned — Not Tested,PAY-S25-005,124,Browser
+S25-124-N,DEC-042; PAY-S25-001,RISK-PAY-S25-005,Planned — Not Tested,PAY-S25-005,124,API
+S25-124-F,DEC-042; PAY-S25-001,RISK-PAY-S25-005,Planned — Not Tested,PAY-S25-005,124,Integration
+S25-125-U,DEC-043/044/047; address-repair decision,RISK-PAY-S25-006,Planned — Not Tested,PAY-S25-006,125,Unit
+S25-125-P,DEC-043/044/047; address-repair decision,RISK-PAY-S25-006,Planned — Not Tested,PAY-S25-006,125,Browser
+S25-125-N,DEC-043/044/047; address-repair decision,RISK-PAY-S25-006,Planned — Not Tested,PAY-S25-006,125,API
+S25-125-F,DEC-043/044/047; address-repair decision,RISK-PAY-S25-006,Planned — Not Tested,PAY-S25-006,125,Integration
+S25-126-G1,DEC-020; test/QA completion policy,RISK-QA-PAY-S25-001,Planned — Not Tested,QA-PAY-S25-001,126,QA gate review
+S25-126-G2,DEC-020; linked task rules,RISK-QA-PAY-S25-001,Planned — Not Tested,QA-PAY-S25-001,126,QA gate review
+S25-126-G3,DEC-020,RISK-QA-PAY-S25-001,Planned — Not Tested,QA-PAY-S25-001,126,QA gate review
+S25-127-D1,AGENTS evidence policy,RISK-AUD-S25-PLAN-001,Planned — Not Tested,AUD-S25-PLAN-001,127,Documentation review
+S25-127-D2,AGENTS evidence policy,RISK-AUD-S25-PLAN-001,Planned — Not Tested,AUD-S25-PLAN-001,127,Documentation review
+S25-128-U,DEC-004/011; AGENTS tenant invariants,RISK-EMS-S25-001,Planned — Not Tested,EMS-S25-001,128,Unit
+S25-128-P,DEC-004/011; AGENTS tenant invariants,RISK-EMS-S25-001,Planned — Not Tested,EMS-S25-001,128,Browser
+S25-128-N,DEC-004/011; AGENTS tenant invariants,RISK-EMS-S25-001,Planned — Not Tested,EMS-S25-001,128,API
+S25-128-F,DEC-004/011; AGENTS tenant invariants,RISK-EMS-S25-001,Planned — Not Tested,EMS-S25-001,128,Integration
+S25-129-U,DEC-007/029; BIZ-S25-021/022/024,RISK-EMS-S25-002,Planned — Not Tested,EMS-S25-002,129,Unit
+S25-129-P,DEC-007/029; BIZ-S25-021/022/024,RISK-EMS-S25-002,Planned — Not Tested,EMS-S25-002,129,Browser
+S25-129-N,DEC-007/029; BIZ-S25-021/022/024,RISK-EMS-S25-002,Planned — Not Tested,EMS-S25-002,129,API
+S25-129-F,DEC-007/029; BIZ-S25-021/022/024,RISK-EMS-S25-002,Planned — Not Tested,EMS-S25-002,129,Integration
+S25-130-U,AGENTS tenant/related-ID authorization,RISK-LIC-S25-001,Planned — Not Tested,LIC-S25-001,130,Unit
+S25-130-P,AGENTS tenant/related-ID authorization,RISK-LIC-S25-001,Planned — Not Tested,LIC-S25-001,130,Browser
+S25-130-N,AGENTS tenant/related-ID authorization,RISK-LIC-S25-001,Planned — Not Tested,LIC-S25-001,130,API
+S25-130-F,AGENTS tenant/related-ID authorization,RISK-LIC-S25-001,Planned — Not Tested,LIC-S25-001,130,Integration
+S25-131-U,AGENTS atomicity/idempotency invariants,RISK-LIC-S25-002,Planned — Not Tested,LIC-S25-002,131,Unit
+S25-131-P,AGENTS atomicity/idempotency invariants,RISK-LIC-S25-002,Planned — Not Tested,LIC-S25-002,131,Browser
+S25-131-N,AGENTS atomicity/idempotency invariants,RISK-LIC-S25-002,Planned — Not Tested,LIC-S25-002,131,API
+S25-131-F,AGENTS atomicity/idempotency invariants,RISK-LIC-S25-002,Planned — Not Tested,LIC-S25-002,131,Integration
+S25-132-U,Offline licence need/trust-model decision pending,RISK-LIC-S25-003,Planned — Not Tested,LIC-S25-003,132,Unit
+S25-132-P,Offline licence need/trust-model decision pending,RISK-LIC-S25-003,Planned — Not Tested,LIC-S25-003,132,Browser
+S25-132-N,Offline licence need/trust-model decision pending,RISK-LIC-S25-003,Planned — Not Tested,LIC-S25-003,132,API
+S25-132-F,Offline licence need/trust-model decision pending,RISK-LIC-S25-003,Planned — Not Tested,LIC-S25-003,132,Integration
+S25-133-U,DEC-024; DEC-BQ09; finance sign/bounds decision,RISK-FIN-S25-001,Planned — Not Tested,FIN-S25-001,133,Unit
+S25-133-P,DEC-024; DEC-BQ09; finance sign/bounds decision,RISK-FIN-S25-001,Planned — Not Tested,FIN-S25-001,133,Browser
+S25-133-N,DEC-024; DEC-BQ09; finance sign/bounds decision,RISK-FIN-S25-001,Planned — Not Tested,FIN-S25-001,133,API
+S25-133-F,DEC-024; DEC-BQ09; finance sign/bounds decision,RISK-FIN-S25-001,Planned — Not Tested,FIN-S25-001,133,Integration
+S25-134-U,DEC-023/027; DEC-BQ03,RISK-LV-S25-001,Planned — Not Tested,LV-S25-001,134,Unit
+S25-134-P,DEC-023/027; DEC-BQ03,RISK-LV-S25-001,Planned — Not Tested,LV-S25-001,134,Browser
+S25-134-N,DEC-023/027; DEC-BQ03,RISK-LV-S25-001,Planned — Not Tested,LV-S25-001,134,API
+S25-134-F,DEC-023/027; DEC-BQ03,RISK-LV-S25-001,Planned — Not Tested,LV-S25-001,134,Integration
+S25-135-U,DEC-007/044/046; AUTH-S25-002,RISK-CORE-S25-001,Planned — Not Tested,CORE-S25-001,135,Unit
+S25-135-P,DEC-007/044/046; AUTH-S25-002,RISK-CORE-S25-001,Planned — Not Tested,CORE-S25-001,135,Browser
+S25-135-N,DEC-007/044/046; AUTH-S25-002,RISK-CORE-S25-001,Planned — Not Tested,CORE-S25-001,135,API
+S25-135-F,DEC-007/044/046; AUTH-S25-002,RISK-CORE-S25-001,Planned — Not Tested,CORE-S25-001,135,Integration
+S25-136-U,AGENTS hierarchy/tenant/transaction invariants,RISK-CORE-S25-002,Planned — Not Tested,CORE-S25-002,136,Unit
+S25-136-P,AGENTS hierarchy/tenant/transaction invariants,RISK-CORE-S25-002,Planned — Not Tested,CORE-S25-002,136,Browser
+S25-136-N,AGENTS hierarchy/tenant/transaction invariants,RISK-CORE-S25-002,Planned — Not Tested,CORE-S25-002,136,API
+S25-136-F,AGENTS hierarchy/tenant/transaction invariants,RISK-CORE-S25-002,Planned — Not Tested,CORE-S25-002,136,Integration
+S25-137-U,DEC-007/044/046; import-format decision,RISK-CORE-S25-003,Planned — Not Tested,CORE-S25-003,137,Unit
+S25-137-P,DEC-007/044/046; import-format decision,RISK-CORE-S25-003,Planned — Not Tested,CORE-S25-003,137,Browser
+S25-137-N,DEC-007/044/046; import-format decision,RISK-CORE-S25-003,Planned — Not Tested,CORE-S25-003,137,API
+S25-137-F,DEC-007/044/046; import-format decision,RISK-CORE-S25-003,Planned — Not Tested,CORE-S25-003,137,Integration
+S25-138-U,AGENTS export/input invariants; TEN-S25-008,RISK-EXPORT-S25-001,Planned — Not Tested,EXPORT-S25-001,138,Unit
+S25-138-P,AGENTS export/input invariants; TEN-S25-008,RISK-EXPORT-S25-001,Planned — Not Tested,EXPORT-S25-001,138,Browser
+S25-138-N,AGENTS export/input invariants; TEN-S25-008,RISK-EXPORT-S25-001,Planned — Not Tested,EXPORT-S25-001,138,API
+S25-138-F,AGENTS export/input invariants; TEN-S25-008,RISK-EXPORT-S25-001,Planned — Not Tested,EXPORT-S25-001,138,Integration
+S25-139-U,AGENTS information/config invariants,RISK-OPS-S25-001,Planned — Not Tested,OPS-S25-001,139,Unit
+S25-139-P,AGENTS information/config invariants,RISK-OPS-S25-001,Planned — Not Tested,OPS-S25-001,139,Integration
+S25-139-N,AGENTS information/config invariants,RISK-OPS-S25-001,Planned — Not Tested,OPS-S25-001,139,API
+S25-139-F,AGENTS information/config invariants,RISK-OPS-S25-001,Planned — Not Tested,OPS-S25-001,139,Integration
+S25-140-U,Owner historical auto-close decision; TEN-S25-023,RISK-WORKER-S25-001,Planned — Not Tested,WORKER-S25-001,140,Unit
+S25-140-P,Owner historical auto-close decision; TEN-S25-023,RISK-WORKER-S25-001,Planned — Not Tested,WORKER-S25-001,140,Integration
+S25-140-N,Owner historical auto-close decision; TEN-S25-023,RISK-WORKER-S25-001,Planned — Not Tested,WORKER-S25-001,140,API
+S25-140-F,Owner historical auto-close decision; TEN-S25-023,RISK-WORKER-S25-001,Planned — Not Tested,WORKER-S25-001,140,Integration
+S25-141-G1,DEC-020; test/QA completion policy,RISK-QA-AUD-S25-001,Planned — Not Tested,QA-AUD-S25-001,141,QA gate review
+S25-141-G2,DEC-020; linked task rules,RISK-QA-AUD-S25-001,Planned — Not Tested,QA-AUD-S25-001,141,QA gate review
+S25-141-G3,DEC-020,RISK-QA-AUD-S25-001,Planned — Not Tested,QA-AUD-S25-001,141,QA gate review

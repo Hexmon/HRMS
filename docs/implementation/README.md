@@ -2,13 +2,13 @@
 
 Last verified from the repository: 2026-06-30.
 
-This folder tracks implementation status, coverage, and documentation completeness. It is not the place for operational steps; use `../runbooks/` for procedures and `../deployment/` for hosted setup.
+This folder preserves implementation status, coverage, and documentation completeness. The [shared sprint task sheet](https://docs.google.com/spreadsheets/d/1dr5qLKxq5IGIZAyIAdMlcDYDfld-LYxfvSHkKw1jBnA/edit?usp=sharing) tracks current sprint tasks and owners; use `../process/task-tracker.md` for its update rules. For operational steps, use `../runbooks/` and `../deployment/`.
 
 ## Implementation Set
 
 | Document | Purpose |
 | --- | --- |
-| `HRMS_PRODUCTION_TASK_SHEET.md` | Large historical/current implementation task sheet and module completion log. |
+| `HRMS_PRODUCTION_TASK_SHEET.md` | Historical implementation task sheet and module completion log; reconcile current claims with source and dated evidence. |
 | `implementation-status-index.md` | Short current implementation summary with source-of-truth pointers. |
 | `documentation-coverage-audit.md` | Required documentation set, current coverage, gaps, and maintenance ownership. |
 | `GEO-S10-010-backend-implementation-sequencing-checklist.md` | Attendance implementation sequencing, compatibility gates, and geo/mobile rollout prerequisites. |

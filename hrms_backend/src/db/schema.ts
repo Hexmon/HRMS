@@ -1850,7 +1850,7 @@ export const holidays = leaveWfh.table(
   "holidays",
   {
     id: uuidPk.defaultRandom(),
-    companyId: uuid("company_id"),
+    companyId: uuid("company_id").notNull(),
     name: text("name").notNull(),
     holidayDate: date("holiday_date").notNull(),
     region: text("region").notNull().default("All"),
@@ -1861,7 +1861,9 @@ export const holidays = leaveWfh.table(
     deletedAt
   },
   (table) => [
-    uniqueIndex("holidays_company_region_date_name_uq").on(table.companyId, table.region, table.holidayDate, table.name),
+    uniqueIndex("holidays_company_region_date_name_uq")
+      .on(table.companyId, table.region, table.holidayDate, sql`lower(${table.name})`)
+      .where(sql`${table.deletedAt} IS NULL`),
     index("holidays_company_date_idx").on(table.companyId, table.holidayDate)
   ]
 );
