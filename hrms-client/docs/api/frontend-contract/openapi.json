@@ -133904,7 +133904,7 @@
         "tags": [
           "Admin / Configuration"
         ],
-        "description": "Lists core departments for Admin Settings master-data management. Admin and HR Manager roles can read the list.",
+        "description": "Lists core departments for Admin Settings master-data management. Admin and HR Manager roles can read the list. parent_candidate_for returns authoritative cycle-safe parent choices.",
         "parameters": [
           {
             "schema": {
@@ -133959,6 +133959,17 @@
             "name": "search",
             "required": false,
             "description": "Search by code or display name."
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001"
+            },
+            "in": "query",
+            "name": "parent_candidate_for",
+            "required": false,
+            "description": "When supplied, return only active parent candidates that cannot create a self-reference or hierarchy cycle."
           }
         ],
         "security": [
@@ -134824,7 +134835,7 @@
         "tags": [
           "Admin / Configuration"
         ],
-        "description": "Updates department name, code, parent, or active status with optimistic concurrency. Deactivation is blocked while active employees reference the department.",
+        "description": "Updates department name, code, parent, or active status with optimistic concurrency. Deactivation is blocked while active employees or active child departments reference the department.",
         "requestBody": {
           "required": true,
           "content": {
