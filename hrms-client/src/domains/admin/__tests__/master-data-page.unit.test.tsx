@@ -528,6 +528,23 @@ describe("Admin master-data API journey", () => {
     expect(screen.getByLabelText("Name")).toHaveValue("Preserved draft");
   });
 
+  it("keeps a mock-mode draft when local persistence fails", async () => {
+    mock.apiEnabled = false;
+    mock.search = { tab: "employmentTypes" };
+    mock.addMaster.mockImplementationOnce(() => {
+      throw new Error("Local storage unavailable");
+    });
+    render(<MasterDataScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Contractor" } });
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Add" }));
+
+    await waitFor(() => expect(mock.toastError).toHaveBeenCalledTimes(1));
+    expect(screen.getByLabelText("Name")).toHaveValue("Contractor");
+    expect(mock.departmentRefetch).not.toHaveBeenCalled();
+  });
+
   it("blocks a rapid duplicate status toggle before pending state renders", async () => {
     let finish!: (value: unknown) => void;
     mock.departmentUpdate.mutateAsync.mockImplementationOnce(
@@ -551,6 +568,23 @@ describe("Admin master-data API journey", () => {
 
     await waitFor(() => expect(mock.departmentRefetch).toHaveBeenCalledTimes(1));
     expect(mock.toastError).toHaveBeenCalledWith(expect.any(Error), "Master data update failed");
+  });
+
+  it("keeps mock-mode status unchanged without an API refresh when local persistence fails", async () => {
+    mock.apiEnabled = false;
+    mock.search = { tab: "employmentTypes" };
+    mock.toggleMasterActive.mockImplementationOnce(() => {
+      throw new Error("Local storage unavailable");
+    });
+    render(<MasterDataScreen />);
+
+    fireEvent.click(screen.getAllByRole("switch", { name: "Deactivate Full Time" })[0]!);
+
+    await waitFor(() =>
+      expect(mock.toastError).toHaveBeenCalledWith(expect.any(Error), "Master data update failed"),
+    );
+    expect(mock.departmentRefetch).not.toHaveBeenCalled();
+    expect(mock.designationRefetch).not.toHaveBeenCalled();
   });
 
   it("shows the pending save state without accepting another action", () => {
@@ -751,6 +785,81 @@ describe("Admin master-data API journey", () => {
     expect(screen.getByLabelText("Level (optional)")).toHaveValue(null);
   });
 
+  it("keeps a stale designation draft when neither a refreshed row nor version exists", async () => {
+    mock.search = { tab: "designations" };
+    mock.designationTotal = 1;
+    mock.designationItems = [
+      {
+        id: "22222222-2222-4222-8222-222222222222",
+        designation_code: "LEAD",
+        code: "LEAD",
+        title: "Lead",
+        name: "Lead",
+        level: 7,
+        status: "active",
+        active: true,
+        deleted_at: null,
+        version: 1,
+      },
+    ];
+    mock.designationUpdate.mutateAsync.mockRejectedValueOnce(
+      new ApiError({
+        status: 409,
+        code: "CONFLICT",
+        message: "stale",
+        details: { aggregate: "designation" },
+      }),
+    );
+    mock.designationRefetch.mockResolvedValueOnce({
+      data: { items: [], page: 1, page_size: 25, total: 0 },
+    });
+    render(<MasterDataScreen />);
+
+    fireEvent.pointerDown(screen.getAllByRole("button", { name: "Actions for Lead" }).at(-1)!, {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Preserved lead" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(mock.designationRefetch).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Name")).toHaveValue("Preserved lead");
+  });
+
+  it("treats a designation with no stored level as unlevelled when editing", async () => {
+    mock.search = { tab: "designations" };
+    mock.designationTotal = 1;
+    mock.designationItems = [
+      {
+        id: "22222222-2222-4222-8222-222222222222",
+        designation_code: "LEAD",
+        code: "LEAD",
+        title: "Lead",
+        name: "Lead",
+        status: "active",
+        active: true,
+        deleted_at: null,
+        version: 1,
+      },
+    ];
+    render(<MasterDataScreen />);
+
+    fireEvent.pointerDown(screen.getAllByRole("button", { name: "Actions for Lead" }).at(-1)!, {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(mock.designationUpdate.mutateAsync).toHaveBeenCalledTimes(1));
+    expect(mock.designationUpdate.mutateAsync).toHaveBeenCalledWith({
+      id: "22222222-2222-4222-8222-222222222222",
+      input: { title: "Lead", code: "LEAD", expected_version: 1 },
+    });
+  });
+
   it("uses a conflict version when a stale designation leaves the current page", async () => {
     mock.search = { tab: "designations" };
     mock.designationTotal = 1;
@@ -852,6 +961,36 @@ describe("Admin master-data API journey", () => {
       id: "22222222-2222-4222-8222-222222222222",
       input: { status: "inactive", expected_version: 3 },
     });
+  });
+
+  it("keeps the edit dialog open when deactivation fails", async () => {
+    mock.search = { tab: "designations" };
+    mock.designationTotal = 1;
+    mock.designationItems = [
+      {
+        id: "22222222-2222-4222-8222-222222222222",
+        designation_code: "LEAD",
+        code: "LEAD",
+        title: "Lead",
+        name: "Lead",
+        level: 7,
+        status: "active",
+        active: true,
+        deleted_at: null,
+        version: 3,
+      },
+    ];
+    mock.designationUpdate.mutateAsync.mockRejectedValueOnce(new Error("Network disconnected"));
+    render(<MasterDataScreen />);
+    fireEvent.pointerDown(screen.getAllByRole("button", { name: "Actions for Lead" }).at(-1)!, {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Deactivate this record" }));
+
+    await waitFor(() => expect(mock.designationRefetch).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
   });
 
   it("closes an already inactive designation without issuing another update", async () => {

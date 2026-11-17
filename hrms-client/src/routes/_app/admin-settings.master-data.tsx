@@ -749,7 +749,7 @@ function MasterDataScreen() {
         onOpenChange={(next) => {
           if (mutationPending || submissionInFlight.current) return;
           setOpen(next);
-          if (!next) setLatestConflict(null);
+          setLatestConflict(null);
         }}
         title={
           editing
