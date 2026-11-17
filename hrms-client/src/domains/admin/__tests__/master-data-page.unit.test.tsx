@@ -18,6 +18,7 @@ const mock = vi.hoisted(() => {
     designationError: null as Error | null,
     parentError: null as Error | null,
     departmentLoading: false,
+    departmentDataMissing: false,
     designationLoading: false,
     parentLoading: false,
     departmentTotal: 60,
@@ -109,14 +110,15 @@ vi.mock("@/domains/admin/queries", () => ({
   ) => {
     mock.departmentQueryParams(params);
     return {
-      data: enabled
-        ? {
-            items: params.active_only ? mock.departmentItems : mock.departmentItems,
-            page: 1,
-            page_size: 25,
-            total: params.active_only ? mock.departmentItems.length : mock.departmentTotal,
-          }
-        : undefined,
+      data:
+        enabled && !mock.departmentDataMissing
+          ? {
+              items: params.active_only ? mock.departmentItems : mock.departmentItems,
+              page: 1,
+              page_size: 25,
+              total: params.active_only ? mock.departmentItems.length : mock.departmentTotal,
+            }
+          : undefined,
       isLoading: params.active_only ? mock.parentLoading : mock.departmentLoading,
       error: params.active_only ? mock.parentError : mock.departmentError,
       refetch: mock.departmentRefetch,
@@ -162,11 +164,13 @@ beforeEach(() => {
   mock.designationError = null;
   mock.parentError = null;
   mock.departmentLoading = false;
+  mock.departmentDataMissing = false;
   mock.designationLoading = false;
   mock.parentLoading = false;
   mock.departmentTotal = 60;
   mock.designationTotal = 0;
   mock.designationItems = [];
+  mock.mockMasters.employmentTypes[0]!.description = "Local";
   mock.departmentItems.splice(0, mock.departmentItems.length, {
     id: "11111111-1111-4111-8111-111111111111",
     department_code: "ENG",
@@ -366,6 +370,8 @@ describe("Admin master-data API journey", () => {
 
     expect(mock.toastError).toHaveBeenCalledWith("Name is required");
     expect(mock.departmentMutation.mutateAsync).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("blocks duplicate create submissions and closes only after confirmed success", async () => {
@@ -382,6 +388,8 @@ describe("Admin master-data API journey", () => {
     fireEvent.change(within(dialog).getByLabelText("Code (optional)"), {
       target: { value: "FIN" },
     });
+    fireEvent.click(within(dialog).getByRole("combobox", { name: "Parent department" }));
+    fireEvent.click(await screen.findByRole("option", { name: "Engineering" }));
     const submit = within(dialog).getByRole("button", { name: "Add" });
     fireEvent.click(submit);
     fireEvent.click(submit);
@@ -389,6 +397,11 @@ describe("Admin master-data API journey", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
 
     expect(mock.departmentMutation.mutateAsync).toHaveBeenCalledTimes(1);
+    expect(mock.departmentMutation.mutateAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        parent_department_id: "11111111-1111-4111-8111-111111111111",
+      }),
+    );
     expect(screen.getByRole("dialog")).toBeInTheDocument();
     await act(async () => finish({}));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
@@ -489,6 +502,32 @@ describe("Admin master-data API journey", () => {
     expect(mock.departmentUpdate.mutateAsync.mock.calls[1]?.[0].input.expected_version).toBe(4);
   });
 
+  it("keeps a stale department draft when the refreshed row was removed", async () => {
+    mock.departmentUpdate.mutateAsync.mockRejectedValueOnce(
+      new ApiError({
+        status: 409,
+        code: "CONFLICT",
+        message: "stale",
+        details: { aggregate: "department" },
+      }),
+    );
+    mock.departmentRefetch.mockResolvedValueOnce({
+      data: { items: [], page: 1, page_size: 25, total: 0 },
+    });
+    render(<MasterDataScreen />);
+    fireEvent.pointerDown(
+      screen.getAllByRole("button", { name: "Actions for Engineering" }).at(-1)!,
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Preserved draft" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(mock.departmentRefetch).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Name")).toHaveValue("Preserved draft");
+  });
+
   it("blocks a rapid duplicate status toggle before pending state renders", async () => {
     let finish!: (value: unknown) => void;
     mock.departmentUpdate.mutateAsync.mockImplementationOnce(
@@ -546,6 +585,11 @@ describe("Admin master-data API journey", () => {
     fireEvent.change(screen.getByLabelText("Search parent departments"), {
       target: { value: "Finance" },
     });
+    await waitFor(() =>
+      expect(mock.departmentQueryParams).toHaveBeenCalledWith(
+        expect.objectContaining({ search: "Finance" }),
+      ),
+    );
     fireEvent.click(screen.getByRole("combobox", { name: "Parent department" }));
     expect(await screen.findAllByText("Unavailable parent (unavailable)")).not.toHaveLength(0);
     fireEvent.click(screen.getByRole("option", { name: "Top level (no parent)" }));
@@ -593,6 +637,21 @@ describe("Admin master-data API journey", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: "Edit" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete this record" }));
     expect(mock.deleteMaster).toHaveBeenCalledWith("employmentTypes", "employment-full-time");
+  });
+
+  it("edits a mock-only master whose optional description is absent", async () => {
+    mock.apiEnabled = false;
+    mock.search = { tab: "employmentTypes" };
+    mock.mockMasters.employmentTypes[0]!.description = undefined;
+    render(<MasterDataScreen />);
+
+    fireEvent.pointerDown(
+      screen.getAllByRole("button", { name: "Actions for Full Time" }).at(-1)!,
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Edit" }));
+    expect(screen.getByLabelText("Description (optional)")).toHaveValue("");
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   });
 
   it("creates, edits, activates and validates designation levels", async () => {
@@ -690,6 +749,51 @@ describe("Admin master-data API journey", () => {
     await screen.findByRole("alert");
     fireEvent.click(screen.getByRole("button", { name: "Retry against latest version" }));
     expect(screen.getByLabelText("Level (optional)")).toHaveValue(null);
+  });
+
+  it("uses a conflict version when a stale designation leaves the current page", async () => {
+    mock.search = { tab: "designations" };
+    mock.designationTotal = 1;
+    mock.designationItems = [
+      {
+        id: "22222222-2222-4222-8222-222222222222",
+        designation_code: "LEAD",
+        code: "LEAD",
+        title: "Lead",
+        name: "Lead",
+        level: 7,
+        status: "active",
+        active: true,
+        deleted_at: null,
+        version: 1,
+      },
+    ];
+    mock.designationUpdate.mutateAsync
+      .mockRejectedValueOnce(
+        new ApiError({
+          status: 409,
+          code: "CONFLICT",
+          message: "stale",
+          details: { aggregate: "designation", current_version: 4 },
+        }),
+      )
+      .mockResolvedValueOnce({});
+    mock.designationRefetch.mockResolvedValueOnce({
+      data: { items: [], page: 1, page_size: 25, total: 0 },
+    });
+    render(<MasterDataScreen />);
+    fireEvent.pointerDown(screen.getAllByRole("button", { name: "Actions for Lead" }).at(-1)!, {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: "Retry against latest version" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(mock.designationUpdate.mutateAsync).toHaveBeenCalledTimes(2));
+    expect(mock.designationUpdate.mutateAsync.mock.calls[1]?.[0].input.expected_version).toBe(4);
   });
 
   it("refreshes designations after a failed status update", async () => {
@@ -792,5 +896,12 @@ describe("Admin master-data API journey", () => {
     expect(screen.getByText("Parent search unavailable")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Close" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  });
+
+  it("shows a zero-record loading fallback before department data arrives", () => {
+    mock.departmentDataMissing = true;
+    render(<MasterDataScreen />);
+
+    expect(screen.getByText("0 records")).toBeInTheDocument();
   });
 });

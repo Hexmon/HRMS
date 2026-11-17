@@ -243,6 +243,22 @@ describe("admin company-scoped master data", () => {
         event_type: "admin.master_data.department.updated",
       }),
     ]);
+    const topLevelCreated = await service.createDepartment(admin, {
+      name: "Independent",
+      code: "INDEPENDENT",
+    });
+    expect(topLevelCreated.department).toMatchObject({
+      parent_department_id: null,
+      parent_department_name: null,
+    });
+    await expect(
+      service.updateDepartment(admin, createdDepartment.id, {
+        expected_version: 3,
+        status: "inactive",
+      }),
+    ).resolves.toMatchObject({
+      department: expect.objectContaining({ status: "inactive", version: 4 }),
+    });
   });
 
   it("fails closed when master-data company context is missing or inactive", async () => {

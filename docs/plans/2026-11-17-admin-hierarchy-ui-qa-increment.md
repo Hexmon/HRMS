@@ -45,3 +45,11 @@ Verified on 2026-11-17 against an isolated local PostGIS 16 database and Valkey 
 Initial runs that did not reach product assertions are retained as setup evidence: unsupported local email enum values, a non-`_test` disposable database name, missing build/rate-limit test configuration, and incomplete release/QA seed role-catalog/session-preference data were corrected only in the ignored local environment or disposable database. The seed defects are separate follow-up work and are not hidden by this increment.
 
 Still pending at this revision: trusted changed-line/branch coverage on a clean commit, exact-head independent senior/security/QA review, GitHub CI, hosted QA deployment and human QA acceptance. The Sprint 25 Google Sheet is not updated until its connector is installed and accessible.
+
+## Exact-revision correction ledger
+
+The first post-review candidate, `a09a4ebfb0dc86f47d6c48e1f6e151e74c666529`, passed the real API-backed Chromium journeys 3/3 and the trusted backend aggregation 1,009/1,009. Its trusted coverage consolidation remained red at 563/567 changed executable lines, 130/151 changed decision branches and six deletion/replacement dispositions. That revision is evidence, not an approved candidate.
+
+The follow-up correction restores the pre-existing extended-master runtime shape instead of including its unrelated removal, covers all changed Admin-page statements and decision outcomes in focused component coverage, and covers all changed in-memory Admin-service statements and decisions. PostgreSQL parent-name responses now rely on the same locked and validated parent rows used by the mutation. Exact-head browser, full trusted coverage, independent review and GitHub CI must be repeated after the correction commit; earlier passing evidence is not substituted for those gates.
+
+The isolated browser setup also exposed pre-existing release/QA seed gaps before product assertions: missing company preferences, missing role-catalog rows, role-key casing mismatch and company-less seeded master data. Only the disposable local database was corrected for the journey. Those seed defects remain separate follow-up work and are not represented as product fixes in this increment.

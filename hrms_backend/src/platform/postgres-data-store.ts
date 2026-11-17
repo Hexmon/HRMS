@@ -797,7 +797,7 @@ class PostgresPersistence {
       saved = {
         ...mapDepartmentRow(result.rows[0]!),
         parent_department_name: parentId
-          ? (departments.find((department) => department.id === parentId)?.name ?? null)
+          ? departments.find((department) => department.id === parentId)!.name
           : null,
       };
       await client.query(
@@ -871,7 +871,7 @@ class PostgresPersistence {
       saved = {
         ...mapDepartmentRow(result.rows[0]),
         parent_department_name: parentId
-          ? (departments.find((department) => department.id === parentId)?.name ?? null)
+          ? departments.find((department) => department.id === parentId)!.name
           : null,
       };
       await client.query(
