@@ -64,6 +64,7 @@ export interface DepartmentMasterRecord extends ApiRecord {
   cost_center: string | null;
   parent_department_id: string | null;
   parent_id: string | null;
+  parent_department_name: string | null;
   director_user_id: string | null;
   status: "active" | "inactive";
   active: boolean;
@@ -429,7 +430,13 @@ export const adminApi = {
     });
   },
   listDepartments(
-    params: { page?: number; page_size?: number; active_only?: boolean; search?: string } = {},
+    params: {
+      page?: number;
+      page_size?: number;
+      active_only?: boolean;
+      search?: string;
+      parent_candidate_for?: string;
+    } = {},
   ) {
     const path = "/api/v1/admin/master-data/departments";
     return apiRequest<MasterDataListResponse<DepartmentMasterRecord>>(
