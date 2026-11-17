@@ -202,9 +202,15 @@ test.describe("admin hierarchy real-user journey", () => {
 
     const themeToggle = page.getByRole("button", { name: /Switch to (dark|light) mode/ }).first();
     await expect(themeToggle).toBeVisible();
+    const initialTheme = (await page.locator("html").getAttribute("class"))?.includes("dark")
+      ? "dark"
+      : "light";
     await themeToggle.focus();
     await page.keyboard.press("Enter");
-    await expect(page.locator("html")).toHaveClass(/dark|light/);
+    await expect(page.locator("html")).toHaveClass(initialTheme === "dark" ? /light/ : /dark/);
+    await expect(themeToggle).toHaveAccessibleName(
+      initialTheme === "dark" ? /Switch to dark mode/ : /Switch to light mode/,
+    );
 
     await page.setViewportSize({ width: 390, height: 844 });
     await openMasterData(page, resilientName);

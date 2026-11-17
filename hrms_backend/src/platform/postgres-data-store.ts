@@ -61,6 +61,7 @@ import {
   type CompanyLogoPersistenceFlushOptions,
   type CompanyProfileRecord,
   type DataStore,
+  type DepartmentMutationRecord,
   type DomainPersistenceFlushOptions,
   type DocumentProcessingConfig,
   type DocumentAccessLogRecord,
@@ -766,9 +767,9 @@ class PostgresPersistence {
     }
   }
 
-  async createDepartmentForActor(actorUserId: UUID, input: DepartmentCreateInput): Promise<Department> {
+  async createDepartmentForActor(actorUserId: UUID, input: DepartmentCreateInput): Promise<DepartmentMutationRecord> {
     const client = await this.pool.connect();
-    let saved: Department;
+    let saved: DepartmentMutationRecord;
     try {
       await client.query("BEGIN");
       const companyId = await this.adminMasterCompanyForActor(client, actorUserId, "admin.departments.create", true);
@@ -793,7 +794,12 @@ class PostgresPersistence {
          VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, 1) RETURNING *`,
         [id, companyId, code, input.name.trim(), input.cost_center?.trim() || null, parentId, input.status ?? "active"],
       );
-      saved = mapDepartmentRow(result.rows[0]!);
+      saved = {
+        ...mapDepartmentRow(result.rows[0]!),
+        parent_department_name: parentId
+          ? (departments.find((department) => department.id === parentId)?.name ?? null)
+          : null,
+      };
       await client.query(
         `INSERT INTO platform.outbox_events (event_id, aggregate_type, aggregate_id, event_type, payload, idempotency_key)
          VALUES ($1, 'department', $2, 'admin.master_data.department.created', $3::jsonb, $4)`,
@@ -811,9 +817,9 @@ class PostgresPersistence {
     return saved;
   }
 
-  async updateDepartmentForActor(actorUserId: UUID, id: UUID, input: DepartmentUpdateInput): Promise<Department> {
+  async updateDepartmentForActor(actorUserId: UUID, id: UUID, input: DepartmentUpdateInput): Promise<DepartmentMutationRecord> {
     const client = await this.pool.connect();
-    let saved: Department;
+    let saved: DepartmentMutationRecord;
     try {
       await client.query("BEGIN");
       const companyId = await this.adminMasterCompanyForActor(client, actorUserId, "admin.departments.update", true);
@@ -843,6 +849,9 @@ class PostgresPersistence {
           [companyId, id],
         );
         if (referenced.rows[0]) throw conflict("Cannot deactivate department while active employees reference it.", { id });
+        if (departments.some((department) => department.parent_department_id === id && department.status === "active")) {
+          throw conflict("Cannot deactivate department while active child departments reference it.", { id });
+        }
       }
       const code = input.department_code ?? input.code
         ? normalizeAdminMasterCode((input.department_code ?? input.code)!)
@@ -859,7 +868,12 @@ class PostgresPersistence {
          parentId, input.status ?? existing.status, input.expected_version],
       );
       if (!result.rows[0]) throw conflict("Department was modified by another actor.", { aggregate: "department", id });
-      saved = mapDepartmentRow(result.rows[0]);
+      saved = {
+        ...mapDepartmentRow(result.rows[0]),
+        parent_department_name: parentId
+          ? (departments.find((department) => department.id === parentId)?.name ?? null)
+          : null,
+      };
       await client.query(
         `INSERT INTO platform.outbox_events (event_id, aggregate_type, aggregate_id, event_type, payload, idempotency_key)
          VALUES ($1, 'department', $2, 'admin.master_data.department.updated', $3::jsonb, $4)`,

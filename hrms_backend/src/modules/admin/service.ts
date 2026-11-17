@@ -694,9 +694,16 @@ export class AdminService {
   ): Paginated<DepartmentResponse> {
     const namesById = new Map(departments.map((department) => [department.id, department.name]));
     const search = query.search?.trim().toLowerCase();
+    const parentCandidateFor = query.parent_candidate_for;
+    const candidateTargetExists = !parentCandidateFor || departments.some((department) => department.id === parentCandidateFor);
     const filtered = departments
       .filter(
         (department) => !query.active_only || department.status === "active",
+      )
+      .filter(
+        (department) =>
+          candidateTargetExists &&
+          isEligibleDepartmentParentCandidate(departments, department, parentCandidateFor),
       )
       .filter((department) => {
         if (!search) return true;
@@ -729,7 +736,7 @@ export class AdminService {
       if (!this.store.persistence.createDepartmentForActor) throw new Error("Admin department SQL write is unavailable.");
       const department = await this.store.persistence.createDepartmentForActor(actor.id, input);
       return {
-        department: presentDepartment(department, null),
+        department: presentDepartment(department, department.parent_department_name),
         version: department.version,
       };
     }
@@ -751,7 +758,12 @@ export class AdminService {
       idempotencyKey: `admin.department.created:${department.id}:${department.version}`,
     });
     return {
-      department: presentDepartment(department, null),
+      department: presentDepartment(
+        department,
+        department.parent_department_id
+          ? this.repository.listDepartments(companyId).find((candidate) => candidate.id === department.parent_department_id)!.name
+          : null,
+      ),
       version: department.version,
     };
   }
@@ -766,13 +778,26 @@ export class AdminService {
       if (!this.store.persistence.updateDepartmentForActor) throw new Error("Admin department SQL write is unavailable.");
       const department = await this.store.persistence.updateDepartmentForActor(actor.id, id, input);
       return {
-        department: presentDepartment(department, null),
+        department: presentDepartment(department, department.parent_department_name),
         version: department.version,
       };
     }
     const companyId = this.activeCompanyIdForActor(actor, "admin.departments.update");
     if (input.status === "inactive") {
       this.assertNoActiveUsersReference(companyId, "department", id);
+      if (
+        this.repository
+          .listDepartments(companyId)
+          .some(
+            (department) =>
+              department.parent_department_id === id && department.status === "active",
+          )
+      ) {
+        throw conflict(
+          "Cannot deactivate department while active child departments reference it.",
+          { id },
+        );
+      }
     }
     if (
       input.parent_department_id !== undefined ||
@@ -800,7 +825,12 @@ export class AdminService {
       idempotencyKey: `admin.department.updated:${department.id}:${department.version}`,
     });
     return {
-      department: presentDepartment(department, null),
+      department: presentDepartment(
+        department,
+        department.parent_department_id
+          ? this.repository.listDepartments(companyId).find((candidate) => candidate.id === department.parent_department_id)!.name
+          : null,
+      ),
       version: department.version,
     };
   }
@@ -1505,6 +1535,26 @@ function presentDepartment(
     deleted_at: department.deleted_at,
     version: department.version,
   };
+}
+
+function isEligibleDepartmentParentCandidate(
+  departments: readonly Department[],
+  candidate: Department,
+  currentDepartmentId?: string,
+): boolean {
+  if (!currentDepartmentId) return true;
+  if (candidate.id === currentDepartmentId) return false;
+  const byId = new Map(departments.map((department) => [department.id, department]));
+  const visited = new Set<string>();
+  let cursor: Department | undefined = candidate;
+  while (cursor.parent_department_id) {
+    if (cursor.parent_department_id === currentDepartmentId) return false;
+    if (visited.has(cursor.id)) return false;
+    visited.add(cursor.id);
+    cursor = byId.get(cursor.parent_department_id);
+    if (!cursor) return false;
+  }
+  return true;
 }
 
 function presentDesignation(designation: Designation): DesignationResponse {

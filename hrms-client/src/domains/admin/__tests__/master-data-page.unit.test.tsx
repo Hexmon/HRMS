@@ -29,6 +29,7 @@ const mock = vi.hoisted(() => {
     extendedMutation: mutation(),
     extendedUpdate: mutation(),
     departmentRefetch: vi.fn(),
+    departmentQueryParams: vi.fn(),
     designationRefetch: vi.fn(),
     departmentItems: [
       {
@@ -102,19 +103,25 @@ vi.mock("@/shared/api", async (importOriginal) => ({
 }));
 
 vi.mock("@/domains/admin/queries", () => ({
-  useDepartmentMastersPage: (params: { active_only?: boolean }, enabled: boolean) => ({
-    data: enabled
-      ? {
-          items: params.active_only ? mock.departmentItems : mock.departmentItems,
-          page: 1,
-          page_size: 25,
-          total: params.active_only ? mock.departmentItems.length : mock.departmentTotal,
-        }
-      : undefined,
-    isLoading: params.active_only ? mock.parentLoading : mock.departmentLoading,
-    error: params.active_only ? mock.parentError : mock.departmentError,
-    refetch: mock.departmentRefetch,
-  }),
+  useDepartmentMastersPage: (
+    params: { active_only?: boolean; parent_candidate_for?: string },
+    enabled: boolean,
+  ) => {
+    mock.departmentQueryParams(params);
+    return {
+      data: enabled
+        ? {
+            items: params.active_only ? mock.departmentItems : mock.departmentItems,
+            page: 1,
+            page_size: 25,
+            total: params.active_only ? mock.departmentItems.length : mock.departmentTotal,
+          }
+        : undefined,
+      isLoading: params.active_only ? mock.parentLoading : mock.departmentLoading,
+      error: params.active_only ? mock.parentError : mock.departmentError,
+      refetch: mock.departmentRefetch,
+    };
+  },
   useDesignationMastersPage: (_params: unknown, enabled: boolean) => ({
     data: enabled
       ? { items: mock.designationItems, page: 1, page_size: 25, total: mock.designationTotal }
@@ -197,6 +204,7 @@ beforeEach(() => {
   mock.departmentRefetch.mockResolvedValue({
     data: { items: mock.departmentItems, page: 1, page_size: 25, total: 1 },
   });
+  mock.departmentQueryParams.mockClear();
   mock.designationRefetch.mockResolvedValue({
     data: { items: [], page: 1, page_size: 25, total: 0 },
   });
@@ -275,6 +283,22 @@ describe("Admin master-data API journey", () => {
     });
   });
 
+  it("clears a server search from URL state", async () => {
+    vi.useFakeTimers();
+    mock.search = { tab: "departments", q: "Finance" };
+    render(<MasterDataScreen />);
+
+    fireEvent.change(screen.getByLabelText("Search departments"), { target: { value: "" } });
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+    expect(mock.navigate).toHaveBeenCalledWith({
+      to: "/admin-settings/master-data",
+      search: { tab: "departments", page: undefined, q: undefined },
+      replace: true,
+    });
+  });
+
   it("resets URL state when changing tabs and navigates to the previous page", () => {
     mock.search = { tab: "departments", page: 3, q: "Engineering" };
     mock.departmentTotal = 100;
@@ -308,6 +332,42 @@ describe("Admin master-data API journey", () => {
     );
   });
 
+  it("returns from page two to the first page without retaining an empty query", () => {
+    mock.search = { tab: "departments", page: 2 };
+    mock.departmentTotal = 50;
+    render(<MasterDataScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+    expect(mock.navigate).toHaveBeenCalledWith({
+      to: "/admin-settings/master-data",
+      search: { tab: "departments", page: undefined, q: undefined },
+    });
+  });
+
+  it("clamps an empty result to page one", async () => {
+    mock.search = { tab: "departments", page: 3 };
+    mock.departmentTotal = 0;
+    mock.departmentItems.splice(0);
+    render(<MasterDataScreen />);
+
+    await waitFor(() =>
+      expect(mock.navigate).toHaveBeenCalledWith({
+        to: "/admin-settings/master-data",
+        search: { tab: "departments", page: undefined, q: undefined },
+        replace: true,
+      }),
+    );
+  });
+
+  it("rejects a blank name without sending a mutation", () => {
+    render(<MasterDataScreen />);
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "Add" }));
+
+    expect(mock.toastError).toHaveBeenCalledWith("Name is required");
+    expect(mock.departmentMutation.mutateAsync).not.toHaveBeenCalled();
+  });
+
   it("blocks duplicate create submissions and closes only after confirmed success", async () => {
     let finish!: (value: unknown) => void;
     mock.departmentMutation.mutateAsync.mockImplementationOnce(
@@ -326,6 +386,7 @@ describe("Admin master-data API journey", () => {
     fireEvent.click(submit);
     fireEvent.click(submit);
     fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }));
 
     expect(mock.departmentMutation.mutateAsync).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("dialog")).toBeInTheDocument();
@@ -393,6 +454,41 @@ describe("Admin master-data API journey", () => {
     expect(mock.departmentUpdate.mutateAsync.mock.calls[1]?.[0].input.expected_version).toBe(2);
   });
 
+  it("recovers a stale department from the refreshed row", async () => {
+    const current = mock.departmentItems[0]!;
+    mock.departmentUpdate.mutateAsync.mockRejectedValueOnce(
+      new ApiError({
+        status: 409,
+        code: "CONFLICT",
+        message: "stale",
+        details: { aggregate: "department" },
+      }),
+    );
+    mock.departmentRefetch.mockResolvedValueOnce({
+      data: {
+        items: [
+          { ...current, parent_department_id: null, parent_department_name: null, version: 4 },
+        ],
+        page: 1,
+        page_size: 25,
+        total: 1,
+      },
+    });
+    render(<MasterDataScreen />);
+    fireEvent.pointerDown(
+      screen.getAllByRole("button", { name: "Actions for Engineering" }).at(-1)!,
+      { button: 0, ctrlKey: false },
+    );
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+    await screen.findByRole("alert");
+    fireEvent.click(screen.getByRole("button", { name: "Retry against latest version" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await waitFor(() => expect(mock.departmentUpdate.mutateAsync).toHaveBeenCalledTimes(2));
+    expect(mock.departmentUpdate.mutateAsync.mock.calls[1]?.[0].input.expected_version).toBe(4);
+  });
+
   it("blocks a rapid duplicate status toggle before pending state renders", async () => {
     let finish!: (value: unknown) => void;
     mock.departmentUpdate.mutateAsync.mockImplementationOnce(
@@ -441,6 +537,12 @@ describe("Admin master-data API journey", () => {
       { button: 0, ctrlKey: false },
     );
     fireEvent.click(await screen.findByRole("menuitem", { name: "Edit" }));
+    expect(mock.departmentQueryParams).toHaveBeenCalledWith(
+      expect.objectContaining({
+        active_only: true,
+        parent_candidate_for: "11111111-1111-4111-8111-111111111111",
+      }),
+    );
     fireEvent.change(screen.getByLabelText("Search parent departments"), {
       target: { value: "Finance" },
     });
@@ -588,6 +690,64 @@ describe("Admin master-data API journey", () => {
     await screen.findByRole("alert");
     fireEvent.click(screen.getByRole("button", { name: "Retry against latest version" }));
     expect(screen.getByLabelText("Level (optional)")).toHaveValue(null);
+  });
+
+  it("refreshes designations after a failed status update", async () => {
+    mock.search = { tab: "designations" };
+    mock.designationTotal = 1;
+    mock.designationItems = [
+      {
+        id: "22222222-2222-4222-8222-222222222222",
+        designation_code: "LEAD",
+        code: "LEAD",
+        title: "Lead",
+        name: "Lead",
+        level: 7,
+        status: "active",
+        active: true,
+        deleted_at: null,
+        version: 3,
+      },
+    ];
+    mock.designationUpdate.mutateAsync.mockRejectedValueOnce(new Error("Network disconnected"));
+    render(<MasterDataScreen />);
+
+    fireEvent.click(screen.getAllByRole("switch", { name: "Deactivate Lead" })[0]!);
+
+    await waitFor(() => expect(mock.designationRefetch).toHaveBeenCalledTimes(1));
+    expect(mock.toastError).toHaveBeenCalledWith(expect.any(Error), "Master data update failed");
+  });
+
+  it("deactivates an active designation from its edit dialog", async () => {
+    mock.search = { tab: "designations" };
+    mock.designationTotal = 1;
+    mock.designationItems = [
+      {
+        id: "22222222-2222-4222-8222-222222222222",
+        designation_code: "LEAD",
+        code: "LEAD",
+        title: "Lead",
+        name: "Lead",
+        level: 7,
+        status: "active",
+        active: true,
+        deleted_at: null,
+        version: 3,
+      },
+    ];
+    render(<MasterDataScreen />);
+    fireEvent.pointerDown(screen.getAllByRole("button", { name: "Actions for Lead" }).at(-1)!, {
+      button: 0,
+      ctrlKey: false,
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Deactivate this record" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(mock.designationUpdate.mutateAsync).toHaveBeenCalledWith({
+      id: "22222222-2222-4222-8222-222222222222",
+      input: { status: "inactive", expected_version: 3 },
+    });
   });
 
   it("closes an already inactive designation without issuing another update", async () => {

@@ -57,6 +57,7 @@ describe("admin company-scoped master data", () => {
     assignCompany(store, admin.id, companyA);
     const first = addCompanyMasterData(store, companyA, "CYCLE_A").department;
     const second = addCompanyMasterData(store, companyA, "CYCLE_B").department;
+    const editing = addCompanyMasterData(store, companyA, "CYCLE_EDITING").department;
     first.parent_department_id = second.id;
     second.parent_department_id = first.id;
     const departmentsBefore = structuredClone(store.departments);
@@ -69,6 +70,15 @@ describe("admin company-scoped master data", () => {
         parent_department_id: first.id,
       }),
     ).rejects.toThrowError("Department hierarchy contains a cycle.");
+
+    await expect(
+      service.listDepartments(admin, {
+        page: 1,
+        page_size: 25,
+        search: "CYCLE_",
+        parent_candidate_for: editing.id,
+      }),
+    ).resolves.toMatchObject({ items: [], total: 0 });
 
     expect(store.departments).toEqual(departmentsBefore);
     expect(store.outbox).toEqual(outboxBefore);
@@ -87,6 +97,44 @@ describe("admin company-scoped master data", () => {
     inactive.status = "inactive";
     const orphaned = addCompanyMasterData(store, companyA, "ORPHANED").department;
     orphaned.parent_department_id = "missing-department";
+
+    await expect(
+      service.listDepartments(admin, {
+        page: 1,
+        page_size: 25,
+        active_only: true,
+        search: "CHILD",
+        parent_candidate_for: root.id,
+      }),
+    ).resolves.toMatchObject({ items: [], total: 0 });
+    await expect(
+      service.listDepartments(admin, {
+        page: 1,
+        page_size: 25,
+        active_only: true,
+        search: "ROOT",
+        parent_candidate_for: child.id,
+      }),
+    ).resolves.toMatchObject({
+      items: [expect.objectContaining({ id: root.id })],
+      total: 1,
+    });
+    await expect(
+      service.listDepartments(admin, {
+        page: 1,
+        page_size: 25,
+        active_only: true,
+        search: "ORPHANED",
+        parent_candidate_for: root.id,
+      }),
+    ).resolves.toMatchObject({ items: [], total: 0 });
+    await expect(
+      service.listDepartments(admin, {
+        page: 1,
+        page_size: 25,
+        parent_candidate_for: "missing-department",
+      }),
+    ).resolves.toMatchObject({ items: [], total: 0 });
 
     await expectRejectedWithoutEffects(store, () =>
       service.updateDepartment(admin, root.id, {
@@ -121,6 +169,12 @@ describe("admin company-scoped master data", () => {
         parent_department_id: orphaned.id,
       }),
     "Department hierarchy contains an invalid parent reference.");
+    await expectRejectedWithoutEffects(store, () =>
+      service.updateDepartment(admin, root.id, {
+        expected_version: root.version,
+        status: "inactive",
+      }),
+    "Cannot deactivate department while active child departments reference it.");
     await expect(
       service.listDepartments(admin, { page: 1, page_size: 25, search: "ORPHANED" }),
     ).resolves.toMatchObject({
@@ -140,7 +194,11 @@ describe("admin company-scoped master data", () => {
         parent_department_id: child.id,
       });
     const createdDepartment = created.department!;
-    expect(createdDepartment).toMatchObject({ parent_department_id: child.id, version: 1 });
+    expect(createdDepartment).toMatchObject({
+      parent_department_id: child.id,
+      parent_department_name: child.name,
+      version: 1,
+    });
     await expect(
       service.listDepartments(admin, { page: 1, page_size: 25, search: "Grandchild" }),
     ).resolves.toMatchObject({
@@ -153,10 +211,36 @@ describe("admin company-scoped master data", () => {
       ],
     });
     expect(store.departments.filter((department) => department.id === createdDepartment.id)).toHaveLength(1);
+    const moved = await service.updateDepartment(admin, createdDepartment.id, {
+      expected_version: createdDepartment.version,
+      parent_department_id: root.id,
+    });
+    expect(moved.department).toMatchObject({
+      parent_department_id: root.id,
+      parent_department_name: root.name,
+      version: 2,
+    });
+    const topLevel = await service.updateDepartment(admin, createdDepartment.id, {
+      expected_version: 2,
+      parent_department_id: null,
+    });
+    expect(topLevel.department).toMatchObject({
+      parent_department_id: null,
+      parent_department_name: null,
+      version: 3,
+    });
     expect(store.outbox.slice(outboxBefore)).toEqual([
       expect.objectContaining({
         aggregate_id: createdDepartment.id,
         event_type: "admin.master_data.department.created",
+      }),
+      expect.objectContaining({
+        aggregate_id: createdDepartment.id,
+        event_type: "admin.master_data.department.updated",
+      }),
+      expect.objectContaining({
+        aggregate_id: createdDepartment.id,
+        event_type: "admin.master_data.department.updated",
       }),
     ]);
   });

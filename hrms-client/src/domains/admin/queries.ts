@@ -22,6 +22,7 @@ export interface MasterDataPageParams {
   page_size: number;
   active_only?: boolean;
   search?: string;
+  parent_candidate_for?: string;
 }
 
 export function adminMasterDataListKey(

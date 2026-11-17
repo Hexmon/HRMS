@@ -446,6 +446,10 @@ export interface AuthMutationScopeHandle {
   release(): Promise<void>;
 }
 
+export type DepartmentMutationRecord = Department & {
+  parent_department_name: string | null;
+};
+
 export interface DataStorePersistence {
   flush(): Promise<void>;
   acquireAuthMutationScope?(scope: {
@@ -472,8 +476,8 @@ export interface DataStorePersistence {
   /** Request-local working-week read paired with the actor's company context. */
   workingWeekForActor?(actorUserId: UUID): Promise<string>;
   departmentsForActor?(actorUserId: UUID): Promise<Department[]>;
-  createDepartmentForActor?(actorUserId: UUID, input: DepartmentCreateInput): Promise<Department>;
-  updateDepartmentForActor?(actorUserId: UUID, id: UUID, input: DepartmentUpdateInput): Promise<Department>;
+  createDepartmentForActor?(actorUserId: UUID, input: DepartmentCreateInput): Promise<DepartmentMutationRecord>;
+  updateDepartmentForActor?(actorUserId: UUID, id: UUID, input: DepartmentUpdateInput): Promise<DepartmentMutationRecord>;
   designationsForActor?(actorUserId: UUID): Promise<Designation[]>;
   createDesignationForActor?(actorUserId: UUID, input: DesignationCreateInput): Promise<Designation>;
   updateDesignationForActor?(actorUserId: UUID, id: UUID, input: DesignationUpdateInput): Promise<Designation>;

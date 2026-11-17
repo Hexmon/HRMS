@@ -430,7 +430,13 @@ export const adminApi = {
     });
   },
   listDepartments(
-    params: { page?: number; page_size?: number; active_only?: boolean; search?: string } = {},
+    params: {
+      page?: number;
+      page_size?: number;
+      active_only?: boolean;
+      search?: string;
+      parent_candidate_for?: string;
+    } = {},
   ) {
     const path = "/api/v1/admin/master-data/departments";
     return apiRequest<MasterDataListResponse<DepartmentMasterRecord>>(
