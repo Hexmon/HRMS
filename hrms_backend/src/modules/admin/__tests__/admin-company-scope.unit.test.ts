@@ -121,6 +121,17 @@ describe("admin company-scoped master data", () => {
         parent_department_id: orphaned.id,
       }),
     "Department hierarchy contains an invalid parent reference.");
+    await expect(
+      service.listDepartments(admin, { page: 1, page_size: 25, search: "ORPHANED" }),
+    ).resolves.toMatchObject({
+      items: [
+        expect.objectContaining({
+          id: orphaned.id,
+          parent_department_id: "missing-department",
+          parent_department_name: null,
+        }),
+      ],
+    });
 
     const outboxBefore = store.outbox.length;
     const created = await service.createDepartment(admin, {

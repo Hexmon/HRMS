@@ -729,7 +729,7 @@ export class AdminService {
       if (!this.store.persistence.createDepartmentForActor) throw new Error("Admin department SQL write is unavailable.");
       const department = await this.store.persistence.createDepartmentForActor(actor.id, input);
       return {
-        department: presentDepartment(department),
+        department: presentDepartment(department, null),
         version: department.version,
       };
     }
@@ -751,7 +751,7 @@ export class AdminService {
       idempotencyKey: `admin.department.created:${department.id}:${department.version}`,
     });
     return {
-      department: presentDepartment(department),
+      department: presentDepartment(department, null),
       version: department.version,
     };
   }
@@ -766,7 +766,7 @@ export class AdminService {
       if (!this.store.persistence.updateDepartmentForActor) throw new Error("Admin department SQL write is unavailable.");
       const department = await this.store.persistence.updateDepartmentForActor(actor.id, id, input);
       return {
-        department: presentDepartment(department),
+        department: presentDepartment(department, null),
         version: department.version,
       };
     }
@@ -800,7 +800,7 @@ export class AdminService {
       idempotencyKey: `admin.department.updated:${department.id}:${department.version}`,
     });
     return {
-      department: presentDepartment(department),
+      department: presentDepartment(department, null),
       version: department.version,
     };
   }
@@ -1488,7 +1488,7 @@ function presentAdminSecuritySettings(
 
 function presentDepartment(
   department: Department,
-  parentDepartmentName: string | null = null,
+  parentDepartmentName: string | null,
 ): DepartmentResponse {
   return {
     id: department.id,

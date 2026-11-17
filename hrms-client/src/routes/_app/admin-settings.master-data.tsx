@@ -116,7 +116,7 @@ const EMPTY_FORM: MasterFormState = {
   designationLevel: "",
 };
 
-export function MasterDataScreen() {
+function MasterDataScreen() {
   const { masters, addMaster, updateMaster, toggleMasterActive, deleteMaster } = useAdminSettings();
   const navigate = useNavigate();
   const search = Route.useSearch();
@@ -909,6 +909,8 @@ export function MasterDataScreen() {
     </Tabs>
   );
 }
+
+export { MasterDataScreen };
 
 function normalizeCode(value: string): string {
   return value
