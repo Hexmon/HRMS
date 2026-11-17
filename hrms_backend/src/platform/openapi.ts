@@ -1100,6 +1100,12 @@ const adminDepartmentSchema = {
     name: { type: "string", example: "Sales" },
     parent_department_id: { ...uuid("Parent department UUID"), nullable: true },
     parent_id: { ...uuid("Parent department UUID"), nullable: true },
+    parent_department_name: {
+      type: "string",
+      nullable: true,
+      description: "Current same-company parent department name when the parent is available.",
+      example: "Operations",
+    },
     director_user_id: { ...uuid("Director user UUID"), nullable: true },
     status: { type: "string", enum: ["active", "inactive"], example: "active" },
     active: { type: "boolean", example: true },

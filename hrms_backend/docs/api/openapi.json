@@ -134029,6 +134029,12 @@
                             "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
                             "nullable": true
                           },
+                          "parent_department_name": {
+                            "type": "string",
+                            "nullable": true,
+                            "description": "Current same-company parent department name when the parent is available.",
+                            "example": "Operations"
+                          },
                           "director_user_id": {
                             "type": "string",
                             "format": "uuid",
@@ -134485,6 +134491,12 @@
                           "description": "Parent department UUID",
                           "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
                           "nullable": true
+                        },
+                        "parent_department_name": {
+                          "type": "string",
+                          "nullable": true,
+                          "description": "Current same-company parent department name when the parent is available.",
+                          "example": "Operations"
                         },
                         "director_user_id": {
                           "type": "string",
@@ -134950,6 +134962,12 @@
                           "description": "Parent department UUID",
                           "example": "018f9f4a-7f9a-7c15-8f25-6f7f96f9f001",
                           "nullable": true
+                        },
+                        "parent_department_name": {
+                          "type": "string",
+                          "nullable": true,
+                          "description": "Current same-company parent department name when the parent is available.",
+                          "example": "Operations"
                         },
                         "director_user_id": {
                           "type": "string",

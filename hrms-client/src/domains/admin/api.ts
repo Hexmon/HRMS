@@ -64,6 +64,7 @@ export interface DepartmentMasterRecord extends ApiRecord {
   cost_center: string | null;
   parent_department_id: string | null;
   parent_id: string | null;
+  parent_department_name: string | null;
   director_user_id: string | null;
   status: "active" | "inactive";
   active: boolean;

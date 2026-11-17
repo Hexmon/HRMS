@@ -692,6 +692,7 @@ export class AdminService {
     departments: Department[],
     query: MasterDataQuery,
   ): Paginated<DepartmentResponse> {
+    const namesById = new Map(departments.map((department) => [department.id, department.name]));
     const search = query.search?.trim().toLowerCase();
     const filtered = departments
       .filter(
@@ -706,7 +707,14 @@ export class AdminService {
       })
       .sort((a, b) => a.department_code.localeCompare(b.department_code));
     return page(
-      filtered.map((department) => presentDepartment(department)),
+      filtered.map((department) =>
+        presentDepartment(
+          department,
+          department.parent_department_id
+            ? (namesById.get(department.parent_department_id) ?? null)
+            : null,
+        ),
+      ),
       query.page,
       query.page_size,
     );
@@ -1150,6 +1158,7 @@ export interface DepartmentResponse {
   name: string;
   parent_department_id: string | null;
   parent_id: string | null;
+  parent_department_name: string | null;
   cost_center: string | null;
   director_user_id: string | null;
   status: Department["status"];
@@ -1477,7 +1486,10 @@ function presentAdminSecuritySettings(
   };
 }
 
-function presentDepartment(department: Department): DepartmentResponse {
+function presentDepartment(
+  department: Department,
+  parentDepartmentName: string | null = null,
+): DepartmentResponse {
   return {
     id: department.id,
     department_code: department.department_code,
@@ -1486,6 +1498,7 @@ function presentDepartment(department: Department): DepartmentResponse {
     cost_center: department.cost_center,
     parent_department_id: department.parent_department_id,
     parent_id: department.parent_department_id,
+    parent_department_name: parentDepartmentName,
     director_user_id: department.director_user_id,
     status: department.status,
     active: department.status === "active",

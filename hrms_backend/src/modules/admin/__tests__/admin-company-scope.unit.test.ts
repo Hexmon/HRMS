@@ -130,6 +130,17 @@ describe("admin company-scoped master data", () => {
       });
     const createdDepartment = created.department!;
     expect(createdDepartment).toMatchObject({ parent_department_id: child.id, version: 1 });
+    await expect(
+      service.listDepartments(admin, { page: 1, page_size: 25, search: "Grandchild" }),
+    ).resolves.toMatchObject({
+      items: [
+        expect.objectContaining({
+          id: createdDepartment.id,
+          parent_department_id: child.id,
+          parent_department_name: child.name,
+        }),
+      ],
+    });
     expect(store.departments.filter((department) => department.id === createdDepartment.id)).toHaveLength(1);
     expect(store.outbox.slice(outboxBefore)).toEqual([
       expect.objectContaining({

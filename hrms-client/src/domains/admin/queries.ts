@@ -17,6 +17,20 @@ import {
   type RbacRoleUpdateInput,
 } from "./api";
 
+export interface MasterDataPageParams {
+  page: number;
+  page_size: number;
+  active_only?: boolean;
+  search?: string;
+}
+
+export function adminMasterDataListKey(
+  key: "departments" | "designations",
+  params: MasterDataPageParams,
+) {
+  return queryKeys.list("admin", "master-data", { key, ...params });
+}
+
 export function useCompanyProfile(enabled = true) {
   return useQuery({
     queryKey: queryKeys.detail("admin", "company-profile", "current"),
@@ -52,18 +66,26 @@ export function useUploadCompanyLogoMutation() {
 }
 
 export function useDepartmentMasters(enabled = true) {
+  return useDepartmentMastersPage({ page: 1, page_size: 100 }, enabled);
+}
+
+export function useDepartmentMastersPage(params: MasterDataPageParams, enabled = true) {
   return useQuery({
-    queryKey: queryKeys.list("admin", "master-data", "departments"),
-    queryFn: () => adminApi.listDepartments({ page: 1, page_size: 100 }),
+    queryKey: adminMasterDataListKey("departments", params),
+    queryFn: () => adminApi.listDepartments(params),
     enabled,
     staleTime: queryTimings.referenceStaleMs,
   });
 }
 
 export function useDesignationMasters(enabled = true) {
+  return useDesignationMastersPage({ page: 1, page_size: 100 }, enabled);
+}
+
+export function useDesignationMastersPage(params: MasterDataPageParams, enabled = true) {
   return useQuery({
-    queryKey: queryKeys.list("admin", "master-data", "designations"),
-    queryFn: () => adminApi.listDesignations({ page: 1, page_size: 100 }),
+    queryKey: adminMasterDataListKey("designations", params),
+    queryFn: () => adminApi.listDesignations(params),
     enabled,
     staleTime: queryTimings.referenceStaleMs,
   });
