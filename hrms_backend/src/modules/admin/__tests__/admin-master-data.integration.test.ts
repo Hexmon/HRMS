@@ -1401,6 +1401,23 @@ describe("admin master data", () => {
       title: "Rollback Seed Designation",
       version: 1,
     });
+    // flushSeedSnapshot is intentionally restricted to an empty Asset domain.
+    // This disposable database test exercises a later Core failure, so clear
+    // every protected Asset table before invoking the explicit seed boundary.
+    await pool.query(`TRUNCATE
+      assets.asset_command_results,
+      assets.asset_state_events,
+      assets.asset_acknowledgements,
+      assets.asset_recovery_tickets,
+      assets.asset_maintenance_records,
+      assets.asset_requests,
+      assets.asset_assignments,
+      assets.license_activations,
+      assets.license_entitlements,
+      assets.compromised_keys,
+      assets.software_products,
+      assets.software_vendors,
+      assets.assets`);
     await pool.query(`CREATE OR REPLACE FUNCTION public.test_admin_seed_failure() RETURNS trigger
       LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'synthetic seed failure'; END $$`);
     await pool.query(`CREATE TRIGGER test_admin_seed_failure
@@ -1415,10 +1432,11 @@ describe("admin master data", () => {
       pool.query(
         `SELECT
            (SELECT count(*)::text FROM core.departments WHERE id = $1) AS departments,
-           (SELECT count(*)::text FROM core.designations WHERE id = $2) AS designations`,
+           (SELECT count(*)::text FROM core.designations WHERE id = $2) AS designations,
+           (SELECT count(*)::text FROM assets.assets) AS assets`,
         [seedDepartmentId, seedDesignationId],
       ),
-    ).resolves.toMatchObject({ rows: [{ departments: "0", designations: "0" }] });
+    ).resolves.toMatchObject({ rows: [{ departments: "0", designations: "0", assets: "0" }] });
   });
 
   it("manages extended master-data groups for visible Admin Settings tabs", async () => {

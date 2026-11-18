@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { useAssets, warrantyDaysLeft, fmtMoney } from "@/lib/assets-store";
+import { useAssets, warrantyDaysLeft, fmtMoney, ASSET_ADMIN_ROLES } from "@/lib/assets-store";
+import { useAuth } from "@/lib/auth";
 import { DataCard, EmptyState, PhoneInput, StatCard } from "@/components/ui-kit";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,17 +34,23 @@ import {
 
 export const Route = createFileRoute("/_app/assets/warranty")({ component: WarrantyScreen });
 
-function WarrantyScreen() {
+export function WarrantyScreen() {
+  const { activeRole } = useAuth();
+  const canManageAssets = ASSET_ADMIN_ROLES.some((role) => role === activeRole);
   const { assets } = useAssets();
   const apiEnabled = useApiRouteEnabled(["/assets"]);
-  const vendorQuery = useAssetVendors({ page_size: 100 }, apiEnabled);
-  const warrantyAlertQuery = useAssetWarrantyAlerts({ page_size: 100 }, apiEnabled);
+  const vendorQuery = useAssetVendors({ page_size: 100 }, apiEnabled && canManageAssets);
+  const warrantyAlertQuery = useAssetWarrantyAlerts(
+    { page_size: 100 },
+    apiEnabled && canManageAssets,
+  );
   const vendorMutation = useAssetVendorMutation();
   const [vendorEditor, setVendorEditor] = useState<AssetVendorView | "new" | null>(null);
 
   const derivedWarrantyAlerts = useMemo<AssetWarrantyAlertView[]>(
     () =>
       assets
+        .filter((asset) => !!asset.warrantyExpiry)
         .map((asset) => ({
           assetId: asset.id,
           assetCode: asset.id,
@@ -87,7 +94,7 @@ function WarrantyScreen() {
     assets.forEach((a) => {
       const cur = map.get(a.vendor) ?? { name: a.vendor, assets: 0, warranties: 0 };
       cur.assets += 1;
-      if (warrantyDaysLeft(a.warrantyExpiry) >= 0) cur.warranties += 1;
+      if (a.warrantyExpiry && warrantyDaysLeft(a.warrantyExpiry) >= 0) cur.warranties += 1;
       map.set(a.vendor, cur);
     });
     return Array.from(map.values())
@@ -133,6 +140,16 @@ function WarrantyScreen() {
     toast.success(input.id ? "Vendor updated" : "Vendor created");
     setVendorEditor(null);
   };
+
+  if (!canManageAssets) {
+    return (
+      <DataCard title="Warranty and vendors">
+        <p className="text-sm text-muted-foreground">
+          Asset Admin access is required to manage warranties and vendors.
+        </p>
+      </DataCard>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -328,13 +345,21 @@ function VendorDialog({
         </DialogHeader>
         <div className="grid gap-3">
           <div className="space-y-1">
-            <Label>Vendor name</Label>
-            <Input value={name} onChange={(event) => setName(event.target.value)} />
+            <Label htmlFor="asset-vendor-name">Vendor name</Label>
+            <Input
+              id="asset-vendor-name"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+            />
           </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
-              <Label>Contact email</Label>
-              <Input value={email} onChange={(event) => setEmail(event.target.value)} />
+              <Label htmlFor="asset-vendor-email">Contact email</Label>
+              <Input
+                id="asset-vendor-email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+              />
             </div>
             <div className="space-y-1">
               <Label htmlFor="vendor-phone">Phone</Label>
@@ -342,9 +367,9 @@ function VendorDialog({
             </div>
           </div>
           <div className="space-y-1">
-            <Label>Status</Label>
+            <Label htmlFor="asset-vendor-status">Status</Label>
             <Select value={status} onValueChange={(value) => setStatus(value as typeof status)}>
-              <SelectTrigger>
+              <SelectTrigger id="asset-vendor-status">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

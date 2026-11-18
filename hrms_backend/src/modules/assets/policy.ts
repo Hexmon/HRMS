@@ -7,3 +7,11 @@ export function assertAssetManager(actor: AuthUser): void {
     throw forbidden("Asset Manager role required");
   }
 }
+
+export function assertAssignedAssetEmployee(
+  assignedUserId: string | null,
+  actor: AuthUser,
+): void {
+  if (assignedUserId === actor.id) return;
+  throw forbidden("Only the assigned employee can acknowledge this asset.");
+}

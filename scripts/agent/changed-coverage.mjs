@@ -1747,6 +1747,38 @@ function validateSignupEmployeeCodeSequenceMigration(path, content) {
   }
 }
 
+function validateAssetTransactionFenceMigration(path, content) {
+  requireSemanticText(path, content, /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+assets\.require_transactional_writer/i, "asset fence must define the transactional writer guard");
+  requireSemanticText(path, content, /current_setting\(['\"]hrms\.asset_writer_v2['\"],\s*true\)/i, "asset fence must use a transaction-local writer marker");
+  requireSemanticText(path, content, /RAISE\s+EXCEPTION\s+'Asset writes require the transactional command boundary'/i, "asset fence must reject legacy writers");
+  requireSemanticText(path, content, /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+assets\.asset_command_results/i, "asset fence must persist command replay results");
+  requireSemanticText(path, content, /asset_command_results_scope_key_uq/i, "asset command replay scope must be unique");
+  requireSemanticText(path, content, /asset_assignments_one_active_per_asset_uq/i, "asset fence must enforce one active assignment");
+  for (const table of [
+    "assets", "asset_assignments", "asset_state_events", "asset_requests", "asset_acknowledgements",
+    "asset_maintenance_records", "software_vendors", "software_products", "asset_recovery_tickets",
+    "license_entitlements", "license_activations", "compromised_keys", "asset_command_results",
+  ]) {
+    requireSemanticText(path, content, new RegExp(`['\"]${table}['\"]`, "u"), `asset fence must cover ${table}`);
+  }
+  if (/\b(?:BEGIN|COMMIT)\s*;/iu.test(content)) {
+    semanticFailure(path, "asset fence migration must leave transaction ownership to the migration runner");
+  }
+}
+
+function validateAssetRecoveryAssignmentMigration(path, content) {
+  requireSemanticText(path, content, /ALTER\s+TABLE\s+assets\.asset_recovery_tickets\s+ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+assignment_id\s+uuid/i, "asset recovery migration must add nullable assignment identity");
+  requireSemanticText(path, content, /asset_recovery_tickets_assignment_id_fkey/i, "asset recovery migration must add the assignment foreign key");
+  requireSemanticText(path, content, /asset_recovery_tickets_assignment_idx/i, "asset recovery migration must index assignment identity");
+  requireSemanticText(path, content, /SET\s+LOCAL\s+hrms\.asset_writer_v2\s*=\s*'on'/i, "asset recovery backfill must use a transaction-local writer marker");
+  requireSemanticText(path, content, /WITH\s+unique_matches\s+AS/i, "asset recovery migration must use a bounded unique-match backfill");
+  requireSemanticText(path, content, /HAVING\s+count\(\*\)\s*=\s*1/i, "asset recovery backfill must bind only unique history");
+  requireSemanticText(path, content, /UPDATE\s+assets\.asset_recovery_tickets/i, "asset recovery migration must backfill ticket provenance");
+  if (/\bBEGIN\s*;/iu.test(content) || /\bCOMMIT\s*;/iu.test(content)) {
+    semanticFailure(path, "asset recovery migration must leave transaction ownership to the migration runner");
+  }
+}
+
 function validateQaSeedSafety(path, content) {
   requireSemanticText(path, content, /HRMS_QA_SEED_ALLOW/, "QA seed safety must require explicit opt-in");
   requireSemanticText(path, content, /only isolated local or QA/, "QA seed safety must reject non-isolated targets");
@@ -1768,6 +1800,19 @@ function validateQaSeedPhase(path, content) {
   requireSemanticText(path, content, /client\.end\(\)/, "QA seed phase must close its database client");
 }
 
+function validateFrontendContractRouteCoverageScript(path, content) {
+  requireSemanticText(path, content, /endsWith\(\"\.tsx\"\)\s*&&\s*!file\.endsWith\(\"\.test\.tsx\"\)/,
+    "frontend route coverage must exclude test route files");
+  requireSemanticText(path, content, /walk\(join\(root, \"src\"\)\)/,
+    "frontend route coverage must inspect the complete source tree");
+  requireSemanticText(path, content, /!\/\\\.test\\\.\(\?:ts\|tsx\)\$\/.test\(file\)/,
+    "frontend route coverage must exclude test modules from policy scanning");
+  requireSemanticText(path, content, /!file\.endsWith\(\"\.d\.ts\"\)/,
+    "frontend route coverage must exclude declaration files from policy scanning");
+  requireSemanticText(path, content, /!file\.endsWith\(\"routeTree\.gen\.ts\"\)/,
+    "frontend route coverage must exclude generated route trees");
+}
+
 export function validateSemanticPath(root, path, content, base) {
   switch (path) {
     case ".github/workflows/branch-ci-cd.yml": validateWorkflow(path, content, false); break;
@@ -1783,11 +1828,15 @@ export function validateSemanticPath(root, path, content, base) {
     case "hrms_backend/infra/docker/docker-compose.qa.yml": validateQaCompose(path, content); break;
     case "hrms_backend/src/db/migrations/0066_attendance_policy_version_replay_guard.sql": validateAttendancePolicyVersionMigration(path, content); break;
     case "hrms_backend/src/db/migrations/0067_signup_employee_code_sequence.sql": validateSignupEmployeeCodeSequenceMigration(path, content); break;
+    case "hrms_backend/src/db/migrations/0068_asset_transaction_fence.sql": validateAssetTransactionFenceMigration(path, content); break;
+    case "hrms_backend/src/db/migrations/0069_asset_recovery_assignment_identity.sql": validateAssetRecoveryAssignmentMigration(path, content); break;
     case "hrms_backend/src/db/migrations/0065_holiday_company_unique_constraint.sql": validateHolidayMigration(path, content); break;
     case "hrms_backend/scripts/qa-seed-safety.ts": validateQaSeedSafety(path, content); break;
     case "hrms_backend/scripts/seed-qa.ts": validateQaSeedEntrypoint(path, content); break;
     case "hrms_backend/scripts/seed-qa-data.ts":
     case "hrms_backend/scripts/seed-release-data.ts": validateQaSeedPhase(path, content); break;
+    case "hrms-client/scripts/frontend-contract-route-coverage.mjs":
+      validateFrontendContractRouteCoverageScript(path, content); break;
     default: return null;
   }
   return `${path}: semantic contract passed`;
@@ -1807,11 +1856,14 @@ export const semanticCoveragePaths = new Set([
   "hrms_backend/infra/docker/docker-compose.qa.yml",
   "hrms_backend/src/db/migrations/0066_attendance_policy_version_replay_guard.sql",
   "hrms_backend/src/db/migrations/0067_signup_employee_code_sequence.sql",
+  "hrms_backend/src/db/migrations/0068_asset_transaction_fence.sql",
+  "hrms_backend/src/db/migrations/0069_asset_recovery_assignment_identity.sql",
   "hrms_backend/src/db/migrations/0065_holiday_company_unique_constraint.sql",
   "hrms_backend/scripts/qa-seed-safety.ts",
   "hrms_backend/scripts/seed-qa.ts",
   "hrms_backend/scripts/seed-qa-data.ts",
   "hrms_backend/scripts/seed-release-data.ts",
+  "hrms-client/scripts/frontend-contract-route-coverage.mjs",
 ]);
 
 export function verify(root, base, head, suitePaths = fullSuitePaths(coverageOutputRoot(root)), options = {}) {
