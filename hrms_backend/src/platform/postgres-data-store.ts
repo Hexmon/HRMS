@@ -1,6 +1,6 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import { randomUUID } from "node:crypto";
 import { Pool, type PoolClient } from "pg";
 import { ValkeySessionStore } from "#auth";
 import { EmploymentStatuses, Roles, type AuthUser, type RoleKey } from "#shared";
@@ -63,6 +63,7 @@ import {
   type CompanyLogoPersistenceFlushOptions,
   type CompanyProfileRecord,
   type DataStore,
+  type DepartmentMutationRecord,
   type DomainPersistenceFlushOptions,
   type DocumentProcessingConfig,
   type DocumentAccessLogRecord,
@@ -84,12 +85,56 @@ import { createValkeyClient } from "./valkey-client.js";
 import type { EmailDeliveryRecord, EmailEventRecord } from "./email/types.js";
 import { CloudinaryObjectStorage } from "./object-storage.js";
 import { normalizeAttendancePolicyConfig } from "../modules/attendance/policy-config.js";
-import { companyContextRequired, conflict, forbidden, notFound, unauthorized } from "./errors.js";
+import { badRequest, companyContextRequired, conflict, forbidden, notFound, unauthorized } from "./errors.js";
+import type {
+  DepartmentCreateInput,
+  DepartmentUpdateInput,
+  DesignationCreateInput,
+  DesignationUpdateInput,
+} from "../modules/admin/schemas.js";
 
 function optionalSet(
   values: readonly string[] | undefined,
 ): ReadonlySet<string> | undefined {
   return values?.length ? new Set(values) : undefined;
+}
+
+interface CoreMutationScopeSignatures {
+  users: string;
+  credentials: string;
+  authTokens: string;
+  preferences: string;
+  emailDeliveries: string;
+  companies: string;
+  outbox: string;
+}
+
+interface CompanyBootstrapScopeSignatures {
+  departments: string;
+  designations: string;
+  policies: string;
+}
+
+function normalizeAdminMasterCode(value: string): string {
+  const normalized = value.trim().toUpperCase().replace(/[^A-Z0-9]+/gu, "_").replace(/^_+|_+$/gu, "").slice(0, 40);
+  if (!normalized) {
+    throw badRequest("Master data code must include at least one letter or number", { field: "code" });
+  }
+  return normalized;
+}
+
+function mapDepartmentRow(row: Record<string, unknown>): Department {
+  return {
+    ...(row as unknown as Department),
+    deleted_at: asIsoOrNull(row.deleted_at),
+  };
+}
+
+function mapDesignationRow(row: Record<string, unknown>): Designation {
+  return {
+    ...(row as unknown as Designation),
+    deleted_at: asIsoOrNull(row.deleted_at),
+  };
 }
 
 function hasAnyDomainFlushOption(
@@ -442,14 +487,14 @@ function copyData(target: DataStore, source: DataStore): void {
   target.nextOutboxId = source.nextOutboxId;
 }
 
-function migrationSql(): string {
+function migrationSql(excludedFiles: ReadonlySet<string> = new Set()): string {
   const directories = ["src/db/migrations", "dist/src/db/migrations"];
   for (const directory of directories) {
     if (!existsSync(directory)) {
       continue;
     }
     const files = readdirSync(directory)
-      .filter((file) => file.endsWith(".sql"))
+      .filter((file) => file.endsWith(".sql") && !excludedFiles.has(file))
       .sort();
     if (files.length > 0) {
       return files
@@ -474,7 +519,27 @@ export async function resetPostgresDatabase(
       "SELECT pg_advisory_lock(hashtext('hrms_postgres_schema_reset'))",
     );
     schemaLockAcquired = true;
-    await client.query(migrationSql());
+    // Integration resets deliberately replay the historical idempotent bundle.
+    // Migration 0037 replaces its trigger before its backfill and therefore
+    // cannot be replayed over an existing policy-version table. It is already
+    // applied in that case, so omit it exactly as the production migration
+    // ledger does; fresh databases still execute the complete ordered chain.
+    const appliedState = await client.query<{
+      attendance_schema_present: boolean;
+      signup_sequence_present: boolean;
+    }>(`
+      SELECT
+        to_regnamespace('attendance') IS NOT NULL AS attendance_schema_present,
+        to_regclass('platform.signup_employee_code_seq') IS NOT NULL AS signup_sequence_present
+    `);
+    const alreadyApplied = new Set<string>();
+    if (appliedState.rows[0]?.attendance_schema_present) {
+      alreadyApplied.add("0037_attendance_policy_versions.sql");
+    }
+    if (appliedState.rows[0]?.signup_sequence_present) {
+      alreadyApplied.add("0067_signup_employee_code_sequence.sql");
+    }
+    await client.query(migrationSql(alreadyApplied));
     await client.query("BEGIN");
     await client.query(`TRUNCATE ${resetTables.join(", ")} RESTART IDENTITY`);
     await client.query("COMMIT");
@@ -545,7 +610,7 @@ export async function createPostgresDataStore(
       store.documentProcessing = documentProcessing;
     }
     store.persistence = new PostgresPersistence(pool, store);
-    await store.persistence.flush();
+    await (store.persistence as PostgresPersistence).flushSeedSnapshot();
     await (store.persistence as PostgresPersistence).flushInitialAssetSeed();
     await store.persistence.reload();
   }
@@ -838,6 +903,18 @@ class PostgresPersistence {
     };
   }
 
+  private masterAssignmentLockKey(companyId: UUID): string {
+    return `core:master-assignment:${companyId}`;
+  }
+
+  private async lockMasterAssignments(client: PoolClient, companyIds: Iterable<UUID>): Promise<void> {
+    for (const companyId of [...new Set(companyIds)].sort()) {
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1::text))", [
+        this.masterAssignmentLockKey(companyId),
+      ]);
+    }
+  }
+
   private async holidayCompanyForActor(client: PoolClient, actorUserId: UUID, forWrite: boolean): Promise<UUID> {
     const lock = forWrite ? " FOR SHARE" : "";
     const user = await client.query<{ employment_status: string; deleted_at: Date | null }>(
@@ -913,6 +990,364 @@ class PostgresPersistence {
     } finally {
       client.release();
     }
+  }
+
+  private async adminMasterCompanyForActor(
+    client: PoolClient,
+    actorUserId: UUID,
+    operation: string,
+    forWrite: boolean,
+  ): Promise<UUID> {
+    let writeCompanyId: UUID | undefined;
+    if (forWrite) {
+      const candidate = await client.query<{
+        company_id: UUID | null;
+        employment_status: string;
+        deleted_at: Date | null;
+      }>(
+        `SELECT usp.company_id, u.employment_status, u.deleted_at
+         FROM core.users u
+         LEFT JOIN platform.user_session_preferences usp ON usp.user_id = u.id
+         WHERE u.id = $1`,
+        [actorUserId],
+      );
+      const candidateActor = candidate.rows[0];
+      if (!candidateActor || candidateActor.deleted_at || candidateActor.employment_status !== EmploymentStatuses.Active) {
+        throw unauthorized("User account is inactive or blocked");
+      }
+      if (!candidateActor.company_id) {
+        throw companyContextRequired({ user_id: actorUserId, operation });
+      }
+      writeCompanyId = candidateActor.company_id;
+      await this.lockMasterAssignments(client, [writeCompanyId]);
+    }
+    const lock = forWrite ? " FOR SHARE" : "";
+    const user = await client.query<{ employment_status: string; deleted_at: Date | null }>(
+      `SELECT employment_status, deleted_at FROM core.users WHERE id = $1${lock}`,
+      [actorUserId],
+    );
+    if (!user.rows[0] || user.rows[0].deleted_at || user.rows[0].employment_status !== EmploymentStatuses.Active) {
+      throw unauthorized("User account is inactive or blocked");
+    }
+    const preference = await client.query<{ company_id: UUID | null; active_role: RoleKey }>(
+      `SELECT company_id, active_role FROM platform.user_session_preferences
+       WHERE user_id = $1${writeCompanyId ? " AND company_id = $2" : ""}${lock}`,
+      writeCompanyId ? [actorUserId, writeCompanyId] : [actorUserId],
+    );
+    const assignment = preference.rows[0];
+    if (!assignment?.company_id) {
+      throw companyContextRequired({ user_id: actorUserId, operation });
+    }
+    const roles = await client.query<{ role_key: RoleKey }>(
+      `SELECT ur.role_key FROM core.user_roles ur
+       JOIN core.roles role ON role.role_key = ur.role_key
+       WHERE ur.user_id = $1 AND ur.status = 'active' AND ur.deleted_at IS NULL
+         AND ur.effective_from <= CURRENT_DATE AND (ur.effective_to IS NULL OR ur.effective_to >= CURRENT_DATE)
+         AND role.status = 'active' AND role.deleted_at IS NULL${forWrite ? " FOR SHARE OF ur, role" : ""}`,
+      [actorUserId],
+    );
+    const assignedRoles = new Set(roles.rows.map((row) => row.role_key));
+    if (!assignedRoles.has(assignment.active_role)) {
+      throw forbidden("Selected role is not assigned to this user.");
+    }
+    if (!assignedRoles.has(Roles.Admin) && !assignedRoles.has(Roles.HRManager)) {
+      throw forbidden("Only Admin or HR Manager can manage master data");
+    }
+    const company = await client.query<{ status: string }>(
+      `SELECT status FROM platform.company_profiles WHERE id = $1${lock}`,
+      [assignment.company_id],
+    );
+    if (company.rows[0]?.status !== "active") {
+      throw companyContextRequired({ user_id: actorUserId, company_id: assignment.company_id, operation });
+    }
+    return assignment.company_id;
+  }
+
+  async departmentsForActor(actorUserId: UUID): Promise<Department[]> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const companyId = await this.adminMasterCompanyForActor(client, actorUserId, "admin.departments.list", false);
+      const { rows } = await client.query(
+        `SELECT id, company_id, department_code, name, cost_center, parent_department_id,
+                director_user_id, status, deleted_at, version
+         FROM core.departments WHERE company_id = $1 AND deleted_at IS NULL ORDER BY department_code`,
+        [companyId],
+      );
+      await client.query("COMMIT");
+      return rows.map(mapDepartmentRow);
+    } catch (error) {
+      await client.query("ROLLBACK").catch(Boolean);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async designationsForActor(actorUserId: UUID): Promise<Designation[]> {
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const companyId = await this.adminMasterCompanyForActor(client, actorUserId, "admin.designations.list", false);
+      const { rows } = await client.query(
+        `SELECT id, company_id, designation_code, title, level, status, deleted_at, version
+         FROM core.designations WHERE company_id = $1 AND deleted_at IS NULL
+         ORDER BY level NULLS LAST, designation_code`,
+        [companyId],
+      );
+      await client.query("COMMIT");
+      return rows.map(mapDesignationRow);
+    } catch (error) {
+      await client.query("ROLLBACK").catch(Boolean);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  private assertDepartmentParentRows(
+    departments: Department[],
+    parentId: UUID | null,
+    currentId?: UUID,
+  ): void {
+    if (!parentId) return;
+    if (parentId === currentId) throw conflict("Department cannot be its own parent.", { parent_id: parentId });
+    const parent = departments.find((department) => department.id === parentId && department.status === "active");
+    if (!parent) throw notFound("Parent department not found", { parent_id: parentId });
+    const visited = new Set<UUID>();
+    let cursor = parent;
+    while (true) {
+      if (visited.has(cursor.id)) {
+        throw conflict("Department hierarchy contains a cycle.", { parent_id: parentId, cycle_department_id: cursor.id });
+      }
+      visited.add(cursor.id);
+      const nextParentId = cursor.parent_department_id;
+      if (!nextParentId) return;
+      if (nextParentId === currentId) {
+        throw conflict("Department parent would create a hierarchy cycle.", { parent_id: parentId });
+      }
+      const next = departments.find((department) => department.id === nextParentId);
+      if (!next) {
+        throw conflict("Department hierarchy contains an invalid parent reference.", { parent_id: parentId, missing_department_id: nextParentId });
+      }
+      cursor = next;
+    }
+  }
+
+  async createDepartmentForActor(actorUserId: UUID, input: DepartmentCreateInput): Promise<DepartmentMutationRecord> {
+    const client = await this.pool.connect();
+    let saved: DepartmentMutationRecord;
+    try {
+      await client.query("BEGIN");
+      const companyId = await this.adminMasterCompanyForActor(client, actorUserId, "admin.departments.create", true);
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1::text))", [`admin:departments:${companyId}`]);
+      const current = await client.query<Record<string, unknown>>(
+        `SELECT id, company_id, department_code, name, cost_center, parent_department_id,
+                director_user_id, status, deleted_at, version
+         FROM core.departments WHERE company_id = $1 AND deleted_at IS NULL FOR UPDATE`,
+        [companyId],
+      );
+      const departments = current.rows.map(mapDepartmentRow);
+      const parentId = input.parent_department_id ?? input.parent_id ?? null;
+      this.assertDepartmentParentRows(departments, parentId);
+      const code = normalizeAdminMasterCode(input.department_code ?? input.code ?? input.name);
+      if (departments.some((department) => department.department_code.toLowerCase() === code.toLowerCase())) {
+        throw conflict("Department code already exists", { department_code: code });
+      }
+      const id = randomUUID();
+      const result = await client.query<Record<string, unknown>>(
+        `INSERT INTO core.departments
+           (id, company_id, department_code, name, cost_center, parent_department_id, director_user_id, status, version)
+         VALUES ($1, $2, $3, $4, $5, $6, NULL, $7, 1) RETURNING *`,
+        [id, companyId, code, input.name.trim(), input.cost_center?.trim() || null, parentId, input.status ?? "active"],
+      );
+      saved = {
+        ...mapDepartmentRow(result.rows[0]!),
+        parent_department_name: parentId
+          ? departments.find((department) => department.id === parentId)!.name
+          : null,
+      };
+      await client.query(
+        `INSERT INTO platform.outbox_events (event_id, aggregate_type, aggregate_id, event_type, payload, idempotency_key)
+         VALUES ($1, 'department', $2, 'admin.master_data.department.created', $3::jsonb, $4)`,
+        [randomUUID(), id, JSON.stringify({ actor_user_id: actorUserId, company_id: companyId, department_code: saved.department_code, name: saved.name }), `admin.department.created:${id}:1`],
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(Boolean);
+      if ((error as { code?: string }).code === "23505") throw conflict("Department code already exists");
+      throw error;
+    } finally {
+      client.release();
+    }
+    this.upsertDepartmentSnapshot(saved);
+    return saved;
+  }
+
+  async updateDepartmentForActor(actorUserId: UUID, id: UUID, input: DepartmentUpdateInput): Promise<DepartmentMutationRecord> {
+    const client = await this.pool.connect();
+    let saved: DepartmentMutationRecord;
+    try {
+      await client.query("BEGIN");
+      const companyId = await this.adminMasterCompanyForActor(client, actorUserId, "admin.departments.update", true);
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1::text))", [`admin:departments:${companyId}`]);
+      const current = await client.query<Record<string, unknown>>(
+        `SELECT id, company_id, department_code, name, cost_center, parent_department_id,
+                director_user_id, status, deleted_at, version
+         FROM core.departments WHERE company_id = $1 AND deleted_at IS NULL FOR UPDATE`,
+        [companyId],
+      );
+      const departments = current.rows.map(mapDepartmentRow);
+      const existing = departments.find((department) => department.id === id);
+      if (!existing) throw notFound("Department not found", { id });
+      if (existing.version !== input.expected_version) {
+        throw conflict("Department was modified by another actor.", { aggregate: "department", id, expected_version: input.expected_version, current_version: existing.version });
+      }
+      const parentId = input.parent_department_id !== undefined || input.parent_id !== undefined
+        ? input.parent_department_id ?? input.parent_id ?? null
+        : existing.parent_department_id;
+      this.assertDepartmentParentRows(departments, parentId, id);
+      if (input.status === "inactive") {
+        const referenced = await client.query(
+          `SELECT 1 FROM core.users u
+           JOIN platform.user_session_preferences usp ON usp.user_id = u.id
+           WHERE usp.company_id = $1 AND u.department_id = $2 AND u.employment_status = 'active'
+             AND u.deleted_at IS NULL LIMIT 1`,
+          [companyId, id],
+        );
+        if (referenced.rows[0]) throw conflict("Cannot deactivate department while active employees reference it.", { id });
+        if (departments.some((department) => department.parent_department_id === id && department.status === "active")) {
+          throw conflict("Cannot deactivate department while active child departments reference it.", { id });
+        }
+      }
+      const code = input.department_code ?? input.code
+        ? normalizeAdminMasterCode((input.department_code ?? input.code)!)
+        : existing.department_code;
+      if (departments.some((department) => department.id !== id && department.department_code.toLowerCase() === code.toLowerCase())) {
+        throw conflict("Department code already exists", { department_code: code });
+      }
+      const result = await client.query<Record<string, unknown>>(
+        `UPDATE core.departments SET department_code = $3, name = $4, cost_center = $5,
+             parent_department_id = $6, status = $7, version = version + 1, updated_at = now()
+         WHERE id = $1 AND company_id = $2 AND version = $8 AND deleted_at IS NULL RETURNING *`,
+        [id, companyId, code, input.name?.trim() ?? existing.name,
+         input.cost_center !== undefined ? input.cost_center?.trim() || null : existing.cost_center,
+         parentId, input.status ?? existing.status, input.expected_version],
+      );
+      if (!result.rows[0]) throw conflict("Department was modified by another actor.", { aggregate: "department", id });
+      saved = {
+        ...mapDepartmentRow(result.rows[0]),
+        parent_department_name: parentId
+          ? departments.find((department) => department.id === parentId)!.name
+          : null,
+      };
+      await client.query(
+        `INSERT INTO platform.outbox_events (event_id, aggregate_type, aggregate_id, event_type, payload, idempotency_key)
+         VALUES ($1, 'department', $2, 'admin.master_data.department.updated', $3::jsonb, $4)`,
+        [randomUUID(), id, JSON.stringify({ actor_user_id: actorUserId, company_id: companyId, changed_fields: Object.keys(input).filter((field) => field !== "expected_version"), department_code: saved.department_code, name: saved.name }), `admin.department.updated:${id}:${saved.version}`],
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(Boolean);
+      if ((error as { code?: string }).code === "23505") throw conflict("Department update conflicted with an existing record or event.");
+      throw error;
+    } finally {
+      client.release();
+    }
+    this.upsertDepartmentSnapshot(saved);
+    return saved;
+  }
+
+  private upsertDepartmentSnapshot(saved: Department): void {
+    const index = this.store.departments.findIndex((department) => department.id === saved.id);
+    if (index < 0) this.store.departments.push(saved);
+    else if (this.store.departments[index]!.company_id === saved.company_id && this.store.departments[index]!.version <= saved.version) this.store.departments[index] = saved;
+  }
+
+  async createDesignationForActor(actorUserId: UUID, input: DesignationCreateInput): Promise<Designation> {
+    return this.mutateDesignation(actorUserId, undefined, input);
+  }
+
+  async updateDesignationForActor(actorUserId: UUID, id: UUID, input: DesignationUpdateInput): Promise<Designation> {
+    return this.mutateDesignation(actorUserId, id, input);
+  }
+
+  private async mutateDesignation(
+    actorUserId: UUID,
+    id: UUID | undefined,
+    input: DesignationCreateInput | DesignationUpdateInput,
+  ): Promise<Designation> {
+    const client = await this.pool.connect();
+    let saved: Designation;
+    try {
+      await client.query("BEGIN");
+      const companyId = await this.adminMasterCompanyForActor(client, actorUserId, id ? "admin.designations.update" : "admin.designations.create", true);
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1::text))", [`admin:designations:${companyId}`]);
+      const current = await client.query<Record<string, unknown>>(
+        `SELECT id, company_id, designation_code, title, level, status, deleted_at, version
+         FROM core.designations WHERE company_id = $1 AND deleted_at IS NULL FOR UPDATE`,
+        [companyId],
+      );
+      const designations = current.rows.map(mapDesignationRow);
+      const existing = id ? designations.find((designation) => designation.id === id) : undefined;
+      if (id && !existing) throw notFound("Designation not found", { id });
+      const expectedVersion = "expected_version" in input ? input.expected_version : undefined;
+      if (existing && existing.version !== expectedVersion) {
+        throw conflict("Designation was modified by another actor.", { aggregate: "designation", id, expected_version: expectedVersion, current_version: existing.version });
+      }
+      if (existing && input.status === "inactive") {
+        const referenced = await client.query(
+          `SELECT 1 FROM core.users u
+           JOIN platform.user_session_preferences usp ON usp.user_id = u.id
+           WHERE usp.company_id = $1 AND u.designation_id = $2 AND u.employment_status = 'active'
+             AND u.deleted_at IS NULL LIMIT 1`,
+          [companyId, id],
+        );
+        if (referenced.rows[0]) throw conflict("Cannot deactivate designation while active employees reference it.", { id });
+      }
+      const title = (input.title ?? input.name ?? existing?.title)?.trim();
+      if (!title) throw badRequest("Designation title is required", { field: "title" });
+      const codeSource = input.designation_code ?? input.code;
+      const code = codeSource ? normalizeAdminMasterCode(codeSource) : existing?.designation_code ?? normalizeAdminMasterCode(title);
+      if (designations.some((designation) => designation.id !== id && designation.designation_code.toLowerCase() === code.toLowerCase())) {
+        throw conflict("Designation code already exists", { designation_code: code });
+      }
+      const savedId = id ?? randomUUID();
+      const result = existing
+        ? await client.query<Record<string, unknown>>(
+            `UPDATE core.designations SET designation_code = $3, title = $4, level = $5, status = $6,
+                 version = version + 1, updated_at = now()
+             WHERE id = $1 AND company_id = $2 AND version = $7 AND deleted_at IS NULL RETURNING *`,
+            [savedId, companyId, code, title, input.level !== undefined ? input.level : existing.level, input.status ?? existing.status, expectedVersion],
+          )
+        : await client.query<Record<string, unknown>>(
+            `INSERT INTO core.designations (id, company_id, designation_code, title, level, status, version)
+             VALUES ($1, $2, $3, $4, $5, $6, 1) RETURNING *`,
+            [savedId, companyId, code, title, input.level ?? null, input.status ?? "active"],
+          );
+      if (!result.rows[0]) throw conflict("Designation was modified by another actor.", { aggregate: "designation", id: savedId });
+      saved = mapDesignationRow(result.rows[0]);
+      const action = existing ? "updated" : "created";
+      const payload = existing
+        ? { actor_user_id: actorUserId, company_id: companyId, changed_fields: Object.keys(input).filter((field) => field !== "expected_version"), designation_code: saved.designation_code, title: saved.title }
+        : { actor_user_id: actorUserId, company_id: companyId, designation_code: saved.designation_code, title: saved.title };
+      await client.query(
+        `INSERT INTO platform.outbox_events (event_id, aggregate_type, aggregate_id, event_type, payload, idempotency_key)
+         VALUES ($1, 'designation', $2, $3, $4::jsonb, $5)`,
+        [randomUUID(), savedId, `admin.master_data.designation.${action}`, JSON.stringify(payload), `admin.designation.${action}:${savedId}:${saved.version}`],
+      );
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(Boolean);
+      if ((error as { code?: string }).code === "23505") throw conflict("Designation update conflicted with an existing record or event.");
+      throw error;
+    } finally {
+      client.release();
+    }
+    const index = this.store.designations.findIndex((designation) => designation.id === saved.id);
+    if (index < 0) this.store.designations.push(saved);
+    else if (this.store.designations[index]!.company_id === saved.company_id && this.store.designations[index]!.version <= saved.version) this.store.designations[index] = saved;
+    return saved;
   }
 
   async upsertHoliday(actorUserId: UUID, id: UUID, input: HolidayUpsertInput): Promise<Holiday> {
@@ -1222,36 +1657,278 @@ class PostgresPersistence {
     }
   }
 
-  async flushAuth(options: AuthPersistenceFlushOptions = {}): Promise<void> {
+  /** Initial empty-database seed only. Runtime snapshot flushes must never own master data. */
+  async flushSeedSnapshot(): Promise<void> {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      await this.flushAuthCore(client, options);
-      await this.flushAuthPlatform(client, options);
+      await this.flushCoreMasterData(client, new Set(this.store.companyProfiles.map((company) => company.id)), true);
+      await this.flushCore(client);
+      await this.flushPlatform(client);
+      await this.flushExpenses(client);
+      await this.flushDocuments(client);
+      await this.flushAssets(client);
+      await this.flushTimesheets(client);
+      await this.flushProjects(client);
+      await this.flushHelpdesk(client);
+      await this.flushAttendance(client);
+      await this.flushLeaveWfh(client);
+      await this.flushEms(client);
       await client.query("COMMIT");
     } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
+      await client.query("ROLLBACK").catch(Boolean);
       throw error;
     } finally {
       client.release();
     }
   }
 
-  async flushCompanyBootstrap(
-    options: AuthPersistenceFlushOptions = {},
-  ): Promise<void> {
+  async flushAuth(options: AuthPersistenceFlushOptions = {}): Promise<void> {
     const client = await this.pool.connect();
+    await this.flushAuthWithClient(client, options, true);
+  }
+
+  private async flushAuthWithClient(
+    client: PoolClient,
+    options: AuthPersistenceFlushOptions,
+    releaseClient: boolean,
+  ): Promise<void> {
+    const recoveryScope = options.userIds?.length
+      ? {
+          userIds: new Set(options.userIds),
+          aggregateIds: new Set(options.userIds),
+          companyIds: new Set(options.companyIds ?? []),
+        }
+      : undefined;
+    const expectedScopeSignatures = recoveryScope
+      ? this.coreMutationScopeSignatures(
+          recoveryScope.userIds,
+          recoveryScope.aggregateIds,
+          recoveryScope.companyIds,
+        )
+      : undefined;
     try {
       await client.query("BEGIN");
-      await this.flushCoreMasterData(client);
       await this.flushAuthCore(client, options);
       await this.flushAuthPlatform(client, options);
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
+      if (recoveryScope && expectedScopeSignatures) {
+        try {
+          await this.reloadCoreMutationScope(
+            client,
+            recoveryScope.userIds,
+            recoveryScope.aggregateIds,
+            recoveryScope.companyIds,
+            expectedScopeSignatures,
+          );
+        } catch (recoveryError) {
+          throw new AggregateError(
+            [error, recoveryError],
+            "Auth mutation failed and its in-memory rollback reconciliation also failed.",
+          );
+        }
+      }
       throw error;
     } finally {
-      client.release();
+      if (releaseClient) client.release();
+    }
+  }
+
+  async acquireAuthMutationScope(scope: {
+    userIds: readonly UUID[];
+    emails: readonly string[];
+    employeeCodes: readonly string[];
+    tokenHashes: readonly string[];
+    companySlugs?: readonly string[];
+  }) {
+    const userIds = new Set(scope.userIds);
+    const emails = new Set(scope.emails.map((email) => email.trim().toLowerCase()));
+    const employeeCodes = new Set(scope.employeeCodes.map((code) => code.trim().toUpperCase()));
+    const tokenHashes = new Set(scope.tokenHashes);
+    const companySlugs = new Set((scope.companySlugs ?? []).map((slug) => slug.trim().toLowerCase()));
+    const companyIds = new Set<UUID>();
+    const heldLockKeys: string[] = [];
+    const initialLockKeys = [
+      ...[...emails].map((email) => `auth-email:${email}`),
+      ...[...employeeCodes].map((code) => `auth-employee-code:${code}`),
+      ...[...tokenHashes].map((tokenHash) => `auth-token:${tokenHash}`),
+      ...[...companySlugs].map((slug) => `auth-company-slug:${createHash("sha256").update(slug).digest("hex")}`),
+      ...[...userIds].map((userId) => `auth-user:${userId}`),
+    ].sort();
+    const client = await this.pool.connect();
+    let released = false;
+    const release = async () => {
+      if (released) return;
+      released = true;
+      try {
+        await client.query("SELECT pg_advisory_unlock_all()");
+        client.release();
+      } catch (error) {
+        client.release(true);
+        throw error;
+      }
+    };
+    try {
+      for (const key of initialLockKeys) {
+        await client.query("SELECT pg_advisory_lock(hashtext($1::text))", [key]);
+        heldLockKeys.push(key);
+      }
+      if (emails.size) {
+        const resolved = await client.query<{ id: string }>(
+          "SELECT id FROM core.users WHERE lower(email) = ANY($1::text[]) AND deleted_at IS NULL",
+          [[...emails]],
+        );
+        for (const row of resolved.rows) userIds.add(row.id);
+      }
+      if (employeeCodes.size) {
+        const resolved = await client.query<{ id: string }>(
+          "SELECT id FROM core.users WHERE upper(employee_code) = ANY($1::text[]) AND deleted_at IS NULL",
+          [[...employeeCodes]],
+        );
+        for (const row of resolved.rows) userIds.add(row.id);
+      }
+      if (tokenHashes.size) {
+        const resolved = await client.query<{ user_id: string | null }>(
+          "SELECT user_id FROM platform.auth_tokens WHERE token_hash = ANY($1::text[])",
+          [[...tokenHashes]],
+        );
+        for (const row of resolved.rows) {
+          if (row.user_id) userIds.add(row.user_id);
+        }
+      }
+      if (companySlugs.size) {
+        const resolved = await client.query<{ id: UUID }>(
+          "SELECT id FROM platform.company_profiles WHERE lower(company_slug) = ANY($1::text[])",
+          [[...companySlugs]],
+        );
+        for (const row of resolved.rows) companyIds.add(row.id);
+      }
+      const signupEmployeeCode = companySlugs.size
+        ? await this.nextSignupEmployeeCode(client)
+        : undefined;
+      for (const key of [...userIds].sort().map((userId) => `auth-user:${userId}`)) {
+        if (heldLockKeys.includes(key)) continue;
+        await client.query("SELECT pg_advisory_lock(hashtext($1::text))", [key]);
+        heldLockKeys.push(key);
+      }
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const users = await this.loadUsers(client);
+      const credentials = await this.loadUserCredentials(client);
+      const tokens = await this.loadAuthTokens(client);
+      const preferences = await this.loadUserSessionPreferences(client);
+      const deliveries = await this.loadEmailDeliveries(client);
+      for (const companyId of [
+        ...preferences.filter((record) => userIds.has(record.user_id)).flatMap((record) => record.company_id ? [record.company_id] : []),
+        ...tokens.filter((record) => Boolean(record.user_id && userIds.has(record.user_id))).flatMap((record) => record.company_id ? [record.company_id] : []),
+      ]) companyIds.add(companyId);
+      const companies = await this.loadCompanyProfiles(client);
+      await client.query("COMMIT");
+      this.store.users = this.replaceScopedRecords(this.store.users, users, (record) => userIds.has(record.id));
+      this.store.userCredentials = this.replaceScopedRecords(
+        this.store.userCredentials,
+        credentials,
+        (record) => userIds.has(record.user_id),
+      );
+      this.store.authTokens = this.replaceScopedRecords(
+        this.store.authTokens,
+        tokens,
+        (record) => Boolean(record.user_id && userIds.has(record.user_id)),
+      );
+      this.store.userSessionPreferences = this.replaceScopedRecords(
+        this.store.userSessionPreferences,
+        preferences,
+        (record) => userIds.has(record.user_id),
+      );
+      this.store.emailDeliveries = this.replaceScopedRecords(
+        this.store.emailDeliveries,
+        deliveries,
+        (record) => Boolean(record.user_id && userIds.has(record.user_id)),
+      );
+      this.store.companyProfiles = this.replaceScopedRecords(
+        this.store.companyProfiles,
+        companies,
+        (record) => companyIds.has(record.id),
+      );
+      return {
+        userIds: [...userIds],
+        ...(signupEmployeeCode ? { signupEmployeeCode } : {}),
+        flushAuth: (options: AuthPersistenceFlushOptions) => this.flushAuthWithClient(client, options, false),
+        flushCompanyBootstrap: (options: AuthPersistenceFlushOptions) => this.flushCompanyBootstrapWithClient(client, options, false),
+        release,
+      };
+    } catch (error) {
+      await client.query("ROLLBACK").catch(Boolean);
+      await release();
+      throw error;
+    }
+  }
+
+  private async nextSignupEmployeeCode(client: PoolClient): Promise<string> {
+    const result = await client.query<{ next_index: string }>(`
+      SELECT nextval('platform.signup_employee_code_seq')::text AS next_index
+    `);
+    const nextIndex = result.rows[0]!.next_index;
+    return `ONB${nextIndex.padStart(4, "0")}`;
+  }
+
+  async flushCompanyBootstrap(
+    options: AuthPersistenceFlushOptions = {},
+  ): Promise<void> {
+    const client = await this.pool.connect();
+    await this.flushCompanyBootstrapWithClient(client, options, true);
+  }
+
+  private async flushCompanyBootstrapWithClient(
+    client: PoolClient,
+    options: AuthPersistenceFlushOptions,
+    releaseClient: boolean,
+  ): Promise<void> {
+    const userIds = new Set(options.userIds ?? []);
+    const companyIds = new Set(options.companyIds ?? []);
+    const expectedCoreSignatures = userIds.size
+      ? this.coreMutationScopeSignatures(userIds, userIds, companyIds)
+      : undefined;
+    const expectedMasterSignatures = companyIds.size
+      ? this.companyBootstrapScopeSignatures(companyIds)
+      : undefined;
+    try {
+      await client.query("BEGIN");
+      if (!companyIds.size) {
+        throw new Error("Company bootstrap persistence requires an explicit company id.");
+      }
+      await this.flushCoreMasterData(client, companyIds, false);
+      await this.flushCompanyBootstrapPolicies(client, companyIds);
+      await this.flushAuthCore(client, options);
+      await this.flushAuthPlatform(client, options);
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      if (expectedCoreSignatures && expectedMasterSignatures) {
+        try {
+          await this.reloadCoreMutationScope(
+            client,
+            userIds,
+            userIds,
+            companyIds,
+            expectedCoreSignatures,
+          );
+          await this.reloadCompanyBootstrapScope(
+            client,
+            companyIds,
+            expectedMasterSignatures,
+          );
+        } catch (recoveryError) {
+          throw new AggregateError(
+            [error, recoveryError],
+            "Company bootstrap failed and its in-memory rollback reconciliation also failed.",
+          );
+        }
+      }
+      throw error;
+    } finally {
+      if (releaseClient) client.release();
     }
   }
 
@@ -1278,6 +1955,20 @@ class PostgresPersistence {
     domain: PersistenceDomain,
     options: DomainPersistenceFlushOptions = {},
   ): Promise<void> {
+    const coreRecoveryScope = domain === "core" && options.userIds?.length
+      ? {
+          userIds: new Set(options.userIds),
+          aggregateIds: new Set(options.aggregateIds ?? options.userIds),
+          companyIds: new Set(options.companyIds ?? []),
+        }
+      : undefined;
+    const expectedCoreScopeSignatures = coreRecoveryScope
+      ? this.coreMutationScopeSignatures(
+          coreRecoveryScope.userIds,
+          coreRecoveryScope.aggregateIds,
+          coreRecoveryScope.companyIds,
+        )
+      : undefined;
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -1343,11 +2034,181 @@ class PostgresPersistence {
       }
       await client.query("COMMIT");
     } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
+      await client.query("ROLLBACK").catch(Boolean);
+      if (coreRecoveryScope && expectedCoreScopeSignatures) {
+        try {
+          await this.reloadCoreMutationScope(
+            client,
+            coreRecoveryScope.userIds,
+            coreRecoveryScope.aggregateIds,
+            coreRecoveryScope.companyIds,
+            expectedCoreScopeSignatures,
+          );
+        } catch (recoveryError) {
+          throw new AggregateError(
+            [error, recoveryError],
+            "Core mutation failed and its in-memory rollback reconciliation also failed.",
+          );
+        }
+      }
       throw error;
     } finally {
       client.release();
     }
+  }
+
+  private async reloadCoreMutationScope(
+    client: PoolClient,
+    userIds: ReadonlySet<string>,
+    aggregateIds: ReadonlySet<string>,
+    companyIds: ReadonlySet<string>,
+    expectedScopeSignatures: CoreMutationScopeSignatures,
+  ): Promise<void> {
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const lockCompanyIds = new Set([
+        ...companyIds,
+        ...this.store.userSessionPreferences
+        .filter((record) => userIds.has(record.user_id) && record.company_id)
+        .map((record) => record.company_id!),
+      ]);
+      await this.lockMasterAssignments(client, lockCompanyIds);
+      const users = await this.loadUsers(client);
+      const credentials = await this.loadUserCredentials(client);
+      const authTokens = await this.loadAuthTokens(client);
+      const preferences = await this.loadUserSessionPreferences(client);
+      const emailDeliveries = await this.loadEmailDeliveries(client);
+      const companies = await this.loadCompanyProfiles(client);
+      const outbox = await this.loadOutbox(client);
+      await client.query("COMMIT");
+      const currentSignatures = this.coreMutationScopeSignatures(userIds, aggregateIds, companyIds);
+      if (currentSignatures.users === expectedScopeSignatures.users) {
+        this.store.users = this.replaceScopedRecords(
+          this.store.users,
+          users,
+          (record) => userIds.has(record.id),
+        );
+      }
+      if (currentSignatures.credentials === expectedScopeSignatures.credentials) {
+        this.store.userCredentials = this.replaceScopedRecords(
+          this.store.userCredentials,
+          credentials,
+          (record) => userIds.has(record.user_id),
+        );
+      }
+      if (currentSignatures.authTokens === expectedScopeSignatures.authTokens) {
+        this.store.authTokens = this.replaceScopedRecords(
+          this.store.authTokens,
+          authTokens,
+          (record) => Boolean(record.user_id && userIds.has(record.user_id)),
+        );
+      }
+      if (currentSignatures.preferences === expectedScopeSignatures.preferences) {
+        this.store.userSessionPreferences = this.replaceScopedRecords(
+          this.store.userSessionPreferences,
+          preferences,
+          (record) => userIds.has(record.user_id),
+        );
+      }
+      if (currentSignatures.emailDeliveries === expectedScopeSignatures.emailDeliveries) {
+        this.store.emailDeliveries = this.replaceScopedRecords(
+          this.store.emailDeliveries,
+          emailDeliveries,
+          (record) => Boolean(record.user_id && userIds.has(record.user_id)),
+        );
+      }
+      if (currentSignatures.companies === expectedScopeSignatures.companies) {
+        this.store.companyProfiles = this.replaceScopedRecords(
+          this.store.companyProfiles,
+          companies,
+          (record) => companyIds.has(record.id),
+        );
+      }
+      if (currentSignatures.outbox === expectedScopeSignatures.outbox) {
+        this.store.outbox = this.replaceScopedRecords(
+          this.store.outbox,
+          outbox,
+          (record) => aggregateIds.has(record.aggregate_id),
+        );
+      }
+    } catch (error) {
+      await client.query("ROLLBACK").catch(Boolean);
+      throw error;
+    }
+  }
+
+  private coreMutationScopeSignatures(
+    userIds: ReadonlySet<string>,
+    aggregateIds: ReadonlySet<string>,
+    companyIds: ReadonlySet<string>,
+  ): CoreMutationScopeSignatures {
+    return {
+      users: JSON.stringify(this.store.users.filter((record) => userIds.has(record.id))),
+      credentials: JSON.stringify(this.store.userCredentials.filter((record) => userIds.has(record.user_id))),
+      authTokens: JSON.stringify(this.store.authTokens.filter((record) => Boolean(record.user_id && userIds.has(record.user_id)))),
+      preferences: JSON.stringify(this.store.userSessionPreferences.filter((record) => userIds.has(record.user_id))),
+      emailDeliveries: JSON.stringify(this.store.emailDeliveries.filter((record) => Boolean(record.user_id && userIds.has(record.user_id)))),
+      companies: JSON.stringify(this.store.companyProfiles.filter((record) => companyIds.has(record.id))),
+      outbox: JSON.stringify(this.store.outbox.filter((record) => aggregateIds.has(record.aggregate_id))),
+    };
+  }
+
+  private async reloadCompanyBootstrapScope(
+    client: PoolClient,
+    companyIds: ReadonlySet<string>,
+    expectedSignatures: CompanyBootstrapScopeSignatures,
+  ): Promise<void> {
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      await this.lockMasterAssignments(client, companyIds);
+      const departments = await this.loadDepartments(client);
+      const designations = await this.loadDesignations(client);
+      const policies = await this.loadAdminPolicies(client);
+      await client.query("COMMIT");
+      const currentSignatures = this.companyBootstrapScopeSignatures(companyIds);
+      if (currentSignatures.departments === expectedSignatures.departments) {
+        this.store.departments = this.replaceScopedRecords(
+          this.store.departments,
+          departments,
+          (record) => Boolean(record.company_id && companyIds.has(record.company_id)),
+        );
+      }
+      if (currentSignatures.designations === expectedSignatures.designations) {
+        this.store.designations = this.replaceScopedRecords(
+          this.store.designations,
+          designations,
+          (record) => Boolean(record.company_id && companyIds.has(record.company_id)),
+        );
+      }
+      if (currentSignatures.policies === expectedSignatures.policies) {
+        this.store.adminPolicies = this.replaceScopedRecords(
+          this.store.adminPolicies,
+          policies,
+          (record) => Boolean(record.company_id && companyIds.has(record.company_id)),
+        );
+      }
+    } catch (error) {
+      await client.query("ROLLBACK").catch(Boolean);
+      throw error;
+    }
+  }
+
+  private companyBootstrapScopeSignatures(
+    companyIds: ReadonlySet<string>,
+  ): CompanyBootstrapScopeSignatures {
+    return {
+      departments: JSON.stringify(this.store.departments.filter((record) => Boolean(record.company_id && companyIds.has(record.company_id)))),
+      designations: JSON.stringify(this.store.designations.filter((record) => Boolean(record.company_id && companyIds.has(record.company_id)))),
+      policies: JSON.stringify(this.store.adminPolicies.filter((record) => Boolean(record.company_id && companyIds.has(record.company_id)))),
+    };
+  }
+
+  private replaceScopedRecords<T>(
+    current: readonly T[],
+    durable: readonly T[],
+    inScope: (record: T) => boolean,
+  ): T[] {
+    return [...current.filter((record) => !inScope(record)), ...durable.filter(inScope)];
   }
 
   async close(): Promise<void> {
@@ -1404,7 +2265,7 @@ class PostgresPersistence {
         (!token.company_id || !companyIds.has(token.company_id))
       )
         continue;
-      await client.query(
+      const tokenWrite = await client.query<{ id: string }>(
         `INSERT INTO platform.auth_tokens (
           id, token_hash, token_type, user_id, email, company_id, status, expires_at, used_at,
           revoked_at, created_ip_hash, user_agent_hash, last_sent_at, send_count, created_at, metadata
@@ -1416,7 +2277,9 @@ class PostgresPersistence {
             revoked_at = EXCLUDED.revoked_at,
             last_sent_at = EXCLUDED.last_sent_at,
             send_count = EXCLUDED.send_count,
-            metadata = EXCLUDED.metadata`,
+            metadata = EXCLUDED.metadata
+        WHERE platform.auth_tokens.status = 'active'
+        RETURNING id`,
         [
           token.id,
           token.token_hash,
@@ -1436,6 +2299,51 @@ class PostgresPersistence {
           JSON.stringify(token.metadata),
         ],
       );
+      if (tokenWrite.rowCount === 0) {
+        const durable = await client.query<{ matches_snapshot: boolean }>(
+          `SELECT
+             (token_hash IS NOT DISTINCT FROM $2
+              AND token_type IS NOT DISTINCT FROM $3
+              AND user_id IS NOT DISTINCT FROM $4
+              AND email IS NOT DISTINCT FROM $5
+              AND company_id IS NOT DISTINCT FROM $6
+              AND status IS NOT DISTINCT FROM $7
+              AND expires_at IS NOT DISTINCT FROM $8
+              AND used_at IS NOT DISTINCT FROM $9
+              AND revoked_at IS NOT DISTINCT FROM $10
+              AND created_ip_hash IS NOT DISTINCT FROM $11
+              AND user_agent_hash IS NOT DISTINCT FROM $12
+              AND last_sent_at IS NOT DISTINCT FROM $13
+              AND send_count IS NOT DISTINCT FROM $14
+              AND metadata IS NOT DISTINCT FROM $15::jsonb) AS matches_snapshot
+           FROM platform.auth_tokens
+           WHERE id = $1
+           FOR UPDATE`,
+          [
+            token.id,
+            token.token_hash,
+            token.token_type,
+            token.user_id,
+            token.email,
+            token.company_id,
+            token.status,
+            token.expires_at,
+            token.used_at,
+            token.revoked_at,
+            token.created_ip_hash,
+            token.user_agent_hash,
+            token.last_sent_at,
+            token.send_count,
+            JSON.stringify(token.metadata),
+          ],
+        );
+        if (!durable.rows[0]?.matches_snapshot) {
+          throw conflict("Authentication token changed in another process. Retry the request.", {
+            token_id: token.id,
+            token_type: token.token_type,
+          });
+        }
+      }
     }
     for (const delivery of this.store.emailDeliveries) {
       if (userIds && (!delivery.user_id || !userIds.has(delivery.user_id)))
@@ -3208,6 +4116,10 @@ class PostgresPersistence {
     // Keep authority writers on one lock order: user -> role definitions ->
     // user-role assignments. Asset commands use the same order, avoiding a
     // user/role deadlock with the full persistence fallback.
+    await this.lockMasterAssignments(
+      client,
+      this.store.userSessionPreferences.flatMap((preference) => preference.company_id ? [preference.company_id] : []),
+    );
     await this.flushCoreUsers(client);
     for (const role of this.store.rbacRoles) {
       await client.query(
@@ -3247,16 +4159,18 @@ class PostgresPersistence {
     await this.flushCoreUserRolesAndCredentials(client);
   }
 
-  private async flushCoreMasterData(client: PoolClient): Promise<void> {
+  private async flushCoreMasterData(
+    client: PoolClient,
+    companyIds: ReadonlySet<string>,
+    includeLegacyGlobal: boolean,
+  ): Promise<void> {
+    await this.lockMasterAssignments(client, companyIds);
     for (const designation of this.store.designations) {
+      if (designation.company_id ? !companyIds.has(designation.company_id) : !includeLegacyGlobal) continue;
       await client.query(
         `INSERT INTO core.designations (id, company_id, designation_code, title, level, status, deleted_at, version)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-         ON CONFLICT (id) DO UPDATE
-         SET company_id = EXCLUDED.company_id,
-             designation_code = EXCLUDED.designation_code, title = EXCLUDED.title, level = EXCLUDED.level,
-             status = EXCLUDED.status, deleted_at = EXCLUDED.deleted_at, version = EXCLUDED.version,
-             updated_at = now()`,
+         ON CONFLICT (id) DO NOTHING`,
         [
           designation.id,
           designation.company_id,
@@ -3270,17 +4184,11 @@ class PostgresPersistence {
       );
     }
     for (const department of this.store.departments) {
+      if (department.company_id ? !companyIds.has(department.company_id) : !includeLegacyGlobal) continue;
       await client.query(
         `INSERT INTO core.departments (id, company_id, department_code, name, cost_center, parent_department_id, director_user_id, status, deleted_at, version)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-         ON CONFLICT (id) DO UPDATE
-         SET company_id = EXCLUDED.company_id,
-             department_code = EXCLUDED.department_code, name = EXCLUDED.name,
-             cost_center = EXCLUDED.cost_center,
-             parent_department_id = EXCLUDED.parent_department_id,
-             director_user_id = EXCLUDED.director_user_id, status = EXCLUDED.status,
-             deleted_at = EXCLUDED.deleted_at, version = EXCLUDED.version,
-             updated_at = now()`,
+         ON CONFLICT (id) DO NOTHING`,
         [
           department.id,
           department.company_id,
@@ -3294,6 +4202,41 @@ class PostgresPersistence {
           department.version,
         ],
       );
+    }
+  }
+
+  private async flushCompanyBootstrapPolicies(
+    client: PoolClient,
+    companyIds: ReadonlySet<string>,
+  ): Promise<void> {
+    for (const policy of this.store.adminPolicies) {
+      if (!policy.company_id || !companyIds.has(policy.company_id)) continue;
+      await client.query(
+        `INSERT INTO platform.admin_policies (
+          id, company_id, policy_key, module, label, status, config, created_at, updated_at, deleted_at, version
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11)
+        ON CONFLICT (id) DO UPDATE
+        SET company_id = EXCLUDED.company_id,
+            policy_key = EXCLUDED.policy_key,
+            module = EXCLUDED.module, label = EXCLUDED.label, status = EXCLUDED.status,
+            config = EXCLUDED.config, updated_at = EXCLUDED.updated_at,
+            deleted_at = EXCLUDED.deleted_at, version = EXCLUDED.version`,
+        [
+          policy.id,
+          policy.company_id,
+          policy.policy_key,
+          policy.module,
+          policy.label,
+          policy.status,
+          JSON.stringify(policy.config),
+          policy.created_at,
+          policy.updated_at,
+          policy.deleted_at,
+          policy.version,
+        ],
+      );
+      await this.publishAttendanceAdminPolicyVersion(client, policy);
     }
   }
 
@@ -3319,9 +4262,34 @@ class PostgresPersistence {
     client: PoolClient,
     userIds?: ReadonlySet<string>,
   ): Promise<void> {
+    const assignmentCompanyIds = this.store.userSessionPreferences
+      .filter((preference) => !userIds || userIds.has(preference.user_id))
+      .flatMap((preference) => preference.company_id ? [preference.company_id] : []);
+    await this.lockMasterAssignments(client, assignmentCompanyIds);
     for (const user of this.store.users) {
       if (userIds && !userIds.has(user.id)) continue;
-      await client.query(
+      if (user.employment_status === EmploymentStatuses.Active && !user.deleted_at) {
+        const companyId = this.store.userSessionPreferences.find(
+          (preference) => preference.user_id === user.id,
+        )?.company_id;
+        if (companyId) {
+          const validAssignment = await client.query<{ department_ok: boolean; designation_ok: boolean }>(
+            `SELECT
+               EXISTS (SELECT 1 FROM core.departments WHERE id = $2 AND (company_id = $1 OR company_id IS NULL) AND status = 'active' AND deleted_at IS NULL) AS department_ok,
+               EXISTS (SELECT 1 FROM core.designations WHERE id = $3 AND (company_id = $1 OR company_id IS NULL) AND status = 'active' AND deleted_at IS NULL) AS designation_ok`,
+            [companyId, user.department_id, user.designation_id],
+          );
+          if (!validAssignment.rows[0]?.department_ok || !validAssignment.rows[0]?.designation_ok) {
+            throw conflict("Active employee assignment requires active company master data.", {
+              user_id: user.id,
+              company_id: companyId,
+              department_id: user.department_id,
+              designation_id: user.designation_id,
+            });
+          }
+        }
+      }
+      const userWrite = await client.query<{ id: string }>(
         `INSERT INTO core.users (
           id, employee_code, email, full_name, department_id, designation_id, manager_user_id,
           hierarchy_path, employment_status, email_verified_at, email_verification_status,
@@ -3339,7 +4307,9 @@ class PostgresPersistence {
             profile_photo_url = EXCLUDED.profile_photo_url,
             timezone = EXCLUDED.timezone,
             joined_on = EXCLUDED.joined_on, terminated_on = EXCLUDED.terminated_on,
-            deleted_at = EXCLUDED.deleted_at, version = EXCLUDED.version, updated_at = now()`,
+            deleted_at = EXCLUDED.deleted_at, version = EXCLUDED.version, updated_at = now()
+        WHERE core.users.version = EXCLUDED.version - 1
+        RETURNING id`,
         [
           user.id,
           user.employee_code,
@@ -3361,6 +4331,44 @@ class PostgresPersistence {
           user.version,
         ],
       );
+      if (userWrite.rowCount === 0) {
+        const roles = [...user.roles].sort();
+        const durable = await client.query<{ version: number; matches_snapshot: boolean }>(
+          `SELECT u.version,
+             (u.employee_code IS NOT DISTINCT FROM $2
+              AND u.email IS NOT DISTINCT FROM $3
+              AND u.full_name IS NOT DISTINCT FROM $4
+              AND u.department_id IS NOT DISTINCT FROM $5
+              AND u.designation_id IS NOT DISTINCT FROM $6
+              AND u.manager_user_id IS NOT DISTINCT FROM $7
+              AND u.hierarchy_path::text IS NOT DISTINCT FROM $8
+              AND u.employment_status IS NOT DISTINCT FROM $9
+              AND u.email_verified_at IS NOT DISTINCT FROM $10
+              AND u.email_verification_status IS NOT DISTINCT FROM $11
+              AND u.profile_photo_document_id IS NOT DISTINCT FROM $12
+              AND u.profile_photo_url IS NOT DISTINCT FROM $13
+              AND u.timezone IS NOT DISTINCT FROM $14
+              AND u.joined_on IS NOT DISTINCT FROM $15
+              AND u.terminated_on IS NOT DISTINCT FROM $16
+              AND u.deleted_at IS NOT DISTINCT FROM $17
+              AND COALESCE((SELECT array_agg(ur.role_key::text ORDER BY ur.role_key::text)
+                 FROM core.user_roles ur WHERE ur.user_id = u.id AND ur.status = 'active'), ARRAY[]::text[]) = $18::text[]
+             ) AS matches_snapshot
+           FROM core.users u WHERE u.id = $1 FOR UPDATE`,
+          [user.id, user.employee_code, user.email, user.full_name, user.department_id,
+            user.designation_id, user.manager_user_id, user.hierarchy_path, user.employment_status,
+            user.email_verified_at, user.email_verification_status ?? "unverified",
+            user.profile_photo_document_id ?? null, user.profile_photo_url ?? null, user.timezone,
+            user.joined_on, user.terminated_on, user.deleted_at, roles],
+        );
+        const durableUser = durable.rows[0]!;
+        if (durableUser.version !== user.version || !durableUser.matches_snapshot) {
+          throw conflict("Employee changed in another process. Refresh and retry.", {
+            user_id: user.id, expected_version: user.version - 1, current_version: durableUser.version,
+          });
+        }
+        continue;
+      }
     }
   }
 

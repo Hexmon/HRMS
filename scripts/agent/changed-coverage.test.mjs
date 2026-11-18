@@ -18,7 +18,10 @@ import {
   coverageArtifactPath,
   instrumentableExternal,
   outsideExecutableOrConfig,
+  parseCommitFileIdentity,
+  parsePassedTestResults,
   prepareCoverageIntegrationServices,
+  requireRegularRemovalModes,
   verifyCoverageIntegrationServiceClaim,
   removeExactCommitCheckout,
   runFullCoverageGate,
@@ -28,6 +31,8 @@ import {
   resolveCoveragePython,
   resolveTrustedExecutable,
   sanitizedCoverageEnvironment,
+  semanticPlanBase,
+  semanticPlanHistoryLimit,
   selectCoverageIntegrationPool,
   selectCoverageIntegrationValkey,
   selectFinalizerDependencies,
@@ -36,6 +41,7 @@ import {
   stampExternalReport,
   stampReport,
   validateTrustedExecutable,
+  validateRemovalContract,
   validateSemanticPath,
   verify,
 } from "./changed-coverage.mjs";
@@ -59,6 +65,12 @@ function write(root, path, content) {
   writeFileSync(fullPath, content);
 }
 
+function runNodeTest(root, path) {
+  const environment = { ...process.env };
+  delete environment.NODE_TEST_CONTEXT;
+  return spawnSync(process.execPath, ["--test", join(root, path)], { cwd: root, encoding: "utf8", env: environment });
+}
+
 test("semantic contracts validate supported non-line coverage paths and reject policy regressions", () => {
   const root = mkdtempSync(join(tmpdir(), "hrms-semantic-contracts-"));
   roots.push(root);
@@ -75,6 +87,62 @@ test("semantic contracts validate supported non-line coverage paths and reject p
   const workflow = `name: test\non:\n  pull_request: {}\njobs:\n  changed-coverage:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - run: node scripts/agent/changed-coverage.mjs --run-full-suite --confirm-disposable-services --base "$COVERAGE_BASE" --head HEAD\n  deploy-backend:\n    needs: [changed-coverage]\n    runs-on: ubuntu-latest\n`;
   assert.match(validateSemanticPath(root, ".github/workflows/branch-ci-cd.yml", workflow, "base"), /semantic contract passed/);
   assert.throws(() => validateSemanticPath(root, ".github/workflows/branch-ci-cd.yml", workflow.replace("--head HEAD", "--head HEAD\n        continue-on-error: true"), "base"), /continue-on-error/);
+});
+
+test("semantic verifier selects committed changes for identical-tree promotion commits", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-semantic-promotion-"));
+  roots.push(root);
+  git(root, "init", "-q");
+  const sourceRoot = process.cwd();
+  const shell = readFileSync(join(sourceRoot, "scripts/agent/verify-change.sh"), "utf8");
+  write(root, "scripts/agent/verify-change.sh", shell);
+  write(root, "scripts/agent/lib.sh", readFileSync(join(sourceRoot, "scripts/agent/lib.sh"), "utf8"));
+  write(root, "marker.txt", "before\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "initial tree");
+  const changedBase = git(root, "rev-parse", "HEAD");
+  git(root, "switch", "-qc", "release");
+  write(root, "marker.txt", "release\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "release change");
+  const releaseBase = git(root, "rev-parse", "HEAD");
+  git(root, "switch", "-qc", "qa", changedBase);
+  git(root, "merge", "--no-ff", "-qm", "history-preserving promotion", "release");
+
+  assert.equal(semanticPlanBase(root, changedBase), changedBase);
+  assert.equal(semanticPlanBase(root, releaseBase), changedBase);
+  assert.doesNotThrow(() => validateSemanticPath(root, "scripts/agent/verify-change.sh", shell, releaseBase));
+  assert.throws(() => validateSemanticPath(root, "scripts/agent/verify-change.sh", shell.replace("Selected verification plan:", "Other plan:"), releaseBase), /protected checks/);
+
+  const boundedRoot = mkdtempSync(join(tmpdir(), "hrms-semantic-bounded-"));
+  roots.push(boundedRoot);
+  git(boundedRoot, "init", "-q");
+  write(boundedRoot, "marker.txt", "before\n");
+  git(boundedRoot, "add", ".");
+  git(boundedRoot, "commit", "-qm", "meaningful ancestor");
+  const meaningfulBase = git(boundedRoot, "rev-parse", "HEAD");
+  write(boundedRoot, "marker.txt", "release\n");
+  git(boundedRoot, "add", ".");
+  git(boundedRoot, "commit", "-qm", "release change");
+  for (let index = 1; index < semanticPlanHistoryLimit; index += 1) {
+    git(boundedRoot, "commit", "--allow-empty", "-qm", `history-only ${index}`);
+  }
+  const boundedBase = git(boundedRoot, "rev-parse", "HEAD");
+  git(boundedRoot, "commit", "--allow-empty", "-qm", "bounded promotion");
+  assert.equal(semanticPlanBase(boundedRoot, boundedBase), meaningfulBase);
+  const overLimitBase = git(boundedRoot, "rev-parse", "HEAD");
+  git(boundedRoot, "commit", "--allow-empty", "-qm", "over-limit promotion");
+  assert.throws(() => semanticPlanBase(boundedRoot, overLimitBase), /exceeded 64 identical-tree commits/);
+
+  const unchangedRoot = mkdtempSync(join(tmpdir(), "hrms-semantic-unchanged-"));
+  roots.push(unchangedRoot);
+  git(unchangedRoot, "init", "-q");
+  write(unchangedRoot, "marker.txt", "unchanged\n");
+  git(unchangedRoot, "add", ".");
+  git(unchangedRoot, "commit", "-qm", "only tree");
+  const unchangedBase = git(unchangedRoot, "rev-parse", "HEAD");
+  git(unchangedRoot, "commit", "--allow-empty", "-qm", "empty promotion");
+  assert.throws(() => semanticPlanBase(unchangedRoot, unchangedBase), /requires an ancestor with committed changes/);
 });
 
 test("semantic contracts fail closed for each workflow, manifest, lock, runner and shell invariant", () => {
@@ -410,6 +478,376 @@ test("a source rename remains a deletion plus new file and fails pending regress
   const result = verify(root, base, "HEAD");
   assert.equal(result.pass, false);
   assert.ok(result.totals.uncovered.some((item) => item.includes("deleted source file")));
+});
+
+test("trusted removal contracts require exact source and regression blobs", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-coverage-removal-contract-"));
+  roots.push(root);
+  git(root, "init", "-q");
+  const path = "hrms_backend/src/decision.ts";
+  const regressionPath = "hrms_backend/src/__tests__/decision.unit.test.ts";
+  write(root, path, "export function access(role: string) {\n  if (role === 'admin') return 'allow';\n  if (role === 'legacy-admin') return 'allow';\n  return 'deny';\n}\n");
+  write(root, regressionPath, "import assert from 'node:assert/strict';\nimport test from 'node:test';\nimport { access } from '../decision.ts';\ntest('removed legacy role remains denied', () => { assert.equal(access('legacy-admin'), 'deny'); });\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "base decision");
+  const base = git(root, "rev-parse", "HEAD");
+  const oldBlob = git(root, "rev-parse", `${base}:${path}`);
+  assert.notEqual(runNodeTest(root, regressionPath).status, 0, "regression must fail against the old allowance");
+  write(root, path, "export function access(role: string) {\n  if (role === 'admin') return 'allow';\n  return 'deny';\n}\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "simplify guarded decision");
+  const head = git(root, "rev-parse", "HEAD");
+  assert.equal(runNodeTest(root, regressionPath).status, 0, "regression must execute the replacement decision");
+  const deletion = changedLines(root, base, head).deletionOnly[0];
+  assert.ok(deletion, "fixture must contain a deletion-only hunk");
+  const contract = {
+    id: "QA-S25-003-RM-01",
+    kind: "deletion-only",
+    signature: deletion,
+    path,
+    behavior: "non-admin callers remain denied after the equivalent decision rewrite",
+    oldBlob,
+    newBlob: git(root, "rev-parse", `${head}:${path}`),
+    regressions: [{ path: regressionPath, blob: git(root, "rev-parse", `${head}:${regressionPath}`) }],
+  };
+  contract.regressions[0].suite = "backend";
+  const passedTests = new Map([[regressionPath, {
+    suite: "backend",
+    blob: contract.regressions[0].blob,
+    passedAssertions: 1,
+  }]]);
+
+  assert.match(
+    validateRemovalContract(root, base, head, "deletion-only", deletion, [contract], passedTests),
+    /exact replacement regression contract passed/,
+  );
+  const accepted = verify(root, base, head, undefined, { removalContracts: [contract], passedTests });
+  assert.equal(accepted.pass, true);
+  assert.ok(accepted.lines.some((line) => line.includes("QA-S25-003-RM-01")));
+
+  assert.throws(
+    () => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, oldBlob: "0".repeat(40) }]),
+    /old blob is stale/,
+  );
+  assert.throws(
+    () => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, newBlob: "0".repeat(40) }]),
+    /new blob is stale/,
+  );
+  assert.throws(
+    () => validateRemovalContract(root, base, head, "deletion-only", deletion, [{
+      ...contract,
+      regressions: [{ ...contract.regressions[0], blob: "0".repeat(40) }],
+    }]),
+    /regression blob is stale/,
+  );
+  assert.throws(
+    () => validateRemovalContract(root, base, head, "deletion-only", deletion, [{
+      ...contract,
+      regressions: [{ path, blob: contract.newBlob }],
+    }]),
+    /non-test regression path/,
+  );
+  assert.throws(
+    () => validateRemovalContract(root, base, head, "deletion-only", deletion, [{
+      ...contract,
+      regressions: [{ path: "hrms_backend/src/__tests__/evidence.md", blob: contract.regressions[0].blob }],
+    }]),
+    /non-test regression path/,
+  );
+  assert.throws(
+    () => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, regressions: [] }]),
+    /no regression tests/,
+  );
+  assert.throws(
+    () => validateRemovalContract(root, base, head, "deletion-only", deletion, [contract, { ...contract, id: "QA-S25-003-RM-02" }], passedTests),
+    /Ambiguous trusted removal contract/,
+  );
+  assert.throws(
+    () => validateRemovalContract(root, base, head, "deletion-only", deletion, [contract, { ...contract, signature: `${path}:other` }], passedTests),
+    /contract ID is duplicated/,
+  );
+  assert.throws(() => validateRemovalContract(root, base, head, "other", deletion, [contract]), /Unsupported removal contract kind/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", "", [contract]), /non-empty string/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", 7, [contract]), /non-empty string/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, null), /must be an array/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, id: "OTHER-1" }]), /invalid task-scoped ID/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, id: undefined }]), /invalid task-scoped ID/);
+  for (const invalidPath of [null, "", "/absolute.ts", "../escape.ts", "hrms_backend/./src/decision.ts",
+    "hrms_backend/src/../src/decision.ts", "hrms_backend\\src\\decision.ts", "hrms_backend/src/decision.ts\n",
+    "hrms_backend//src/decision.ts", "hrms_backend/src/other.ts"]) {
+    assert.throws(
+      () => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, path: invalidPath }]),
+      /path does not match/,
+    );
+  }
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, behavior: null }]), /describe the replacement/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, behavior: "too short" }]), /describe the replacement/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, oldBlob: "bad" }]), /old blob is invalid/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, oldBlob: undefined }]), /old blob is invalid/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, newBlob: "bad" }]), /new blob is invalid/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, newBlob: undefined }]), /new blob is invalid/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, regressions: null }]), /no regression tests/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, regressions: [null] }]), /non-test regression path/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{
+    ...contract,
+    regressions: [{ ...contract.regressions[0], path: 7 }],
+  }]), /non-test regression path/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{
+    ...contract,
+    regressions: [contract.regressions[0], contract.regressions[0]],
+  }], passedTests), /repeats regression/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{
+    ...contract,
+    regressions: [{ ...contract.regressions[0], blob: "bad" }],
+  }]), /regression blob is invalid/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{
+    ...contract,
+    regressions: [{ ...contract.regressions[0], blob: undefined }],
+  }]), /regression blob is invalid/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{
+    ...contract,
+    regressions: [{ path: "hrms_backend/src/__tests__/missing.unit.test.ts", blob: contract.regressions[0].blob }],
+  }]), /regression blob is stale/);
+  assert.throws(
+    () => validateRemovalContract(root, base, head, "deletion-only", deletion, [contract], new Map()),
+    /was not executed and passed/,
+  );
+  assert.throws(
+    () => validateRemovalContract(root, base, head, "deletion-only", deletion, [{
+      ...contract,
+      regressions: [{ ...contract.regressions[0], suite: "frontend" }],
+    }], passedTests),
+    /regression suite is invalid/,
+  );
+  assert.equal(validateRemovalContract(root, base, head, "deletion-only", `${path}:different hunk`, [contract]), null);
+  const unknown = verify(root, base, head);
+  assert.equal(unknown.pass, false);
+  assert.ok(unknown.totals.uncovered.some((item) => item.includes("deletion-only")));
+});
+
+test("Git removal identities reject ambiguous and noncanonical tree entries", () => {
+  const path = "hrms_backend/src/example.ts";
+  const blob = "a".repeat(40);
+  assert.equal(parseCommitFileIdentity(path, "test", ""), null);
+  assert.deepEqual(parseCommitFileIdentity(path, "test", `100644 blob ${blob}\t${path}\0`), { mode: "100644", blob });
+  assert.throws(
+    () => parseCommitFileIdentity(path, "test", `100644 blob ${blob}\t${path}\x00100644 blob ${blob}\tother.ts\x00`),
+    /resolved to 2 Git entries/,
+  );
+  assert.throws(() => parseCommitFileIdentity(path, "test", `120000 blob ${blob}\t${path}\0`), /not one canonical regular Git file/);
+  assert.throws(() => parseCommitFileIdentity(path, "test", `100644 blob ${blob}\tother.ts\0`), /not one canonical regular Git file/);
+  assert.doesNotThrow(() => requireRegularRemovalModes("signature", { mode: "100644" }, { mode: "100644" }));
+  assert.doesNotThrow(() => requireRegularRemovalModes("signature", { mode: "100644" }, null));
+  assert.throws(() => requireRegularRemovalModes("signature", { mode: "100755" }, { mode: "100644" }), /regular non-executable/);
+  assert.throws(() => requireRegularRemovalModes("signature", { mode: "100644" }, { mode: "100755" }), /regular non-executable/);
+});
+
+test("passed-test manifests accept only exact trusted suite selectors and passed assertions", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-passed-test-results-"));
+  roots.push(root);
+  git(root, "init", "-q");
+  const backendUnit = "hrms_backend/src/__tests__/decision.unit.test.ts";
+  const backendIntegration = "hrms_backend/src/modules/decision.integration.test.ts";
+  const frontendUnit = "hrms-client/src/domains/admin/api.unit.test.tsx";
+  const outsideSuite = "docs/fake.unit.test.ts";
+  const backendExecutable = "hrms_backend/src/executable.unit.test.ts";
+  const backendMissing = "hrms_backend/src/missing.unit.test.ts";
+  for (const path of [backendUnit, backendIntegration, frontendUnit, outsideSuite, backendExecutable]) write(root, path, "export {};\n");
+  chmodSync(join(root, backendExecutable), 0o755);
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "trusted suite fixtures");
+  const head = git(root, "rev-parse", "HEAD");
+  const result = (path, status = "passed", assertionStatus = "passed") => ({
+    name: join(root, path),
+    status,
+    assertionResults: [{ fullName: `${path} enforces behavior`, status: assertionStatus, ancestorTitles: [] }],
+  });
+  const manifest = (testResults, overrides = {}) => JSON.stringify({
+    success: true,
+    numTotalTestSuites: 1,
+    numPassedTestSuites: 1,
+    numFailedTestSuites: 0,
+    numPendingTestSuites: 0,
+    numPassedTests: testResults.filter((entry) => entry.status === "passed").length,
+    numPendingTests: testResults.filter((entry) => entry.status !== "passed").length,
+    numFailedTests: 0,
+    numTodoTests: 0,
+    numTotalTests: testResults.length,
+    testResults,
+    ...overrides,
+  });
+
+  const backend = parsePassedTestResults(root, head, "backend", manifest([result(backendUnit), result(backendIntegration)], {
+    numTotalTestSuites: 2, numPassedTestSuites: 2,
+  }));
+  assert.deepEqual([...backend.keys()], [backendUnit, backendIntegration]);
+  assert.equal(backend.get(backendUnit).blob, git(root, "rev-parse", `${head}:${backendUnit}`));
+  assert.deepEqual([...parsePassedTestResults(root, head, "frontend", manifest([result(frontendUnit)])).keys()], [frontendUnit]);
+  assert.throws(() => parsePassedTestResults(root, head, "backend", manifest([result(backendUnit, "skipped", "pending")], {
+    numPassedTestSuites: 0, numPendingTestSuites: 1,
+  })), /failed, skipped, pending or todo/);
+
+  assert.throws(() => parsePassedTestResults(root, head, "backend", manifest([result(frontendUnit)])), /outside the trusted suite selector/);
+  assert.throws(() => parsePassedTestResults(root, head, "backend", manifest([result(outsideSuite)])), /outside the trusted suite selector/);
+  assert.throws(() => parsePassedTestResults(root, head, "backend", manifest([result(backendMissing)])), /not a regular Git file/);
+  assert.throws(() => parsePassedTestResults(root, head, "backend", manifest([result(backendExecutable)])), /not a regular Git file/);
+  assert.throws(() => parsePassedTestResults(root, head, "backend", manifest([{ ...result(backendUnit), name: backendUnit }])), /must be absolute/);
+  assert.throws(() => parsePassedTestResults(root, head, "backend", manifest([result(backendUnit), result(backendUnit)])), /duplicate file result/);
+  assert.throws(() => parsePassedTestResults(root, head, "backend", manifest([result(backendUnit)], {
+    success: false, numPassedTests: 0, numFailedTests: 1,
+  })), /run must report success/);
+  assert.throws(() => parsePassedTestResults(root, head, "backend", manifest([result(backendUnit)], { numTotalTests: 2 })), /summary counts are inconsistent/);
+  assert.throws(() => parsePassedTestResults(root, head, "backend", manifest([result(backendUnit)], { numPassedTests: -1 })), /non-negative integer/);
+  assert.throws(() => parsePassedTestResults(root, head, "browser", manifest([result(backendUnit)])), /Unsupported passed-test suite/);
+  assert.throws(() => parsePassedTestResults(root, head, "backend", manifest([result(backendUnit, "passed", "failed")])), /only passed assertions/);
+  assert.throws(() => parsePassedTestResults(root, head, "backend", manifest([{ ...result(backendUnit), assertionResults: null }])), /only passed assertions/);
+  assert.throws(() => parsePassedTestResults(root, head, "backend", manifest([result(backendUnit)], { numPassedTests: 0, numTotalTests: 0 })), /inconsistent or empty/);
+  assert.throws(() => parsePassedTestResults(root, head, "backend", manifest([result(backendUnit)], { numPassedTests: 2, numTotalTests: 2 })), /assertion totals do not match/);
+  assert.throws(() => parsePassedTestResults(root, head, "backend", manifest([result(backendUnit)], { numTodoTests: 1, numTotalTests: 2 })), /failed, skipped, pending or todo/);
+  assert.throws(() => parsePassedTestResults(root, head, "backend", manifest([result(backendUnit)], { numPassedTestSuites: 2, numTotalTestSuites: 2 })), /suite totals do not match/);
+  assert.throws(() => parsePassedTestResults(root, head, "backend", manifest([result(backendUnit)], { numPendingTestSuites: 1, numTotalTestSuites: 2 })), /failed, skipped, pending or todo/);
+  assert.throws(() => parsePassedTestResults(root, head, "backend", manifest([result(backendUnit)], { success: undefined })), /run must report success/);
+  assert.throws(() => parsePassedTestResults(root, head, "backend", manifest([{ ...result(backendUnit), name: join(root, "hrms_backend/src/fake.unit.test.tsx") }])), /outside the trusted suite selector/);
+  assert.throws(() => parsePassedTestResults(root, head, "backend", manifest([{ ...result(backendUnit),
+    assertionResults: [{ fullName: "malformed ancestry", status: "passed", ancestorTitles: [""] }],
+  }])), /suite ancestry is malformed/);
+  const nested = result(backendUnit);
+  nested.assertionResults[0].ancestorTitles = ["outer", "inner"];
+  assert.equal(parsePassedTestResults(root, head, "backend", manifest([nested], {
+    numTotalTestSuites: 3, numPassedTestSuites: 3,
+  })).size, 1);
+  assert.throws(() => parsePassedTestResults(root, head, "backend", JSON.stringify({
+    success: true, numTotalTestSuites: 1, numPassedTestSuites: 1, numFailedTestSuites: 0, numPendingTestSuites: 0,
+    numPassedTests: 1, numPendingTests: 0, numFailedTests: 0, numTodoTests: 0, numTotalTests: 1,
+  })), /testResults must be an array/);
+});
+
+test("passed-test artifacts are digest-bound to the exact clean coverage head", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-passed-test-stamp-"));
+  const outputRoot = mkdtempSync(join(tmpdir(), "hrms-passed-test-output-"));
+  roots.push(root, outputRoot);
+  git(root, "init", "-q");
+  const backendPath = "hrms_backend/src/decision.unit.test.ts";
+  const frontendPath = "hrms-client/src/decision.unit.test.ts";
+  write(root, backendPath, "export {};\n");
+  write(root, frontendPath, "export {};\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "test result sources");
+  const head = git(root, "rev-parse", "HEAD");
+  const testJson = (path) => `${JSON.stringify({
+    success: true, numTotalTestSuites: 1, numPassedTestSuites: 1, numFailedTestSuites: 0, numPendingTestSuites: 0,
+    numPassedTests: 1, numPendingTests: 0, numFailedTests: 0, numTotalTests: 1,
+    numTodoTests: 0,
+    testResults: [{ name: join(root, path), status: "passed", assertionResults: [{ fullName: "behavior", status: "passed", ancestorTitles: [] }] }],
+  })}\n`;
+  const backendResultPath = join(outputRoot, "external-input", "backend-tests.json");
+  const frontendResultPath = join(outputRoot, "external-input", "frontend-tests.json");
+  mkdirSync(dirname(backendResultPath), { recursive: true });
+  writeFileSync(backendResultPath, testJson(backendPath));
+  writeFileSync(frontendResultPath, testJson(frontendPath));
+  const previous = process.env.HRMS_COVERAGE_OUTPUT_DIR;
+  process.env.HRMS_COVERAGE_OUTPUT_DIR = outputRoot;
+  try {
+    writeCoverage(root, "backend", "{}");
+    writeCoverage(root, "frontend", "{}");
+    assert.match(stampReport(root, "backend").testResultsDigest, /^[0-9a-f]{64}$/);
+    assert.match(stampReport(root, "frontend").testResultsDigest, /^[0-9a-f]{64}$/);
+    const inertContract = [{ id: "QA-S25-003-RM-STAMP", kind: "deletion-only", signature: "not-present" }];
+    assert.equal(verify(root, head, head, undefined, { removalContracts: inertContract }).pass, true);
+    writeFileSync(backendResultPath, `${testJson(backendPath)} `);
+    assert.throws(() => verify(root, head, head, undefined, { removalContracts: inertContract }), /stale, modified or exact-head-unbound/);
+    writeFileSync(backendResultPath, testJson(backendPath));
+    write(root, "README.md", "later head\n");
+    git(root, "add", ".");
+    git(root, "commit", "-qm", "later head");
+    assert.throws(() => verify(root, head, "HEAD", undefined, { removalContracts: inertContract }), /stale, modified or exact-head-unbound/);
+  } finally {
+    if (previous === undefined) delete process.env.HRMS_COVERAGE_OUTPUT_DIR;
+    else process.env.HRMS_COVERAGE_OUTPUT_DIR = previous;
+  }
+});
+
+test("a whole-file deletion contract is bound to the absent head blob", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-coverage-file-removal-contract-"));
+  roots.push(root);
+  git(root, "init", "-q");
+  const path = "hrms_backend/src/legacy.ts";
+  const regressionPath = "hrms_backend/src/__tests__/legacy.unit.test.ts";
+  write(root, path, "export const legacy = true;\n");
+  const replacementPath = "hrms_backend/src/replacement.ts";
+  write(root, replacementPath, "export function currentPath() { return 'replacement'; }\n");
+  write(root, regressionPath, "import assert from 'node:assert/strict';\nimport test from 'node:test';\nimport { currentPath } from '../replacement.ts';\ntest('replacement path is authoritative', () => { assert.equal(currentPath(), 'replacement'); });\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "base legacy path");
+  const base = git(root, "rev-parse", "HEAD");
+  const oldBlob = git(root, "rev-parse", `${base}:${path}`);
+  rmSync(join(root, path));
+  git(root, "add", "-A");
+  git(root, "commit", "-qm", "remove legacy path");
+  const head = git(root, "rev-parse", "HEAD");
+  assert.equal(runNodeTest(root, regressionPath).status, 0);
+  write(root, replacementPath, "export function currentPath() { return 'legacy'; }\n");
+  assert.notEqual(runNodeTest(root, regressionPath).status, 0, "regression must detect a broken replacement");
+  git(root, "restore", replacementPath);
+  const deletion = changedLines(root, base, head).deletionOnly.find((item) => item.endsWith(":deleted source file"));
+  const contract = {
+    id: "QA-S25-003-RM-04",
+    kind: "deletion-only",
+    signature: deletion,
+    path,
+    behavior: "the retained replacement remains authoritative after deleting the legacy module",
+    oldBlob,
+    newBlob: null,
+    regressions: [{ path: regressionPath, blob: git(root, "rev-parse", `${head}:${regressionPath}`) }],
+  };
+  contract.regressions[0].suite = "backend";
+  const passedTests = new Map([[regressionPath, { suite: "backend", blob: contract.regressions[0].blob, passedAssertions: 1 }]]);
+  assert.equal(verify(root, base, head, undefined, { removalContracts: [contract], passedTests }).pass, true);
+  assert.throws(
+    () => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, newBlob: oldBlob }]),
+    /new blob is stale/,
+  );
+});
+
+test("runtime-to-comment removal uses the same fail-closed exact contract", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-coverage-runtime-removal-contract-"));
+  roots.push(root);
+  git(root, "init", "-q");
+  const path = "hrms_backend/src/obsolete.ts";
+  const regressionPath = "hrms_backend/src/__tests__/obsolete.unit.test.ts";
+  write(root, path, "export const obsoleteFallback = true;\n");
+  const sharedPath = "hrms_backend/src/shared-client.ts";
+  write(root, sharedPath, "export function fallbackOwner() { return 'shared-client'; }\n");
+  write(root, regressionPath, "import assert from 'node:assert/strict';\nimport test from 'node:test';\nimport { fallbackOwner } from '../shared-client.ts';\ntest('replacement owns the fallback', () => { assert.equal(fallbackOwner(), 'shared-client'); });\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "base fallback");
+  const base = git(root, "rev-parse", "HEAD");
+  const oldBlob = git(root, "rev-parse", `${base}:${path}`);
+  write(root, path, "// fallback is now owned by the shared client\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "remove duplicate fallback");
+  const head = git(root, "rev-parse", "HEAD");
+  assert.equal(runNodeTest(root, regressionPath).status, 0);
+  write(root, sharedPath, "export function fallbackOwner() { return 'obsolete-module'; }\n");
+  assert.notEqual(runNodeTest(root, regressionPath).status, 0, "regression must detect fallback ownership regression");
+  git(root, "restore", sharedPath);
+  const removal = changedLines(root, base, head).removedRuntime[0];
+  const contract = {
+    id: "QA-S25-003-RM-05",
+    kind: "removed-runtime",
+    signature: removal,
+    path,
+    behavior: "the shared client retains the fallback previously owned by this module",
+    oldBlob,
+    newBlob: git(root, "rev-parse", `${head}:${path}`),
+    regressions: [{ path: regressionPath, blob: git(root, "rev-parse", `${head}:${regressionPath}`) }],
+  };
+  contract.regressions[0].suite = "backend";
+  const passedTests = new Map([[regressionPath, { suite: "backend", blob: contract.regressions[0].blob, passedAssertions: 1 }]]);
+  writeCoverage(root, "backend", "{}");
+  stampReport(root, "backend");
+  assert.equal(verify(root, base, head).pass, false);
+  assert.equal(verify(root, base, head, undefined, { removalContracts: [contract], passedTests }).pass, true);
 });
 
 test("source status, mode and missing-hunk variants fail before excluded paths or symlink reads", () => {
@@ -931,73 +1369,53 @@ test("QA holiday operational paths use explicit semantic contracts", () => {
   assert.throws(() => validateSemanticPath("", "hrms_backend/src/db/migrations/0065_holiday_company_unique_constraint.sql", migration.replace("company_id", "name"), "base"), /company_id/);
 });
 
-test("asset migrations use explicit fail-closed semantic contracts", () => {
-  const repositoryRoot = process.cwd();
-  const fencePath = "hrms_backend/src/db/migrations/0066_asset_transaction_fence.sql";
-  const recoveryPath = "hrms_backend/src/db/migrations/0067_asset_recovery_assignment_identity.sql";
-  const fence = readFileSync(join(repositoryRoot, fencePath), "utf8");
-  const recovery = readFileSync(join(repositoryRoot, recoveryPath), "utf8");
-
-  assert.match(validateSemanticPath(repositoryRoot, fencePath, fence, "base"), /semantic contract passed/);
-  assert.match(validateSemanticPath(repositoryRoot, recoveryPath, recovery, "base"), /semantic contract passed/);
-
-  for (const [content, replacement, expected] of [
-    [fence, "hrms.asset_writer_v1", /transaction-local marker/],
-    [fence, "asset_command_results_scope_key_old", /replay key/],
-    [fence, "BEFORE INSERT OR UPDATE", /every mutation operation/],
-    [fence, "asset_recovery_tickets_old", /trigger list is missing asset_recovery_tickets/],
-  ]) {
-    assert.throws(() => validateSemanticPath(repositoryRoot, fencePath, content.replace(
-      expected.source.includes("replay key") ? "CONSTRAINT asset_command_results_scope_key_uq UNIQUE" :
-      expected.source.includes("trigger list") ? "'asset_recovery_tickets'" :
-      expected.source.includes("every mutation") ? "BEFORE INSERT OR UPDATE OR DELETE" :
-      "hrms.asset_writer_v2",
-      replacement,
-    ), "base"), expected);
-  }
-
-  assert.throws(() => validateSemanticPath(repositoryRoot, recoveryPath, recovery.replace("HAVING count(*) = 1", "HAVING count(*) > 0"), "base"), /unique assignment/);
-  assert.throws(() => validateSemanticPath(repositoryRoot, recoveryPath, recovery.replace("SET LOCAL hrms.asset_writer_v2", "SET hrms.asset_writer_v2"), "base"), /transaction-local writer marker/);
-  assert.throws(() => validateSemanticPath(repositoryRoot, recoveryPath, recovery.replace("assignment.assigned_at <= ticket.created_at", "TRUE"), "base"), /custody interval/);
+test("attendance policy migration replay keeps exact duplicates idempotent without weakening overlap denial", () => {
+  const migration = `
+    CREATE OR REPLACE FUNCTION attendance.reject_overlapping_policy_version()
+    RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN
+      IF TG_OP = 'INSERT' AND EXISTS (
+        SELECT 1 FROM attendance.policy_versions existing
+        WHERE existing.policy_id = NEW.policy_id
+          AND existing.version_number = NEW.version_number
+      ) THEN RETURN NEW; END IF;
+      IF EXISTS (
+        SELECT 1 FROM attendance.policy_versions existing
+        WHERE existing.id <> NEW.id
+      ) THEN RAISE EXCEPTION 'overlapping attendance policy versions are not allowed'; END IF;
+      RETURN NEW;
+    END; $$;`;
+  const path = "hrms_backend/src/db/migrations/0066_attendance_policy_version_replay_guard.sql";
+  assert.match(validateSemanticPath("", path, migration, "base"), /semantic contract passed/);
+  assert.throws(
+    () => validateSemanticPath("", path, migration.replace("existing.version_number = NEW.version_number", "true"), "base"),
+    /version_number/,
+  );
+  assert.throws(
+    () => validateSemanticPath("", path, migration.replace("existing.id <> NEW.id", "true"), "base"),
+    /genuine overlap/,
+  );
 });
 
-test("frontend contract route discovery excludes test modules without hiding runtime routes", () => {
-  const repositoryRoot = process.cwd();
-  const path = "hrms-client/scripts/frontend-contract-route-coverage.mjs";
-  const content = readFileSync(join(repositoryRoot, path), "utf8");
-
-  assert.match(validateSemanticPath(repositoryRoot, path, content, "base"), /semantic contract passed/);
-  assert.match(validateSemanticPath(repositoryRoot, path, `${content}\n// comment-only change\n`, "base"), /semantic contract passed/);
+test("signup employee-code allocation uses a runner-owned sequence isolated from hostile tenant codes", () => {
+  const migration = `
+    CREATE SEQUENCE platform.signup_employee_code_seq AS bigint NO CYCLE;
+    SELECT setval(
+      'platform.signup_employee_code_seq',
+      COALESCE((SELECT MAX(substring(employee_code FROM 4)::bigint) + 1
+        FROM core.users WHERE employee_code ~ '^ONB[0-9]{1,9}$'), 1),
+      false
+    );`;
+  const path = "hrms_backend/src/db/migrations/0067_signup_employee_code_sequence.sql";
+  assert.match(validateSemanticPath("", path, migration, "base"), /semantic contract passed/);
   assert.throws(
-    () => validateSemanticPath(repositoryRoot, path, content.replace(' && !file.endsWith(".test.tsx")', ""), "base"),
-    /include runtime TSX routes and exclude colocated test modules/,
+    () => validateSemanticPath("", path, migration.replace("{1,9}", "+"), "base"),
+    /oversized ONB/,
   );
   assert.throws(
-    () => validateSemanticPath(repositoryRoot, path, content.replace('file.endsWith(".tsx")', "true"), "base"),
-    /include runtime TSX routes and exclude colocated test modules/,
+    () => validateSemanticPath("", path, `BEGIN;\n${migration}\nCOMMIT;`, "base"),
+    /transaction ownership/,
   );
-  assert.throws(
-    () => validateSemanticPath(repositoryRoot, path, `${content}\nconst invalid = ;\n`, "base"),
-    /must parse as JavaScript/,
-  );
-
-  for (const mutation of [
-    content.replace("const errors = [];", "const errors = { push() {}, length: 0 };"),
-    content.replace(
-      "const routesDir = join(root, \"src/routes\");",
-      "const routesDir = join(root, \"src/routes\");\nprocess.exit(0);",
-    ),
-    content.replace('walk(join(root, "src")).filter(', "routeFiles.filter("),
-    content.replace(
-      "const routesDir = join(root, \"src/routes\");",
-      'const routesDir = join(root, "src/routes");\n(() => {}).constructor("process.exit(0)")();',
-    ),
-  ]) {
-    assert.throws(
-      () => validateSemanticPath(repositoryRoot, path, mutation, "base"),
-      /canonical AST changed outside the trusted contract/,
-    );
-  }
 });
 
 test("semantic QA scripts are classified before generic external coverage", () => {
@@ -1635,10 +2053,27 @@ test("backend coverage measures unit and integration projects together", () => {
     runFullCoverageWorker(root, outputRoot, expectedHead,
       { node: "/trusted/node", pnpm: "/trusted/pnpm", python: "/trusted/python3", bash: "/trusted/bash" },
       (command, args) => commands.push({ command, args }));
-    const backend = commands.find(({ args }) =>
-      args.includes("hrms_backend") && args.includes("--coverage") && args.includes("integration"));
+    const backendResults = `--outputFile=${join(outputRoot, "external-input", "backend-tests.json")}`;
+    const backend = commands.find(({ args }) => args.includes(backendResults));
     assert.ok(backend, "backend coverage command must include the integration project");
     assert.deepEqual(backend.args.filter((_argument, index) => backend.args[index - 1] === "--project"), ["unit", "integration"]);
+    assert.ok(backend.args.includes("--reporter=json"));
+    assert.ok(backend.args.includes(backendResults));
+    const externalTypeScript = commands.find(({ args }) =>
+      args.includes("src/db/__tests__/migration-runner.unit.test.ts"));
+    assert.ok(externalTypeScript, "migration runner tests must emit external TypeScript coverage");
+    assert.deepEqual(
+      externalTypeScript.args.filter((_argument, index) => externalTypeScript.args[index - 1] === "--project"),
+      ["unit", "integration"],
+    );
+    assert.ok(externalTypeScript.args.includes("src/db/__tests__/migration-runner.integration.test.ts"));
+    assert.ok(
+      externalTypeScript.args.includes(join(root, "hrms_backend/scripts/db-migration-lib.ts")),
+    );
+    const frontend = commands.find(({ args }) => args.includes("hrms-client") && args.includes("--coverage"));
+    assert.ok(frontend, "frontend coverage command must emit trusted test results");
+    assert.ok(frontend.args.includes("--reporter=json"));
+    assert.ok(frontend.args.some((argument) => argument === `--outputFile=${join(outputRoot, "external-input", "frontend-tests.json")}`));
   } finally {
     if (previous === undefined) delete process.env.HRMS_COVERAGE_OUTPUT_DIR;
     else process.env.HRMS_COVERAGE_OUTPUT_DIR = previous;

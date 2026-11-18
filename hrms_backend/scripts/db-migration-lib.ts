@@ -44,6 +44,114 @@ CREATE TABLE IF NOT EXISTS platform.schema_migrations (
 const LOCK_NAMESPACE = 76001;
 const LOCK_ID = 1002;
 
+const LEGACY_RUNNER_TRANSACTION_MIGRATIONS = new Map([
+  [
+    "0065",
+    {
+      filename: "0065_holiday_company_unique_constraint.sql",
+      checksumSha256:
+        "231b5a18f0d0eab8b94c8b7aec8c55fdf92fccdf97f4160c648a36a4f0cf5408",
+    },
+  ],
+]);
+
+function maskPostgresNonCode(sql: string): string {
+  let masked = "";
+  let cursor = 0;
+
+  const maskCharacter = (character: string): string =>
+    character === "\n" || character === "\r" ? character : " ";
+
+  const maskRange = (end: number): void => {
+    while (cursor < end) {
+      masked += maskCharacter(sql[cursor]!);
+      cursor += 1;
+    }
+  };
+
+  while (cursor < sql.length) {
+    if (sql.startsWith("--", cursor)) {
+      const lineEnd = sql.indexOf("\n", cursor + 2);
+      maskRange(lineEnd < 0 ? sql.length : lineEnd);
+      continue;
+    }
+
+    if (sql.startsWith("/*", cursor)) {
+      const commentEnd = sql.indexOf("*/", cursor + 2);
+      maskRange(commentEnd < 0 ? sql.length : commentEnd + 2);
+      continue;
+    }
+
+    const character = sql[cursor];
+    if (character === "'" || character === '"') {
+      const quote = character;
+      masked += " ";
+      cursor += 1;
+      while (cursor < sql.length) {
+        const quotedCharacter = sql[cursor]!;
+        masked += maskCharacter(quotedCharacter);
+        cursor += 1;
+        if (quotedCharacter !== quote) {
+          continue;
+        }
+        if (sql[cursor] === quote) {
+          masked += " ";
+          cursor += 1;
+          continue;
+        }
+        break;
+      }
+      continue;
+    }
+
+    if (character === "$") {
+      const delimiter = sql.slice(cursor).match(/^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/u)?.[0];
+      if (delimiter) {
+        const bodyEnd = sql.indexOf(delimiter, cursor + delimiter.length);
+        maskRange(bodyEnd < 0 ? sql.length : bodyEnd + delimiter.length);
+        continue;
+      }
+    }
+
+    masked += character;
+    cursor += 1;
+  }
+
+  return masked;
+}
+
+function containsTopLevelTransactionControl(sql: string): boolean {
+  const executableSql = maskPostgresNonCode(sql);
+  const transactionControl = /(?:^|;)\s*(?:BEGIN\b|START\s+TRANSACTION\b|COMMIT\b|END\b|ROLLBACK\b|ABORT\b|SAVEPOINT\b|RELEASE(?:\s+SAVEPOINT)?\b|PREPARE\s+TRANSACTION\b|SET\s+TRANSACTION\b)/iu;
+  return transactionControl.test(executableSql);
+}
+
+export function migrationExecutionSql(migration: MigrationFile): string {
+  const calculatedChecksum = checksumSql(migration.sql);
+  if (calculatedChecksum !== migration.checksumSha256) {
+    throw new Error(
+      `Migration ${migration.filename} checksum does not match its SQL content`,
+    );
+  }
+
+  const legacy = LEGACY_RUNNER_TRANSACTION_MIGRATIONS.get(migration.id);
+  if (
+    legacy?.filename === migration.filename &&
+    legacy.checksumSha256 === migration.checksumSha256
+  ) {
+    const standaloneWrapper = /^[ \t]*(BEGIN|COMMIT)[ \t]*;[ \t]*$/gimu;
+    return migration.sql.replace(standaloneWrapper, "");
+  }
+
+  if (containsTopLevelTransactionControl(migration.sql)) {
+    throw new Error(
+      `Migration ${migration.filename} must leave transaction ownership to the migration runner`,
+    );
+  }
+
+  return migration.sql;
+}
+
 export function canonicalizeSql(sql: string): string {
   return sql.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
 }
@@ -239,8 +347,12 @@ export async function applyPendingMigrations(
   migrations: MigrationFile[],
 ): Promise<number> {
   let appliedCount = 0;
+  const executionPlan = migrations.map((migration) => ({
+    migration,
+    sql: migrationExecutionSql(migration),
+  }));
 
-  for (const migration of migrations) {
+  for (const { migration, sql } of executionPlan) {
     const startedAt = Date.now();
 
     console.log(`Applying migration ${migration.filename}`);
@@ -248,7 +360,7 @@ export async function applyPendingMigrations(
     await client.query("BEGIN");
 
     try {
-      await client.query(migration.sql);
+      await client.query(sql);
 
       const executionTimeMs = Date.now() - startedAt;
 

@@ -984,6 +984,7 @@ describe("attendance", () => {
     company.timezone = "UTC";
     const employeeRecord = app.store.users.find((candidate) => candidate.id === employee.user.id)!;
     employeeRecord.timezone = "UTC";
+    employeeRecord.version += 1;
     const workDate = localDate(0, "UTC");
     let policy = app.store.adminPolicies.find(
       (candidate) => candidate.company_id === company.id && candidate.policy_key === "attendance",
@@ -1009,6 +1010,8 @@ describe("attendance", () => {
       autoPunchOutEnabled: true,
       autoPunchOutTime: "23:59",
     };
+    policy.updated_at = new Date().toISOString();
+    policy.version += 1;
     await app.store.persistence?.flush();
     if (deactivated !== "transfer" && deactivated !== "removed_preference") {
       await createAttendancePolicy(app, company.id, {
@@ -1144,6 +1147,7 @@ describe("attendance", () => {
     company.working_week = "Mon-Sun";
     company.timezone = testTimeZone;
     employeeRecord.timezone = testTimeZone;
+    employeeRecord.version += 1;
     await app.store.persistence?.flush();
     const staleDate = previousWorkday(testTimeZone);
     const staleExisting = app.store.attendanceDayRecords.find(

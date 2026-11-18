@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { buildRealApp } from "../../../__tests__/real-infra.js";
 import { PostgresAttendanceCommandRepository } from "../command-repository.js";
@@ -163,5 +165,58 @@ describe("PostgreSQL attendance policy resolver", () => {
         policy_id: policyId,
       }),
     });
+  });
+
+  it("applies the forward replay guard after the previous trigger and remains idempotent", async () => {
+    const { companyId } = employeeFixture(app);
+    const policyId = await createAttendancePolicy(app, {
+      companyId,
+      name: "forward_migration_replay_guard",
+      createVersion: false,
+    });
+    await app.store.pgPool!.query(`
+      CREATE OR REPLACE FUNCTION attendance.reject_overlapping_policy_version()
+      RETURNS trigger LANGUAGE plpgsql AS $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM attendance.policy_versions existing
+          WHERE existing.policy_id = NEW.policy_id
+            AND existing.company_id = NEW.company_id
+            AND existing.id <> NEW.id
+            AND NEW.effective_from < COALESCE(existing.effective_until, 'infinity'::timestamptz)
+            AND COALESCE(NEW.effective_until, 'infinity'::timestamptz) > existing.effective_from
+        ) THEN
+          RAISE EXCEPTION 'overlapping attendance policy versions are not allowed'
+            USING ERRCODE = '23514', CONSTRAINT = 'attendance_policy_versions_no_overlap';
+        END IF;
+        RETURN NEW;
+      END; $$;
+    `);
+    const migration = readFileSync(
+      "src/db/migrations/0066_attendance_policy_version_replay_guard.sql",
+      "utf8",
+    );
+    await app.store.pgPool!.query(migration);
+    await app.store.pgPool!.query(migration);
+    const versionId = randomUUID();
+    await app.store.pgPool!.query(
+      `INSERT INTO attendance.policy_versions
+         (id, company_id, policy_id, version_number, effective_from, config, created_at)
+       VALUES ($1, $2, $3, 1, '2026-01-01T00:00:00.000Z', '{}'::jsonb, now())`,
+      [versionId, companyId, policyId],
+    );
+    await expect(app.store.pgPool!.query(
+      `INSERT INTO attendance.policy_versions
+         (id, company_id, policy_id, version_number, effective_from, config, created_at)
+       VALUES ($1, $2, $3, 1, '2026-01-01T00:00:00.000Z', '{}'::jsonb, now())
+       ON CONFLICT (policy_id, version_number) DO NOTHING`,
+      [randomUUID(), companyId, policyId],
+    )).resolves.toBeDefined();
+    await expect(app.store.pgPool!.query(
+      `INSERT INTO attendance.policy_versions
+         (id, company_id, policy_id, version_number, effective_from, config, created_at)
+       VALUES ($1, $2, $3, 2, '2026-02-01T00:00:00.000Z', '{}'::jsonb, now())`,
+      [randomUUID(), companyId, policyId],
+    )).rejects.toMatchObject({ constraint: "attendance_policy_versions_no_overlap" });
   });
 });

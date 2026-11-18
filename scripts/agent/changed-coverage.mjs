@@ -511,6 +511,14 @@ export function stampReport(root, packageName) {
     sourceDigest: sourceDigest(root, packageName),
     reportDigest: createHash("sha256").update(readFileSync(reportPath)).digest("hex"),
   };
+  const suitePaths = fullSuitePaths(coverageOutputRoot(root));
+  const testResultPath = packageName === "backend" ? suitePaths.backendTestResults : suitePaths.frontendTestResults;
+  if (existsSync(testResultPath)) {
+    const safeResultPath = assertExternalArtifact(root, testResultPath, `${packageName} test result`);
+    const rawTestResults = readFileSync(safeResultPath);
+    parsePassedTestResults(root, head, packageName, rawTestResults.toString("utf8"));
+    stamp.testResultsDigest = createHash("sha256").update(rawTestResults).digest("hex");
+  }
   const stampPath = assertExternalArtifactDestination(root, join(dirname(reportPath), "coverage-stamp.json"), `${packageName} stamp`);
   writeFileSync(stampPath, `${JSON.stringify(stamp, null, 2)}\n`);
   return stamp;
@@ -696,6 +704,8 @@ function fullSuitePaths(outputRoot) {
     pythonData: join(externalInput, "python.data"),
     pythonJson: join(externalInput, "python.json"),
     typescriptReport: join(externalInput, "typescript"),
+    backendTestResults: join(externalInput, "backend-tests.json"),
+    frontendTestResults: join(externalInput, "frontend-tests.json"),
   };
 }
 
@@ -955,7 +965,7 @@ function replaceProcessEnvironment(environment) {
 export function runFullCoverageWorker(root, outputRoot, expectedHead, tools, runCommand = execFileSync) {
   const guard = (phase) => assertExactCleanCommit(root, expectedHead, `full coverage worker ${phase}`);
   guard("entry");
-  const { resolverV8, gateV8, pythonData, pythonJson, typescriptReport } = fullSuitePaths(outputRoot);
+  const { resolverV8, gateV8, pythonData, pythonJson, typescriptReport, backendTestResults, frontendTestResults } = fullSuitePaths(outputRoot);
   for (const directory of [resolverV8, gateV8, typescriptReport, process.env.HOME, process.env.XDG_CONFIG_HOME, process.env.XDG_CACHE_HOME]) {
     if (directory) mkdirSync(directory, { recursive: true });
   }
@@ -974,20 +984,26 @@ export function runFullCoverageWorker(root, outputRoot, expectedHead, tools, run
   execute("Python report", tools.python, ["-m", "coverage", "json", "--pretty-print", "--include=scripts/agent/assert-disposable-test-db.py,scripts/agent/validate-doc-references.py", "-o", pythonJson], { COVERAGE_FILE: pythonData }, ["NODE_V8_COVERAGE"]);
   execute("agent setup validation", tools.bash, ["scripts/agent/validate-agent-setup.sh"], {}, ["NODE_V8_COVERAGE"]);
   const includes = [
+    "hrms_backend/scripts/db-migration-lib.ts",
     "hrms_backend/scripts/lib.ts",
     "qa-artifacts/hrms/discovery-2026-11-09/admin-settings-cross-company-probe.ts",
     "qa-artifacts/hrms/discovery-2026-11-09/disposable-probe-guard.ts",
     "qa-artifacts/hrms/discovery-2026-11-09/multi-instance-asset-probe.ts",
     "qa-artifacts/hrms/discovery-2026-11-09/tenant-boundary-probe.ts",
   ];
-  execute("isolated TypeScript tests", tools.pnpm, ["--dir", "hrms_backend", "exec", "vitest", "run", "--project", "unit",
+  execute("isolated TypeScript tests", tools.pnpm, ["--dir", "hrms_backend", "exec", "vitest", "run",
+    "--project", "unit", "--project", "integration",
     "src/__tests__/discovery-probes.unit.test.ts", "src/__tests__/disposable-probe-guard.unit.test.ts", "src/__tests__/walk-files.unit.test.ts",
+    "src/db/__tests__/migration-runner.unit.test.ts", "src/db/__tests__/migration-runner.integration.test.ts",
     "--coverage", "--coverage.allowExternal=true", ...includes.flatMap((path) => ["--coverage.include", resolve(root, path)]),
     "--coverage.reporter=text", "--coverage.reporter=json", `--coverage.reportsDirectory=${typescriptReport}`], {}, ["NODE_V8_COVERAGE"]);
   execute("backend unit and integration coverage", tools.pnpm, ["--dir", "hrms_backend", "exec", "vitest", "run",
     "--project", "unit", "--project", "integration", "--coverage", "--coverage.reporter=json",
-    `--coverage.reportsDirectory=${dirname(coverageArtifactPath(root, "backend"))}`], {}, ["NODE_V8_COVERAGE"]);
-  execute("frontend coverage", tools.pnpm, ["--dir", "hrms-client", "exec", "vitest", "run", "--coverage", "--coverage.reporter=json", `--coverage.reportsDirectory=${dirname(coverageArtifactPath(root, "frontend"))}`], {}, ["NODE_V8_COVERAGE"]);
+    `--coverage.reportsDirectory=${dirname(coverageArtifactPath(root, "backend"))}`,
+    "--reporter=json", `--outputFile=${backendTestResults}`], {}, ["NODE_V8_COVERAGE"]);
+  execute("frontend coverage", tools.pnpm, ["--dir", "hrms-client", "exec", "vitest", "run", "--coverage", "--coverage.reporter=json",
+    `--coverage.reportsDirectory=${dirname(coverageArtifactPath(root, "frontend"))}`,
+    "--reporter=json", `--outputFile=${frontendTestResults}`], {}, ["NODE_V8_COVERAGE"]);
   return completed;
 }
 
@@ -1335,6 +1351,204 @@ function semanticFailure(path, message) {
   throw new Error(`${path}: ${message}`);
 }
 
+/*
+ * Runtime deletion has no new executable line that a numeric coverage engine
+ * can attribute. A trusted validator may therefore recognize only a reviewed,
+ * immutable removal contract. The contract is deliberately kept in validator
+ * source (rather than a candidate-supplied JSON/CLI input) and is bound to the
+ * exact removal signature, old/new Git blobs and exact regression-test blobs.
+ * An unrelated edit, moved hunk, weakened test or unknown removal remains red.
+ */
+export const trustedRemovalContracts = Object.freeze([]);
+
+export function parseCommitFileIdentity(path, label, output) {
+  if (!output) return null;
+  const entries = output.split("\0").filter(Boolean);
+  if (entries.length !== 1) semanticFailure(path, `${label} resolved to ${entries.length} Git entries`);
+  const match = /^(100644|100755) blob ([0-9a-f]{40})\t(.+)$/.exec(entries[0]);
+  if (!match || match[3] !== path) semanticFailure(path, `${label} is not one canonical regular Git file`);
+  return { mode: match[1], blob: match[2] };
+}
+
+function commitFileIdentity(root, revision, path, label) {
+  return parseCommitFileIdentity(path, label, git(root, "ls-tree", "-z", revision, "--", `:(literal)${path}`));
+}
+
+function validCanonicalRepoPath(path) {
+  return typeof path === "string" && path.length > 0 && !isAbsolute(path) && !/[\\\u0000-\u001f\u007f]/u.test(path) &&
+    path.split("/").every((part) => part && part !== "." && part !== "..");
+}
+
+function regressionSuiteForPath(path) {
+  if (/^hrms_backend\/src\/.*\.(?:unit|integration)\.test\.ts$/u.test(path)) return "backend";
+  if (/^hrms-client\/src\/.*\.unit\.test\.tsx?$/u.test(path)) return "frontend";
+  return null;
+}
+
+function validRegressionPath(path) {
+  return validCanonicalRepoPath(path) && regressionSuiteForPath(path) !== null;
+}
+
+export function parsePassedTestResults(root, head, suite, content) {
+  if (suite !== "backend" && suite !== "frontend") throw new Error(`Unsupported passed-test suite: ${suite}`);
+  const parsed = parseJsonSemantic(`${suite} test results`, content);
+  if (!Array.isArray(parsed.testResults)) throw new Error(`${suite} test results: testResults must be an array`);
+  if (parsed.success !== true) throw new Error(`${suite} test results: run must report success`);
+  const countNames = ["numTotalTestSuites", "numPassedTestSuites", "numFailedTestSuites", "numPendingTestSuites",
+    "numTotalTests", "numPassedTests", "numFailedTests", "numPendingTests", "numTodoTests"];
+  for (const count of countNames) {
+    if (!Number.isSafeInteger(parsed[count]) || parsed[count] < 0) {
+      throw new Error(`${suite} test results: ${count} must be a non-negative integer`);
+    }
+  }
+  if (parsed.numTotalTestSuites < 1 || parsed.numTotalTests < 1 || parsed.testResults.length < 1 ||
+      parsed.numPassedTestSuites + parsed.numFailedTestSuites + parsed.numPendingTestSuites !== parsed.numTotalTestSuites ||
+      parsed.numPassedTests + parsed.numFailedTests + parsed.numPendingTests + parsed.numTodoTests !== parsed.numTotalTests) {
+    throw new Error(`${suite} test results: run summary counts are inconsistent or empty`);
+  }
+  if (parsed.numFailedTestSuites !== 0 || parsed.numPendingTestSuites !== 0 ||
+      parsed.numFailedTests !== 0 || parsed.numPendingTests !== 0 || parsed.numTodoTests !== 0) {
+    throw new Error(`${suite} test results: failed, skipped, pending or todo results are not trusted evidence`);
+  }
+  const passed = new Map();
+  const seenPaths = new Set();
+  const passedSuites = new Set();
+  let passedAssertions = 0;
+  for (const result of parsed.testResults) {
+    if (!result || typeof result.name !== "string" || !isAbsolute(result.name)) {
+      throw new Error(`${suite} test results: test file path must be absolute`);
+    }
+    const path = relative(root, result.name).replaceAll("\\", "/");
+    if (!validRegressionPath(path) || regressionSuiteForPath(path) !== suite) {
+      throw new Error(`${suite} test results: path is outside the trusted suite selector: ${path}`);
+    }
+    if (seenPaths.has(path)) throw new Error(`${suite} test results: duplicate file result for ${path}`);
+    seenPaths.add(path);
+    passedSuites.add(`${path}\0`);
+    const assertions = Array.isArray(result.assertionResults) ? result.assertionResults : [];
+    if (result.status !== "passed" || assertions.length === 0 || assertions.some((assertion) => assertion?.status !== "passed")) {
+      throw new Error(`${suite} test results: each test file must contain only passed assertions: ${path}`);
+    }
+    for (const assertion of assertions) {
+      if (!Array.isArray(assertion.ancestorTitles) ||
+          assertion.ancestorTitles.some((title) => typeof title !== "string" || title.length === 0)) {
+        throw new Error(`${suite} test results: assertion suite ancestry is malformed: ${path}`);
+      }
+      const ancestry = [];
+      for (const title of assertion.ancestorTitles) {
+        ancestry.push(title);
+        passedSuites.add(`${path}\0${JSON.stringify(ancestry)}`);
+      }
+    }
+    const identity = commitFileIdentity(root, head, path, `${suite} passed test`);
+    if (!identity || identity.mode !== "100644") throw new Error(`${suite} test results: test source is not a regular Git file: ${path}`);
+    passed.set(path, { suite, blob: identity.blob, passedAssertions: assertions.length });
+    passedAssertions += assertions.length;
+  }
+  if (passedAssertions !== parsed.numPassedTests || passedAssertions !== parsed.numTotalTests) {
+    throw new Error(`${suite} test results: assertion totals do not match the run summary`);
+  }
+  if (passedSuites.size !== parsed.numPassedTestSuites || passedSuites.size !== parsed.numTotalTestSuites) {
+    throw new Error(`${suite} test results: suite totals do not match file and assertion ancestry`);
+  }
+  return passed;
+}
+
+function readPassedTestResults(root, head, suitePaths) {
+  const combined = new Map();
+  for (const [suite, resultPath] of [["backend", suitePaths.backendTestResults], ["frontend", suitePaths.frontendTestResults]]) {
+    const safePath = assertExternalArtifact(root, resultPath, `${suite} test result`);
+    const raw = readFileSync(safePath);
+    const stampPath = join(dirname(coverageArtifactPath(root, suite)), "coverage-stamp.json");
+    const safeStampPath = assertExternalArtifact(root, stampPath, `${suite} coverage stamp`);
+    const stamp = parseJsonSemantic(`${suite} coverage stamp`, readFileSync(safeStampPath, "utf8"));
+    const digest = createHash("sha256").update(raw).digest("hex");
+    if (stamp.head !== head || stamp.testResultsDigest !== digest) {
+      throw new Error(`${suite} test results: stale, modified or exact-head-unbound result artifact`);
+    }
+    const results = parsePassedTestResults(root, head, suite, raw.toString("utf8"));
+    for (const [path, result] of results) {
+      combined.set(path, result);
+    }
+  }
+  return combined;
+}
+
+export function requireRegularRemovalModes(signature, oldIdentity, newIdentity) {
+  if (oldIdentity?.mode !== "100644" || (newIdentity && newIdentity.mode !== "100644")) {
+    throw new Error(`Trusted removal contract requires regular non-executable source blobs for ${signature}`);
+  }
+}
+
+export function validateRemovalContract(root, mergeBase, head, kind, signature, contracts = trustedRemovalContracts, passedTests = new Map()) {
+  if (kind !== "deletion-only" && kind !== "removed-runtime") throw new Error(`Unsupported removal contract kind: ${kind}`);
+  if (typeof signature !== "string" || !signature) throw new Error("Removal contract signature must be a non-empty string");
+  if (!Array.isArray(contracts)) throw new Error("Trusted removal contracts must be an array");
+  const contractIds = new Set();
+  for (const candidate of contracts) {
+    if (typeof candidate?.id !== "string" || !candidate.id) throw new Error("Trusted removal contract has an invalid task-scoped ID");
+    if (contractIds.has(candidate.id)) throw new Error(`Trusted removal contract ID is duplicated: ${candidate.id}`);
+    contractIds.add(candidate.id);
+  }
+  const matches = contracts.filter((contract) => contract.kind === kind && contract.signature === signature);
+  if (matches.length === 0) return null;
+  if (matches.length !== 1) throw new Error(`Ambiguous trusted removal contract for ${kind} ${signature}`);
+  const contract = matches[0];
+  if (!/^QA-S25-003-[A-Z0-9-]+$/.test(contract.id)) {
+    throw new Error(`Trusted removal contract has an invalid task-scoped ID for ${signature}`);
+  }
+  if (!validCanonicalRepoPath(contract.path) || !signature.startsWith(`${contract.path}:`)) {
+    throw new Error(`Trusted removal contract path does not match ${signature}`);
+  }
+  if (typeof contract.behavior !== "string" || contract.behavior.trim().length < 12) {
+    throw new Error(`Trusted removal contract must describe the replacement behavior for ${signature}`);
+  }
+  if (!/^[0-9a-f]{40}$/.test(contract.oldBlob ?? "")) {
+    throw new Error(`Trusted removal contract old blob is invalid for ${signature}`);
+  }
+  if (contract.newBlob !== null && !/^[0-9a-f]{40}$/.test(contract.newBlob ?? "")) {
+    throw new Error(`Trusted removal contract new blob is invalid for ${signature}`);
+  }
+  const oldIdentity = commitFileIdentity(root, mergeBase, contract.path, "removal base");
+  const newIdentity = commitFileIdentity(root, head, contract.path, "removal head");
+  if (oldIdentity?.blob !== contract.oldBlob) {
+    throw new Error(`Trusted removal contract old blob is stale for ${signature}`);
+  }
+  if ((newIdentity?.blob ?? null) !== contract.newBlob) {
+    throw new Error(`Trusted removal contract new blob is stale for ${signature}`);
+  }
+  requireRegularRemovalModes(signature, oldIdentity, newIdentity);
+  if (!Array.isArray(contract.regressions) || contract.regressions.length === 0) {
+    throw new Error(`Trusted removal contract has no regression tests for ${signature}`);
+  }
+  const seen = new Set();
+  for (const regression of contract.regressions) {
+    if (!regression || typeof regression.path !== "string" || !validRegressionPath(regression.path)) {
+      throw new Error(`Trusted removal contract has a non-test regression path for ${signature}`);
+    }
+    if (seen.has(regression.path)) {
+      throw new Error(`Trusted removal contract repeats regression ${regression.path} for ${signature}`);
+    }
+    seen.add(regression.path);
+    if (!/^[0-9a-f]{40}$/.test(regression.blob ?? "")) {
+      throw new Error(`Trusted removal contract regression blob is invalid for ${signature}`);
+    }
+    const identity = commitFileIdentity(root, head, regression.path, "removal regression");
+    if (!identity || identity.mode !== "100644" || identity.blob !== regression.blob) {
+      throw new Error(`Trusted removal contract regression blob is stale for ${signature}: ${regression.path}`);
+    }
+    const expectedSuite = regressionSuiteForPath(regression.path);
+    if (regression.suite !== expectedSuite) {
+      throw new Error(`Trusted removal contract regression suite is invalid for ${signature}: ${regression.path}`);
+    }
+    const execution = passedTests.get(regression.path);
+    if (!execution || execution.suite !== expectedSuite || execution.blob !== regression.blob || execution.passedAssertions < 1) {
+      throw new Error(`Trusted removal contract regression was not executed and passed for ${signature}: ${regression.path}`);
+    }
+  }
+  return `${contract.id} ${kind} ${signature}: exact replacement regression contract passed`;
+}
+
 function requireText(path, content, pattern, message) {
   if (!pattern.test(content)) semanticFailure(path, message);
 }
@@ -1443,6 +1657,21 @@ function validateVitestConfig(path, content, frontend) {
   }
 }
 
+export const semanticPlanHistoryLimit = 64;
+
+export function semanticPlanBase(root, base) {
+  const headTree = git(root, "rev-parse", "HEAD^{tree}").trim();
+  const baseTree = git(root, "rev-parse", `${base}^{tree}`).trim();
+  if (baseTree !== headTree) return base;
+  const history = git(root, "log", "--first-parent", `--max-count=${semanticPlanHistoryLimit + 1}`, "--format=%H %T", base).trim().split("\n");
+  for (const entry of history) {
+    const [commit, tree] = entry.split(" ");
+    if (tree !== headTree) return commit;
+  }
+  if (history.length > semanticPlanHistoryLimit) throw new Error(`Semantic verifier plan exceeded ${semanticPlanHistoryLimit} identical-tree commits`);
+  throw new Error("Semantic verifier plan requires an ancestor with committed changes");
+}
+
 function validateShellVerifier(root, path, content, base) {
   requireText(path, content, /^set -euo pipefail$/m, "strict shell mode is missing");
   requireText(path, content, /source\s+.*BASH_SOURCE\[0\]/, "shared shell helpers are not loaded safely");
@@ -1461,7 +1690,7 @@ function validateShellVerifier(root, path, content, base) {
     writeFileSync(join(semanticLibDir, "lib.sh"), sharedLib, { mode: 0o644 });
     const syntax = spawnSync("bash", ["-n", semanticScript], { encoding: "utf8" });
     if (syntax.status !== 0) semanticFailure(path, `bash -n failed: ${syntax.stderr.trim()}`);
-    const plan = spawnSync("bash", [semanticScript, "--plan", "--base", base], {
+    const plan = spawnSync("bash", [semanticScript, "--plan", "--base", semanticPlanBase(root, base)], {
       cwd: root,
       env: { ...process.env, HRMS_REPO_ROOT: root },
       encoding: "utf8",
@@ -1499,52 +1728,22 @@ function validateHolidayMigration(path, content) {
   requireSemanticText(path, content, /COMMIT\s*;/i, "holiday migration must commit transactionally");
 }
 
-function validateAssetTransactionFenceMigration(path, content) {
-  requireSemanticText(path, content, /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+assets\.require_transactional_writer\s*\(\)/i, "asset writer fence function is missing");
-  requireSemanticText(path, content, /current_setting\s*\(\s*'hrms\.asset_writer_v2'\s*,\s*true\s*\)\s+IS\s+DISTINCT\s+FROM\s+'on'/i, "asset writer fence must require the transaction-local marker");
-  requireSemanticText(path, content, /IF\s+TG_OP\s*=\s*'DELETE'[\s\S]*RETURN\s+OLD[\s\S]*RETURN\s+NEW/i, "asset writer fence must preserve DELETE and write trigger row semantics");
-  requireSemanticText(path, content, /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+assets\.asset_command_results/i, "durable asset command results table is missing");
-  requireSemanticText(path, content, /UNIQUE\s*\(\s*company_id\s*,\s*actor_user_id\s*,\s*action_key\s*,\s*idempotency_key\s*\)/i, "asset command replay key must be unique within actor and company scope");
-  requireSemanticText(path, content, /CREATE\s+UNIQUE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+asset_assignments_one_active_per_asset_uq[\s\S]*\(asset_id\)[\s\S]*WHERE\s+status\s*=\s*'active'/i, "asset assignment fence must allow only one active assignment");
-  requireSemanticText(path, content, /BEFORE\s+INSERT\s+OR\s+UPDATE\s+OR\s+DELETE/i, "asset writer trigger must fence every mutation operation");
-  for (const table of [
-    "assets", "asset_assignments", "asset_state_events", "asset_requests",
-    "asset_acknowledgements", "asset_maintenance_records", "software_vendors",
-    "software_products", "asset_recovery_tickets", "license_entitlements",
-    "license_activations", "compromised_keys", "asset_command_results",
-  ]) {
-    requireSemanticText(path, content, new RegExp(`['\"]${table}['\"]`), `asset writer trigger list is missing ${table}`);
-  }
+function validateAttendancePolicyVersionMigration(path, content) {
+  requireSemanticText(path, content, /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+attendance\.reject_overlapping_policy_version/i, "attendance policy migration must define the overlap guard");
+  requireSemanticText(path, content, /TG_OP\s*=\s*'INSERT'/i, "attendance policy migration must scope replay handling to inserts");
+  requireSemanticText(path, content, /existing\.policy_id\s*=\s*NEW\.policy_id/i, "attendance policy replay identity must include policy_id");
+  requireSemanticText(path, content, /existing\.version_number\s*=\s*NEW\.version_number/i, "attendance policy replay identity must include version_number");
+  requireSemanticText(path, content, /existing\.id\s*<>\s*NEW\.id/i, "attendance policy migration must retain genuine overlap detection");
+  requireSemanticText(path, content, /overlapping attendance policy versions are not allowed/i, "attendance policy migration must retain overlap rejection");
 }
 
-function validateAssetRecoveryAssignmentMigration(path, content) {
-  requireSemanticText(path, content, /ALTER\s+TABLE\s+assets\.asset_recovery_tickets[\s\S]*ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+assignment_id\s+uuid/i, "recovery ticket assignment column is missing");
-  requireSemanticText(path, content, /IF\s+NOT\s+EXISTS[\s\S]*asset_recovery_tickets_assignment_id_fkey[\s\S]*FOREIGN\s+KEY\s*\(assignment_id\)\s+REFERENCES\s+assets\.asset_assignments\s*\(id\)/i, "recovery assignment foreign key must be installed idempotently");
-  requireSemanticText(path, content, /CREATE\s+INDEX\s+IF\s+NOT\s+EXISTS\s+asset_recovery_tickets_assignment_idx[\s\S]*\(assignment_id\)/i, "recovery assignment lookup index is missing");
-  requireSemanticText(path, content, /SET\s+LOCAL\s+hrms\.asset_writer_v2\s*=\s*'on'/i, "recovery backfill must use only the transaction-local writer marker");
-  requireSemanticText(path, content, /assignment\.asset_id\s*=\s*ticket\.asset_id[\s\S]*assignment\.assigned_to_user_id\s*=\s*ticket\.employee_user_id/i, "recovery backfill must match asset and employee custody");
-  requireSemanticText(path, content, /assignment\.assigned_at\s*<=\s*ticket\.created_at[\s\S]*assignment\.returned_at\s+IS\s+NULL\s+OR\s+assignment\.returned_at\s*>=\s*ticket\.created_at/i, "recovery backfill must match the ticket custody interval");
-  requireSemanticText(path, content, /HAVING\s+count\s*\(\s*\*\s*\)\s*=\s*1/i, "recovery backfill must bind only a unique assignment");
-  requireSemanticText(path, content, /UPDATE\s+assets\.asset_recovery_tickets[\s\S]*SET\s+assignment_id\s*=\s*unique_matches\.assignment_id/i, "recovery backfill update is missing");
-}
-
-function validateFrontendContractRouteCoverage(path, content) {
-  requireSemanticText(
-    path,
-    content,
-    /walk\(routesDir\)\.filter\(\s*\(file\)\s*=>\s*file\.endsWith\("\.tsx"\)\s*&&\s*!file\.endsWith\("\.test\.tsx"\)\s*,?\s*\)/,
-    "frontend route discovery must include runtime TSX routes and exclude colocated test modules",
-  );
-  const source = ts.createSourceFile(path, content, ts.ScriptTarget.Latest, true, ts.ScriptKind.JS);
-  if (source.parseDiagnostics.length) {
-    semanticFailure(path, "frontend contract coverage must parse as JavaScript");
-  }
-  const printer = ts.createPrinter({ removeComments: true });
-  const canonicalProgramHash = createHash("sha256").update(printer.printFile(source)).digest("hex");
-  // Regenerate only after reviewing the printed, comment-free checker AST and
-  // updating the negative mutations in changed-coverage.test.mjs.
-  if (canonicalProgramHash !== "2ad41f461efdfad60e8ba7cac6357c68b3111811505ce846ee29232889ba347d") {
-    semanticFailure(path, "frontend contract coverage canonical AST changed outside the trusted contract");
+function validateSignupEmployeeCodeSequenceMigration(path, content) {
+  requireSemanticText(path, content, /CREATE\s+SEQUENCE\s+platform\.signup_employee_code_seq/i, "signup allocator migration must create a dedicated sequence");
+  requireSemanticText(path, content, /AS\s+bigint/i, "signup allocator sequence must use bounded bigint values");
+  requireSemanticText(path, content, /setval\s*\(/i, "signup allocator migration must advance beyond safe legacy codes");
+  requireSemanticText(path, content, /\^ONB\[0-9\]\{1,9\}\$/i, "legacy initialization must ignore tenant-controlled oversized ONB values");
+  if (/\b(?:BEGIN|COMMIT)\s*;/iu.test(content)) {
+    semanticFailure(path, "signup allocator migration must leave transaction ownership to the migration runner");
   }
 }
 
@@ -1579,13 +1778,12 @@ export function validateSemanticPath(root, path, content, base) {
     case "hrms-client/pnpm-lock.yaml": validateLockfile(path, content, true); break;
     case "hrms_backend/pnpm-lock.yaml": validateLockfile(path, content, false); break;
     case "hrms-client/vitest.config.ts": validateVitestConfig(path, content, true); break;
-    case "hrms-client/scripts/frontend-contract-route-coverage.mjs": validateFrontendContractRouteCoverage(path, content); break;
     case "hrms_backend/vitest.config.ts": validateVitestConfig(path, content, false); break;
     case "scripts/agent/verify-change.sh": validateShellVerifier(root, path, content, base); break;
     case "hrms_backend/infra/docker/docker-compose.qa.yml": validateQaCompose(path, content); break;
+    case "hrms_backend/src/db/migrations/0066_attendance_policy_version_replay_guard.sql": validateAttendancePolicyVersionMigration(path, content); break;
+    case "hrms_backend/src/db/migrations/0067_signup_employee_code_sequence.sql": validateSignupEmployeeCodeSequenceMigration(path, content); break;
     case "hrms_backend/src/db/migrations/0065_holiday_company_unique_constraint.sql": validateHolidayMigration(path, content); break;
-    case "hrms_backend/src/db/migrations/0066_asset_transaction_fence.sql": validateAssetTransactionFenceMigration(path, content); break;
-    case "hrms_backend/src/db/migrations/0067_asset_recovery_assignment_identity.sql": validateAssetRecoveryAssignmentMigration(path, content); break;
     case "hrms_backend/scripts/qa-seed-safety.ts": validateQaSeedSafety(path, content); break;
     case "hrms_backend/scripts/seed-qa.ts": validateQaSeedEntrypoint(path, content); break;
     case "hrms_backend/scripts/seed-qa-data.ts":
@@ -1602,22 +1800,21 @@ export const semanticCoveragePaths = new Set([
   "hrms-client/package.json",
   "hrms-client/pnpm-lock.yaml",
   "hrms-client/vitest.config.ts",
-  "hrms-client/scripts/frontend-contract-route-coverage.mjs",
   "hrms_backend/package.json",
   "hrms_backend/pnpm-lock.yaml",
   "hrms_backend/vitest.config.ts",
   "scripts/agent/verify-change.sh",
   "hrms_backend/infra/docker/docker-compose.qa.yml",
+  "hrms_backend/src/db/migrations/0066_attendance_policy_version_replay_guard.sql",
+  "hrms_backend/src/db/migrations/0067_signup_employee_code_sequence.sql",
   "hrms_backend/src/db/migrations/0065_holiday_company_unique_constraint.sql",
-  "hrms_backend/src/db/migrations/0066_asset_transaction_fence.sql",
-  "hrms_backend/src/db/migrations/0067_asset_recovery_assignment_identity.sql",
   "hrms_backend/scripts/qa-seed-safety.ts",
   "hrms_backend/scripts/seed-qa.ts",
   "hrms_backend/scripts/seed-qa-data.ts",
   "hrms_backend/scripts/seed-release-data.ts",
 ]);
 
-export function verify(root, base, head, suitePaths = fullSuitePaths(coverageOutputRoot(root))) {
+export function verify(root, base, head, suitePaths = fullSuitePaths(coverageOutputRoot(root)), options = {}) {
   assertCleanRepository(root);
   const actualHead = git(root, "rev-parse", "HEAD").trim();
   const resolvedHead = git(root, "rev-parse", head).trim();
@@ -1627,17 +1824,25 @@ export function verify(root, base, head, suitePaths = fullSuitePaths(coverageOut
   const totals = { executable: 0, nonExecutable: 0, branches: 0, uncovered: [] };
   let uncoveredLines = 0;
   let uncoveredBranches = 0;
-  let unmeasuredCount = deletionOnly.length + removedRuntime.length;
+  let unmeasuredCount = 0;
   const semanticLines = [];
+  const removalContracts = options.removalContracts ?? trustedRemovalContracts;
+  const passedTests = removalContracts.length > 0 ? (options.passedTests ?? readPassedTestResults(root, resolvedHead, suitePaths)) : new Map();
   const lines = [`Coverage diff ${mergeBase}..${resolvedHead}`];
   for (const path of testSource) lines.push(`TEST SOURCE ${path}: excluded from product line denominator; independent assertion-quality review required`);
   for (const risk of importRisks) lines.push(`IMPORT GRAPH ${risk}: changed in-source test files require review`);
   for (const path of excludedGenerated) lines.push(`EXCLUDED TYPE/GENERATED ${path}: no product line denominator; typecheck/build regeneration evidence required`);
-  for (const item of deletionOnly) {
-    const message = `deletion-only ${item}: behavior requires explicit regression evidence`;
+  const recordRemoval = (kind, item, message) => {
+    const contract = validateRemovalContract(root, mergeBase, resolvedHead, kind, item, removalContracts, passedTests);
+    if (contract) {
+      semanticLines.push(contract);
+      return;
+    }
     totals.uncovered.push(message);
-  }
-  for (const item of removedRuntime) totals.uncovered.push(`removed runtime ${item}: replacement has no executable coverage target`);
+    unmeasuredCount += 1;
+  };
+  for (const item of deletionOnly) recordRemoval("deletion-only", item, `deletion-only ${item}: behavior requires explicit regression evidence`);
+  for (const item of removedRuntime) recordRemoval("removed-runtime", item, `removed runtime ${item}: replacement has no executable coverage target`);
   for (const path of outside) {
     if (semanticCoveragePaths.has(path)) {
       semanticLines.push(validateSemanticPath(root, path, readFileSync(join(root, path), "utf8"), mergeBase));

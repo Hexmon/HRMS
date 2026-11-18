@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createHash, randomUUID } from "node:crypto";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { getLocalDemoPassword } from "#auth";
 import { authHeader, loginAs } from "#testing";
@@ -145,7 +146,7 @@ describe("auth onboarding and password APIs", () => {
         }
       }
     });
-    expect(bootstrap.statusCode).toBe(200);
+    expect(bootstrap.statusCode, JSON.stringify(bootstrap.json())).toBe(200);
     expect(bootstrap.json().company).toMatchObject({
       company_name: "Acme HRMS India",
       status: "active",
@@ -177,7 +178,7 @@ describe("auth onboarding and password APIs", () => {
       url: "/api/v1/onboarding/company-bootstrap",
       payload: { bootstrap_token: bootstrapToken }
     });
-    expect(duplicateBootstrap.statusCode).toBe(409);
+    expect(duplicateBootstrap.statusCode).toBe(400);
 
     const adminLogin = await app.inject({
       method: "POST",
@@ -299,7 +300,930 @@ describe("auth onboarding and password APIs", () => {
     });
     expect(reusedReset.statusCode).toBe(409);
   });
+
+  it("allows only one backend instance to consume a password-reset token", async () => {
+    const previousResetOverride = process.env.HRMS_ALLOW_DATABASE_URL_TEST_RESET;
+    process.env.HRMS_ALLOW_DATABASE_URL_TEST_RESET = "true";
+    const second = await buildRealApp({ reset: false });
+    await second.ready();
+    try {
+      const resetRequest = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/password-reset/request",
+        payload: { email: "e1@example.test" },
+      });
+      expect(resetRequest.statusCode).toBe(200);
+      const resetToken = resetRequest.json().dev_only.password_reset_token as string;
+      const passwords = ["FirstWinner@123", "SecondWinner@123"] as const;
+      const responses = await Promise.all([
+        app.inject({
+          method: "POST",
+          url: "/api/v1/auth/password-reset/confirm",
+          payload: { token: resetToken, password: passwords[0], confirm_password: passwords[0] },
+        }),
+        second.inject({
+          method: "POST",
+          url: "/api/v1/auth/password-reset/confirm",
+          payload: { token: resetToken, password: passwords[1], confirm_password: passwords[1] },
+        }),
+      ]);
+      expect(responses.map((response) => response.statusCode).sort()).toEqual([200, 409]);
+      const winner = responses[0]!.statusCode === 200 ? 0 : 1;
+      const winningLogin = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { email: "e1@example.test", password: passwords[winner] },
+      });
+      const losingLogin = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { email: "e1@example.test", password: passwords[1 - winner] },
+      });
+      expect(winningLogin.statusCode).toBe(200);
+      expect(losingLogin.statusCode).toBe(401);
+      await expect(
+        app.store.pgPool!.query(
+          "SELECT status, count(*)::int AS tokens FROM platform.auth_tokens WHERE token_hash = $1 GROUP BY status",
+          [createHash("sha256").update(resetToken).digest("hex")],
+        ),
+      ).resolves.toMatchObject({ rows: [{ status: "used", tokens: 1 }] });
+    } finally {
+      await second.close();
+      if (previousResetOverride === undefined) delete process.env.HRMS_ALLOW_DATABASE_URL_TEST_RESET;
+      else process.env.HRMS_ALLOW_DATABASE_URL_TEST_RESET = previousResetOverride;
+    }
+  });
+
+  it("serializes concurrent reset issuance and preserves enumeration-safe responses", async () => {
+    const previousResetOverride = process.env.HRMS_ALLOW_DATABASE_URL_TEST_RESET;
+    process.env.HRMS_ALLOW_DATABASE_URL_TEST_RESET = "true";
+    const second = await buildRealApp({ reset: false });
+    await second.ready();
+    try {
+      const responses = await Promise.all([
+        app.inject({
+          method: "POST",
+          url: "/api/v1/auth/password-reset/request",
+          payload: { email: "e1@example.test" },
+        }),
+        second.inject({
+          method: "POST",
+          url: "/api/v1/auth/password-reset/request",
+          payload: { email: "e1@example.test" },
+        }),
+      ]);
+      expect(responses.map((response) => response.statusCode)).toEqual([200, 200]);
+      for (const response of responses) {
+        expect(response.json()).toMatchObject({
+          accepted: true,
+          masked_email: "e1**@example.test",
+          retry_after_seconds: expect.any(Number),
+        });
+      }
+      expect(
+        responses.filter((response) => typeof response.json().dev_only.password_reset_token === "string"),
+      ).toHaveLength(1);
+      await expect(
+        app.store.pgPool!.query(
+          "SELECT count(*)::int AS tokens FROM platform.auth_tokens WHERE user_id = (SELECT id FROM core.users WHERE lower(email) = 'e1@example.test') AND token_type = 'password_reset' AND status = 'active'",
+        ),
+      ).resolves.toMatchObject({ rows: [{ tokens: 1 }] });
+    } finally {
+      await second.close();
+      if (previousResetOverride === undefined) delete process.env.HRMS_ALLOW_DATABASE_URL_TEST_RESET;
+      else process.env.HRMS_ALLOW_DATABASE_URL_TEST_RESET = previousResetOverride;
+    }
+  });
+
+  it("restores failed company bootstrap mutations before a safe retry", async () => {
+    const email = "rollback.founder@example.test";
+    const signup = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/signup",
+      payload: {
+        company_name: "Rollback HRMS",
+        full_name: "Rollback Founder",
+        email,
+        timezone: "Asia/Kolkata",
+      },
+    });
+    expect(signup.statusCode).toBe(200);
+    const verify = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/verify-email",
+      payload: { token: signup.json().dev_only.email_verification_token, email },
+    });
+    expect(verify.statusCode).toBe(200);
+    const bootstrapToken = verify.json().dev_only.company_bootstrap_token as string;
+    const setPassword = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/set-password",
+      payload: {
+        token: verify.json().dev_only.password_setup_token,
+        password: "RollbackPass123",
+        confirm_password: "RollbackPass123",
+      },
+    });
+    expect(setPassword.statusCode).toBe(200);
+
+    const founder = app.store.users.find((user) => user.email === email)!;
+    const companyId = app.store.authTokens.find(
+      (token) => token.user_id === founder.id && token.token_type === "company_bootstrap",
+    )!.company_id!;
+    const pool = app.store.pgPool!;
+    const originalConnect = pool.connect.bind(pool);
+    const restoreQueries: Array<() => void> = [];
+    const wrappedClients = new WeakSet<object>();
+    let injectedFailure = false;
+    const connectSpy = vi.spyOn(pool, "connect").mockImplementation(async () => {
+      const client = await originalConnect();
+      if (!wrappedClients.has(client)) {
+        wrappedClients.add(client);
+        const originalQuery = client.query.bind(client);
+        const querySpy = vi.spyOn(client, "query").mockImplementation(((query: unknown, values?: unknown[]) => {
+          if (
+            !injectedFailure &&
+            typeof query === "string" &&
+            query.includes("INSERT INTO platform.admin_policies")
+          ) {
+            injectedFailure = true;
+            return Promise.reject(new Error("synthetic bootstrap persistence failure"));
+          }
+          return values === undefined
+            ? originalQuery(query as string)
+            : originalQuery(query as string, values);
+        }) as typeof client.query);
+        restoreQueries.push(() => querySpy.mockRestore());
+      }
+      return client;
+    });
+
+    const payload = {
+      bootstrap_token: bootstrapToken,
+      company_profile: { company_name: "Rollback HRMS India" },
+      departments: ["Engineering"],
+      designations: ["Principal Engineer"],
+      first_admin_profile: { full_name: "Rollback Admin" },
+    };
+    try {
+      const failed = await app.inject({
+        method: "POST",
+        url: "/api/v1/onboarding/company-bootstrap",
+        payload,
+      });
+      expect(failed.statusCode).toBe(500);
+    } finally {
+      connectSpy.mockRestore();
+      for (const restore of restoreQueries) restore();
+    }
+
+    expect(injectedFailure).toBe(true);
+    expect(app.store.companyProfiles.find((company) => company.id === companyId)).toMatchObject({
+      status: "pending",
+      bootstrap_completed_at: null,
+    });
+    expect(app.store.users.find((user) => user.id === founder.id)?.roles).not.toContain("Admin");
+    expect(app.store.departments.filter((record) => record.company_id === companyId)).toEqual([]);
+    expect(app.store.designations.filter((record) => record.company_id === companyId)).toEqual([]);
+    expect(app.store.adminPolicies.filter((record) => record.company_id === companyId)).toEqual([]);
+    expect(
+      app.store.authTokens.find((token) => token.token_hash === createHash("sha256").update(bootstrapToken).digest("hex")),
+    ).toMatchObject({ status: "active", used_at: null });
+
+    const retry = await app.inject({
+      method: "POST",
+      url: "/api/v1/onboarding/company-bootstrap",
+      payload,
+    });
+    expect(retry.statusCode, JSON.stringify(retry.json())).toBe(200);
+    expect(retry.json().company).toMatchObject({ status: "active", company_name: "Rollback HRMS India" });
+    expect(retry.json().admin_user.roles).toContain("Admin");
+  });
+
+  it("refreshes a durable token conflict and keeps auth lock release idempotent", async () => {
+    const employee = await loginAs(app, "E1");
+    const preference = app.store.userSessionPreferences.find(
+      (record) => record.user_id === employee.user.id,
+    )!;
+    const resetRequest = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/password-reset/request",
+      payload: { email: "e1@example.test" },
+    });
+    expect(resetRequest.statusCode).toBe(200);
+    const resetToken = resetRequest.json().dev_only.password_reset_token as string;
+    const tokenHash = createHash("sha256").update(resetToken).digest("hex");
+    await app.store.pgPool!.query(
+      "UPDATE platform.auth_tokens SET status = 'used', used_at = now() WHERE token_hash = $1",
+      [tokenHash],
+    );
+
+    await expect(
+      app.store.persistence!.flushAuth!({
+        userIds: [employee.user.id],
+        ...(preference.company_id ? { companyIds: [preference.company_id] } : {}),
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(app.store.authTokens.find((token) => token.token_hash === tokenHash)).toMatchObject({
+      status: "used",
+      used_at: expect.any(String),
+    });
+
+    const scope = await app.store.persistence!.acquireAuthMutationScope!({
+      userIds: [employee.user.id],
+      emails: [],
+      employeeCodes: [],
+      tokenHashes: [],
+    });
+    expect(scope.userIds).toContain(employee.user.id);
+    await scope.release();
+    await scope.release();
+  });
+
+  it("reports both an auth write failure and rollback-reconciliation failure", async () => {
+    const employee = await loginAs(app, "E1");
+    const user = app.store.users.find((candidate) => candidate.id === employee.user.id)!;
+    const preference = app.store.userSessionPreferences.find(
+      (record) => record.user_id === employee.user.id,
+    )!;
+    user.full_name = "Failed Auth Mutation";
+    user.version += 1;
+
+    const pool = app.store.pgPool!;
+    const originalConnect = pool.connect.bind(pool);
+    const restoreQueries: Array<() => void> = [];
+    const connectSpy = vi.spyOn(pool, "connect").mockImplementation(async () => {
+      const client = await originalConnect();
+      const originalQuery = client.query.bind(client);
+      let writeFailed = false;
+      const querySpy = vi.spyOn(client, "query").mockImplementation(((query: unknown, values?: unknown[]) => {
+        if (!writeFailed && typeof query === "string" && query.includes("INSERT INTO core.users")) {
+          writeFailed = true;
+          return Promise.reject(new Error("synthetic auth write failure"));
+        }
+        if (writeFailed && query === "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY") {
+          return Promise.reject(new Error("synthetic auth reconciliation failure"));
+        }
+        return values === undefined
+          ? originalQuery(query as string)
+          : originalQuery(query as string, values);
+      }) as typeof client.query);
+      restoreQueries.push(() => querySpy.mockRestore());
+      return client;
+    });
+    try {
+      await expect(
+        app.store.persistence!.flushAuth!({
+          userIds: [employee.user.id],
+          ...(preference.company_id ? { companyIds: [preference.company_id] } : {}),
+        }),
+      ).rejects.toBeInstanceOf(AggregateError);
+    } finally {
+      connectSpy.mockRestore();
+      for (const restore of restoreQueries) restore();
+      await app.store.persistence!.reload();
+    }
+  });
+
+  it("releases its database client when durable auth scope acquisition fails", async () => {
+    const pool = app.store.pgPool!;
+    const originalConnect = pool.connect.bind(pool);
+    const restoreQueries: Array<() => void> = [];
+    const connectSpy = vi.spyOn(pool, "connect").mockImplementation(async () => {
+      const client = await originalConnect();
+      const originalQuery = client.query.bind(client);
+      let failed = false;
+      const querySpy = vi.spyOn(client, "query").mockImplementation(((query: unknown, values?: unknown[]) => {
+        if (!failed && typeof query === "string" && query.includes("pg_advisory_lock")) {
+          failed = true;
+          return Promise.reject(new Error("synthetic auth scope acquisition failure"));
+        }
+        return values === undefined
+          ? originalQuery(query as string)
+          : originalQuery(query as string, values);
+      }) as typeof client.query);
+      restoreQueries.push(() => querySpy.mockRestore());
+      return client;
+    });
+    try {
+      await expect(
+        app.store.persistence!.acquireAuthMutationScope!({
+          userIds: [],
+          emails: ["e1@example.test"],
+          employeeCodes: [],
+          tokenHashes: [],
+        }),
+      ).rejects.toThrow("synthetic auth scope acquisition failure");
+    } finally {
+      connectSpy.mockRestore();
+      for (const restore of restoreQueries) restore();
+    }
+  });
+
+  it("supports an unscoped auth flush and nullable auth-scope ownership", async () => {
+    await expect(app.store.persistence!.flushAuth!({})).resolves.toBeUndefined();
+
+    const employee = await loginAs(app, "E2");
+    const userTokenHash = createHash("sha256").update("nullable-company-token").digest("hex");
+    const anonymousTokenHash = createHash("sha256").update("anonymous-token").digest("hex");
+    await app.store.pgPool!.query(
+      "UPDATE platform.user_session_preferences SET company_id = NULL WHERE user_id = $1",
+      [employee.user.id],
+    );
+    await app.store.pgPool!.query(
+      `INSERT INTO platform.auth_tokens
+         (id, token_hash, token_type, user_id, email, company_id, status, expires_at, metadata)
+       VALUES
+         ($1, $2, 'password_reset', $3, $4, NULL, 'active', now() + interval '1 hour', '{}'::jsonb),
+         ($5, $6, 'password_reset', NULL, $7, NULL, 'active', now() + interval '1 hour', '{}'::jsonb)`,
+      [
+        randomUUID(),
+        userTokenHash,
+        employee.user.id,
+        employee.user.email,
+        randomUUID(),
+        anonymousTokenHash,
+        "anonymous@example.test",
+      ],
+    );
+
+    const scope = await app.store.persistence!.acquireAuthMutationScope!({
+      userIds: [employee.user.id],
+      emails: [],
+      employeeCodes: [],
+      tokenHashes: [userTokenHash, anonymousTokenHash],
+    });
+    expect(scope.userIds).toEqual([employee.user.id]);
+    await scope.release();
+  });
+
+  it("returns the original persistence failure when an unscoped auth flush cannot write", async () => {
+    const pool = app.store.pgPool!;
+    const originalConnect = pool.connect.bind(pool);
+    const restoreQueries: Array<() => void> = [];
+    const wrappedClients = new WeakSet<object>();
+    let injectedFailure = false;
+    const connectSpy = vi.spyOn(pool, "connect").mockImplementation(async () => {
+      const client = await originalConnect();
+      if (!wrappedClients.has(client)) {
+        wrappedClients.add(client);
+        const originalQuery = client.query.bind(client);
+        const querySpy = vi.spyOn(client, "query").mockImplementation(((query: unknown, values?: unknown[]) => {
+          if (!injectedFailure && typeof query === "string" && query.includes("INSERT INTO core.users")) {
+            injectedFailure = true;
+            return Promise.reject(new Error("synthetic unscoped auth failure"));
+          }
+          return values === undefined
+            ? originalQuery(query as string)
+            : originalQuery(query as string, values);
+        }) as typeof client.query);
+        restoreQueries.push(() => querySpy.mockRestore());
+      }
+      return client;
+    });
+    try {
+      await expect(app.store.persistence!.flushAuth!({})).rejects.toThrow("synthetic unscoped auth failure");
+      expect(injectedFailure).toBe(true);
+    } finally {
+      connectSpy.mockRestore();
+      for (const restore of restoreQueries) restore();
+      await app.store.persistence!.reload();
+    }
+  });
+
+  it("does not overwrite newer email-delivery and company changes during auth rollback", async () => {
+    const employee = await loginAs(app, "E1");
+    const preference = app.store.userSessionPreferences.find(
+      (record) => record.user_id === employee.user.id,
+    )!;
+    expect(preference.company_id).toBeTruthy();
+    const resetRequest = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/password-reset/request",
+      payload: { email: employee.user.email },
+    });
+    expect(resetRequest.statusCode).toBe(200);
+    const delivery = [...app.store.emailDeliveries]
+      .reverse()
+      .find((record) => record.user_id === employee.user.id)!;
+    const company = app.store.companyProfiles.find(
+      (record) => record.id === preference.company_id,
+    )!;
+    const user = app.store.users.find((record) => record.id === employee.user.id)!;
+    user.full_name = "Failed concurrent auth write";
+    user.version += 1;
+
+    const pool = app.store.pgPool!;
+    const originalConnect = pool.connect.bind(pool);
+    const restoreQueries: Array<() => void> = [];
+    const wrappedClients = new WeakSet<object>();
+    let injectedFailure = false;
+    const connectSpy = vi.spyOn(pool, "connect").mockImplementation(async () => {
+      const client = await originalConnect();
+      if (!wrappedClients.has(client)) {
+        wrappedClients.add(client);
+        const originalQuery = client.query.bind(client);
+        const querySpy = vi.spyOn(client, "query").mockImplementation(((query: unknown, values?: unknown[]) => {
+          if (!injectedFailure && typeof query === "string" && query.includes("INSERT INTO core.users")) {
+            injectedFailure = true;
+            delivery.subject = "Newer delivery state";
+            company.company_name = "Newer company state";
+            return Promise.reject(new Error("synthetic auth persistence failure"));
+          }
+          return values === undefined
+            ? originalQuery(query as string)
+            : originalQuery(query as string, values);
+        }) as typeof client.query);
+        restoreQueries.push(() => querySpy.mockRestore());
+      }
+      return client;
+    });
+    try {
+      await expect(
+        app.store.persistence!.flushAuth!({
+          userIds: [employee.user.id],
+          companyIds: [preference.company_id!],
+        }),
+      ).rejects.toThrow("synthetic auth persistence failure");
+      expect(delivery.subject).toBe("Newer delivery state");
+      expect(company.company_name).toBe("Newer company state");
+    } finally {
+      connectSpy.mockRestore();
+      for (const restore of restoreQueries) restore();
+      await app.store.persistence!.reload();
+    }
+  });
+
+  it("does not overwrite newer bootstrap master-data changes during rollback", async () => {
+    const pending = await preparePendingBootstrap(app, "concurrent-master");
+    const pool = app.store.pgPool!;
+    const originalConnect = pool.connect.bind(pool);
+    const restoreQueries: Array<() => void> = [];
+    const wrappedClients = new WeakSet<object>();
+    let injectedFailure = false;
+    const connectSpy = vi.spyOn(pool, "connect").mockImplementation(async () => {
+      const client = await originalConnect();
+      if (!wrappedClients.has(client)) {
+        wrappedClients.add(client);
+        const originalQuery = client.query.bind(client);
+        const querySpy = vi.spyOn(client, "query").mockImplementation(((query: unknown, values?: unknown[]) => {
+          if (!injectedFailure && typeof query === "string" && query.includes("INSERT INTO platform.admin_policies")) {
+            injectedFailure = true;
+            app.store.departments.find((record) => record.company_id === pending.companyId)!.name = "Newer Department";
+            app.store.designations.find((record) => record.company_id === pending.companyId)!.title = "Newer Designation";
+            app.store.adminPolicies.find((record) => record.company_id === pending.companyId)!.label = "Newer Policy";
+            return Promise.reject(new Error("synthetic bootstrap write failure"));
+          }
+          return values === undefined
+            ? originalQuery(query as string)
+            : originalQuery(query as string, values);
+        }) as typeof client.query);
+        restoreQueries.push(() => querySpy.mockRestore());
+      }
+      return client;
+    });
+    try {
+      const failed = await app.inject({
+        method: "POST",
+        url: "/api/v1/onboarding/company-bootstrap",
+        payload: bootstrapPayload(pending.bootstrapToken, "Concurrent Master HRMS"),
+      });
+      expect(failed.statusCode).toBe(500);
+      expect(app.store.departments.find((record) => record.company_id === pending.companyId)?.name).toBe("Newer Department");
+      expect(app.store.designations.find((record) => record.company_id === pending.companyId)?.title).toBe("Newer Designation");
+      expect(app.store.adminPolicies.find((record) => record.company_id === pending.companyId)?.label).toBe("Newer Policy");
+    } finally {
+      connectSpy.mockRestore();
+      for (const restore of restoreQueries) restore();
+      await app.store.persistence!.reload();
+    }
+  });
+
+  it("reports bootstrap write and master-data reconciliation failures together", async () => {
+    const pending = await preparePendingBootstrap(app, "recovery-failure");
+    const pool = app.store.pgPool!;
+    const originalConnect = pool.connect.bind(pool);
+    const restoreQueries: Array<() => void> = [];
+    const wrappedClients = new WeakSet<object>();
+    let writeFailed = false;
+    let recoveryTransactions = 0;
+    const connectSpy = vi.spyOn(pool, "connect").mockImplementation(async () => {
+      const client = await originalConnect();
+      if (!wrappedClients.has(client)) {
+        wrappedClients.add(client);
+        const originalQuery = client.query.bind(client);
+        const querySpy = vi.spyOn(client, "query").mockImplementation(((query: unknown, values?: unknown[]) => {
+          if (!writeFailed && typeof query === "string" && query.includes("INSERT INTO platform.admin_policies")) {
+            writeFailed = true;
+            return Promise.reject(new Error("synthetic bootstrap write failure"));
+          }
+          if (writeFailed && query === "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY") {
+            recoveryTransactions += 1;
+            if (recoveryTransactions === 2) {
+              return Promise.reject(new Error("synthetic master-data reconciliation failure"));
+            }
+          }
+          return values === undefined
+            ? originalQuery(query as string)
+            : originalQuery(query as string, values);
+        }) as typeof client.query);
+        restoreQueries.push(() => querySpy.mockRestore());
+      }
+      return client;
+    });
+    try {
+      const failed = await app.inject({
+        method: "POST",
+        url: "/api/v1/onboarding/company-bootstrap",
+        payload: bootstrapPayload(pending.bootstrapToken, "Recovery Failure HRMS"),
+      });
+      expect(failed.statusCode).toBe(500);
+      expect(recoveryTransactions).toBe(2);
+    } finally {
+      connectSpy.mockRestore();
+      for (const restore of restoreQueries) restore();
+      await app.store.persistence!.reload();
+    }
+  });
+
+  it("uses the auth scope connection for login persistence instead of checking out a second client", async () => {
+    const pool = app.store.pgPool!;
+    const connectSpy = vi.spyOn(pool, "connect");
+    try {
+      const login = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: { employee_code: "E1" },
+      });
+      expect(login.statusCode).toBe(200);
+      expect(connectSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      connectSpy.mockRestore();
+    }
+  });
+
+  it("does not persist an unrelated company during an ordinary login", async () => {
+    const source = app.store.companyProfiles[0]!;
+    const foreignId = randomUUID();
+    app.store.companyProfiles.push({
+      ...source,
+      id: foreignId,
+      company_name: "Foreign durable company",
+      company_slug: `foreign-${foreignId}`,
+      version: 1,
+    });
+    await app.store.persistence!.flushAuth!({ companyIds: [foreignId] });
+    app.store.companyProfiles.find((company) => company.id === foreignId)!.company_name = "Stale in-memory overwrite";
+
+    const login = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/login",
+      payload: { employee_code: "E1" },
+    });
+    expect(login.statusCode).toBe(200);
+    const durable = await app.store.pgPool!.query<{ company_name: string }>(
+      "SELECT company_name FROM platform.company_profiles WHERE id = $1",
+      [foreignId],
+    );
+    expect(durable.rows[0]?.company_name).toBe("Foreign durable company");
+  });
+
+  it("serializes two backend signups for the same company slug", async () => {
+    const activeDatabaseUrl = process.env.DATABASE_URL;
+    let second: FastifyInstance;
+    try {
+      delete process.env.DATABASE_URL;
+      second = await buildRealApp({ reset: false });
+    } finally {
+      if (activeDatabaseUrl) process.env.DATABASE_URL = activeDatabaseUrl;
+    }
+    await second.ready();
+    try {
+      const payload = (email: string) => ({
+        company_name: "Concurrent Slug Company",
+        company_slug: "concurrent-slug-company",
+        full_name: email.startsWith("one") ? "Founder One" : "Founder Two",
+        email,
+        timezone: "Asia/Kolkata",
+      });
+      const [firstResponse, secondResponse] = await Promise.all([
+        app.inject({ method: "POST", url: "/api/v1/auth/signup", payload: payload("one@example.test") }),
+        second.inject({ method: "POST", url: "/api/v1/auth/signup", payload: payload("two@example.test") }),
+      ]);
+      expect([firstResponse.statusCode, secondResponse.statusCode].sort()).toEqual([200, 409]);
+      const durable = await app.store.pgPool!.query<{ companies: string; founders: string }>(
+        `SELECT
+           (SELECT count(*)::text FROM platform.company_profiles WHERE company_slug = 'concurrent-slug-company') AS companies,
+           (SELECT count(*)::text FROM core.users WHERE email IN ('one@example.test', 'two@example.test')) AS founders`,
+      );
+      expect(durable.rows[0]).toEqual({ companies: "1", founders: "1" });
+    } finally {
+      await second.close();
+    }
+  });
+
+  it("allocates distinct employee codes for concurrent signups of different companies", async () => {
+    const activeDatabaseUrl = process.env.DATABASE_URL;
+    let second: FastifyInstance;
+    try {
+      delete process.env.DATABASE_URL;
+      second = await buildRealApp({ reset: false });
+    } finally {
+      if (activeDatabaseUrl) process.env.DATABASE_URL = activeDatabaseUrl;
+    }
+    await second.ready();
+    try {
+      const [firstResponse, secondResponse] = await Promise.all([
+        app.inject({
+          method: "POST",
+          url: "/api/v1/auth/signup",
+          payload: {
+            company_name: "Distinct Company One",
+            company_slug: "distinct-company-one",
+            full_name: "Distinct Founder One",
+            email: "distinct.one@example.test",
+            timezone: "Asia/Kolkata",
+          },
+        }),
+        second.inject({
+          method: "POST",
+          url: "/api/v1/auth/signup",
+          payload: {
+            company_name: "Distinct Company Two",
+            company_slug: "distinct-company-two",
+            full_name: "Distinct Founder Two",
+            email: "distinct.two@example.test",
+            timezone: "Asia/Kolkata",
+          },
+        }),
+      ]);
+      expect([firstResponse.statusCode, secondResponse.statusCode]).toEqual([200, 200]);
+      const durable = await app.store.pgPool!.query<{ email: string; employee_code: string }>(
+        `SELECT email, employee_code
+         FROM core.users
+         WHERE email IN ('distinct.one@example.test', 'distinct.two@example.test')
+         ORDER BY email`,
+      );
+      expect(durable.rows).toHaveLength(2);
+      expect(new Set(durable.rows.map((row) => row.employee_code)).size).toBe(2);
+      expect(durable.rows.every((row) => /^ONB\d+$/u.test(row.employee_code))).toBe(true);
+    } finally {
+      await second.close();
+    }
+  });
+
+  it("does not let a paused Company A signup scope block Company B", async () => {
+    const activeDatabaseUrl = process.env.DATABASE_URL;
+    let second: FastifyInstance;
+    try {
+      delete process.env.DATABASE_URL;
+      second = await buildRealApp({ reset: false });
+    } finally {
+      if (activeDatabaseUrl) process.env.DATABASE_URL = activeDatabaseUrl;
+    }
+    await second.ready();
+
+    const persistence = app.store.persistence!;
+    const originalAcquire = persistence.acquireAuthMutationScope!.bind(persistence);
+    let signalPaused!: () => void;
+    let resumeCompanyA!: () => void;
+    const companyAPaused = new Promise<void>((resolve) => { signalPaused = resolve; });
+    const companyAResume = new Promise<void>((resolve) => { resumeCompanyA = resolve; });
+    const acquireSpy = vi.spyOn(persistence, "acquireAuthMutationScope").mockImplementation(async (scope) => {
+      const handle = await originalAcquire(scope);
+      if (scope.companySlugs?.includes("paused-company-a")) {
+        signalPaused();
+        await companyAResume;
+      }
+      return handle;
+    });
+
+    let companyASettled = false;
+    const companyARequest = app.inject({
+      method: "POST",
+      url: "/api/v1/auth/signup",
+      payload: {
+        company_name: "Paused Company A",
+        company_slug: "paused-company-a",
+        full_name: "Paused Founder A",
+        email: "paused.a@example.test",
+        timezone: "Asia/Kolkata",
+      },
+    }).finally(() => { companyASettled = true; });
+
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await companyAPaused;
+      const companyBRequest = second.inject({
+        method: "POST",
+        url: "/api/v1/auth/signup",
+        payload: {
+          company_name: "Independent Company B",
+          company_slug: "independent-company-b",
+          full_name: "Independent Founder B",
+          email: "independent.b@example.test",
+          timezone: "Asia/Kolkata",
+        },
+      });
+      const companyBResponse = await Promise.race([
+        companyBRequest,
+        new Promise<never>((_resolve, reject) => {
+          timeout = setTimeout(() => reject(new Error("Company B signup was blocked by Company A")), 20_000);
+        }),
+      ]);
+      expect(companyBResponse.statusCode).toBe(200);
+      expect(companyASettled).toBe(false);
+    } finally {
+      if (timeout) clearTimeout(timeout);
+      resumeCompanyA();
+      await companyARequest;
+      acquireSpy.mockRestore();
+      await second.close();
+    }
+  });
+
+  it("keeps signup available while Core rejects a maximum-length reserved ONB code", async () => {
+    const admin = await loginAs(app, "ADM");
+    const activeDatabaseUrl = process.env.DATABASE_URL;
+    let second: FastifyInstance;
+    try {
+      delete process.env.DATABASE_URL;
+      second = await buildRealApp({ reset: false });
+    } finally {
+      if (activeDatabaseUrl) process.env.DATABASE_URL = activeDatabaseUrl;
+    }
+    await second.ready();
+    const hostileCode = `ONB${"9".repeat(29)}`;
+    try {
+      const [coreResponse, signupResponse] = await Promise.all([
+        app.inject({
+          method: "POST",
+          url: "/api/v1/core/users",
+          headers: authHeader(admin.token),
+          payload: {
+            employee_code: hostileCode,
+            email: "reserved.onb@example.test",
+            full_name: "Reserved Namespace",
+            department_id: admin.user.department_id,
+            designation_id: admin.user.designation_id,
+            roles: ["Employee"],
+          },
+        }),
+        second.inject({
+          method: "POST",
+          url: "/api/v1/auth/signup",
+          payload: {
+            company_name: "Sequence Protected Company",
+            company_slug: "sequence-protected-company",
+            full_name: "Sequence Protected Founder",
+            email: "sequence.protected@example.test",
+            timezone: "Asia/Kolkata",
+          },
+        }),
+      ]);
+      expect(coreResponse.statusCode).toBe(400);
+      expect(signupResponse.statusCode).toBe(200);
+      const durable = await app.store.pgPool!.query<{ employee_code: string }>(
+        "SELECT employee_code FROM core.users WHERE email = 'sequence.protected@example.test'",
+      );
+      expect(durable.rows).toHaveLength(1);
+      expect(durable.rows[0]?.employee_code).toMatch(/^ONB\d+$/u);
+      expect(durable.rows[0]?.employee_code).not.toBe(hostileCode);
+      expect(app.store.users.some((user) => user.employee_code === hostileCode)).toBe(false);
+    } finally {
+      await second.close();
+    }
+  });
+
+  it("serializes punctuation-only company names under the shared hrms slug fallback", async () => {
+    const activeDatabaseUrl = process.env.DATABASE_URL;
+    let second: FastifyInstance;
+    try {
+      delete process.env.DATABASE_URL;
+      second = await buildRealApp({ reset: false });
+    } finally {
+      if (activeDatabaseUrl) process.env.DATABASE_URL = activeDatabaseUrl;
+    }
+    await second.ready();
+    try {
+      const payload = (email: string) => ({
+        company_name: "!!",
+        full_name: email.startsWith("fallback.one") ? "Fallback Founder One" : "Fallback Founder Two",
+        email,
+        timezone: "Asia/Kolkata",
+      });
+      const [firstResponse, secondResponse] = await Promise.all([
+        app.inject({ method: "POST", url: "/api/v1/auth/signup", payload: payload("fallback.one@example.test") }),
+        second.inject({ method: "POST", url: "/api/v1/auth/signup", payload: payload("fallback.two@example.test") }),
+      ]);
+      expect([firstResponse.statusCode, secondResponse.statusCode].sort()).toEqual([200, 409]);
+      const durable = await app.store.pgPool!.query<{ companies: string; founders: string }>(
+        `SELECT
+           (SELECT count(*)::text FROM platform.company_profiles WHERE company_slug = 'hrms') AS companies,
+           (SELECT count(*)::text FROM core.users WHERE email IN ('fallback.one@example.test', 'fallback.two@example.test')) AS founders`,
+      );
+      expect(durable.rows[0]).toEqual({ companies: "1", founders: "1" });
+    } finally {
+      await second.close();
+    }
+  });
+
+  it("destroys an auth lock connection when advisory unlock fails", async () => {
+    const pool = app.store.pgPool!;
+    const originalConnect = pool.connect.bind(pool);
+    let releaseSpy: ReturnType<typeof vi.spyOn> | undefined;
+    let querySpy: ReturnType<typeof vi.spyOn> | undefined;
+    const connectSpy = vi.spyOn(pool, "connect").mockImplementation(async () => {
+      const client = await originalConnect();
+      const originalQuery = client.query.bind(client);
+      querySpy = vi.spyOn(client, "query").mockImplementation(((query: unknown, values?: unknown[]) => {
+        if (query === "SELECT pg_advisory_unlock_all()") {
+          return Promise.reject(new Error("synthetic advisory unlock failure"));
+        }
+        return values === undefined
+          ? originalQuery(query as string)
+          : originalQuery(query as string, values);
+      }) as typeof client.query);
+      releaseSpy = vi.spyOn(client, "release");
+      return client;
+    });
+    try {
+      const scope = await app.store.persistence!.acquireAuthMutationScope!({
+        userIds: [],
+        emails: ["unknown@example.test"],
+        employeeCodes: [],
+        tokenHashes: [],
+      });
+      await expect(scope.release()).rejects.toThrow("synthetic advisory unlock failure");
+      expect(releaseSpy).toHaveBeenCalledWith(true);
+    } finally {
+      connectSpy.mockRestore();
+      querySpy?.mockRestore();
+      releaseSpy?.mockRestore();
+    }
+  });
+
+  it("persists the unverified fallback for a legacy user without a loaded status", async () => {
+    const employee = await loginAs(app, "E2");
+    await app.store.pgPool!.query(
+      "UPDATE core.users SET email_verification_status = 'unverified' WHERE id = $1",
+      [employee.user.id],
+    );
+    await app.store.persistence!.reload();
+    const user = app.store.users.find((record) => record.id === employee.user.id)!;
+    user.email_verification_status = undefined;
+    await expect(
+      app.store.persistence!.flushAuth!({ userIds: [employee.user.id] }),
+    ).resolves.toBeUndefined();
+  });
 });
+
+async function preparePendingBootstrap(app: FastifyInstance, suffix: string) {
+  const email = `${suffix}.founder@example.test`;
+  const signup = await app.inject({
+    method: "POST",
+    url: "/api/v1/auth/signup",
+    payload: {
+      company_name: `${suffix} HRMS`,
+      full_name: `${suffix} Founder`,
+      email,
+      timezone: "Asia/Kolkata",
+    },
+  });
+  expect(signup.statusCode).toBe(200);
+  const verify = await app.inject({
+    method: "POST",
+    url: "/api/v1/auth/verify-email",
+    payload: { token: signup.json().dev_only.email_verification_token, email },
+  });
+  expect(verify.statusCode).toBe(200);
+  const setPassword = await app.inject({
+    method: "POST",
+    url: "/api/v1/auth/set-password",
+    payload: {
+      token: verify.json().dev_only.password_setup_token,
+      password: "BootstrapPass123",
+      confirm_password: "BootstrapPass123",
+    },
+  });
+  expect(setPassword.statusCode).toBe(200);
+  const founder = app.store.users.find((record) => record.email === email)!;
+  const bootstrapToken = verify.json().dev_only.company_bootstrap_token as string;
+  const companyId = app.store.authTokens.find(
+    (record) => record.user_id === founder.id && record.token_type === "company_bootstrap",
+  )!.company_id!;
+  return { bootstrapToken, companyId };
+}
+
+function bootstrapPayload(bootstrapToken: string, companyName: string) {
+  return {
+    bootstrap_token: bootstrapToken,
+    company_profile: { company_name: companyName },
+    departments: ["Engineering"],
+    designations: ["Principal Engineer"],
+    first_admin_profile: { full_name: "Bootstrap Admin" },
+  };
+}
 
 interface MultipartUploadInput {
   url: string;
