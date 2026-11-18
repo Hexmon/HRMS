@@ -43,6 +43,30 @@ CREATE TABLE IF NOT EXISTS platform.schema_migrations (
 
 const LOCK_NAMESPACE = 76001;
 const LOCK_ID = 1002;
+const LEGACY_RUNNER_TRANSACTION_MIGRATIONS = new Map([
+  [
+    "0065",
+    "231b5a18f0d0eab8b94c8b7aec8c55fdf92fccdf97f4160c648a36a4f0cf5408",
+  ],
+]);
+
+export function migrationExecutionSql(migration: MigrationFile): string {
+  const standaloneTransaction = /^\s*(?:BEGIN|COMMIT)\s*;\s*$/gimu;
+  const expectedLegacyChecksum = LEGACY_RUNNER_TRANSACTION_MIGRATIONS.get(migration.id);
+  if (expectedLegacyChecksum === migration.checksumSha256) {
+    const transactionStatements = migration.sql.match(standaloneTransaction) ?? [];
+    if (transactionStatements.length !== 2 || !/^\s*BEGIN/im.test(transactionStatements[0] ?? "") || !/^\s*COMMIT/im.test(transactionStatements[1] ?? "")) {
+      throw new Error(`Legacy migration ${migration.filename} no longer has its reviewed transaction wrapper`);
+    }
+    return migration.sql.replace(standaloneTransaction, "").trimStart();
+  }
+  if (standaloneTransaction.test(migration.sql)) {
+    throw new Error(
+      `Migration ${migration.filename} must leave transaction ownership to the migration runner`,
+    );
+  }
+  return migration.sql;
+}
 
 export function canonicalizeSql(sql: string): string {
   return sql.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
@@ -248,7 +272,7 @@ export async function applyPendingMigrations(
     await client.query("BEGIN");
 
     try {
-      await client.query(migration.sql);
+      await client.query(migrationExecutionSql(migration));
 
       const executionTimeMs = Date.now() - startedAt;
 

@@ -1505,14 +1505,13 @@ function validateQaCompose(path, content) {
 }
 
 function validateHolidayMigration(path, content) {
-  if (/\b(?:BEGIN|COMMIT)\s*;/i.test(content)) {
-    semanticFailure(path, "holiday migration must leave transaction ownership to the migration runner");
-  }
+  requireSemanticText(path, content, /BEGIN\s*;/i, "legacy holiday migration transaction wrapper is missing");
   requireSemanticText(path, content, /DROP\s+INDEX\s+IF\s+EXISTS\s+.*holiday/i, "holiday migration must remove the legacy global uniqueness rule");
   requireSemanticText(path, content, /CREATE\s+UNIQUE\s+INDEX/i, "holiday migration must create a unique index");
   requireSemanticText(path, content, /company_id/i, "holiday uniqueness must include company_id");
   requireSemanticText(path, content, /lower\s*\(/i, "holiday uniqueness must be case-insensitive");
   requireSemanticText(path, content, /deleted_at\s+IS\s+NULL/i, "holiday uniqueness must exclude soft-deleted rows");
+  requireSemanticText(path, content, /COMMIT\s*;/i, "legacy holiday migration transaction wrapper is missing");
 }
 
 function validateAttendancePolicyVersionMigration(path, content) {

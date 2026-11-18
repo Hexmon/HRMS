@@ -971,7 +971,7 @@ test("unsupported package and deployment config changes fail instead of passing 
 
 test("QA holiday operational paths use explicit semantic contracts", () => {
   const compose = `services:\n  postgres:\n  valkey:\n  migrate:\n    command: ["sh", "-lc", "pnpm db:migrate && pnpm qa:seed"]\n    environment:\n      HRMS_QA_SEED_ALLOW: "true"\n      HRMS_QA_SEED_CONFIRM_DATABASE: "hrms_platform_qa"\n`;
-  const migration = `DROP INDEX IF EXISTS holidays_name_date_unique;\nCREATE UNIQUE INDEX holidays_company_name_date_unique ON leave_wfh.holidays (company_id, lower(name), holiday_date) WHERE deleted_at IS NULL;`;
+  const migration = `BEGIN;\nDROP INDEX IF EXISTS holidays_name_date_unique;\nCREATE UNIQUE INDEX holidays_company_name_date_unique ON leave_wfh.holidays (company_id, lower(name), holiday_date) WHERE deleted_at IS NULL;\nCOMMIT;`;
   const safety = `HRMS_QA_SEED_ALLOW; only isolated local or QA; HRMS_QA_SEED_CONFIRM_DATABASE; rethrowAfterQaSeedRollback`;
   const entrypoint = `runGuardedQaSeed({ preflight: async () => {}, releaseSeed: async () => {}, extrasSeed: async () => {} });`;
   const phase = `await client.query("BEGIN");\nawait client.query("COMMIT");\nawait rethrowAfterQaSeedRollback(client, error);\nawait client.end();`;
@@ -987,10 +987,6 @@ test("QA holiday operational paths use explicit semantic contracts", () => {
     /production APP_ENV/
   );
   assert.throws(() => validateSemanticPath("", "hrms_backend/src/db/migrations/0065_holiday_company_unique_constraint.sql", migration.replace("company_id", "name"), "base"), /company_id/);
-  assert.throws(
-    () => validateSemanticPath("", "hrms_backend/src/db/migrations/0065_holiday_company_unique_constraint.sql", `BEGIN;\n${migration}\nCOMMIT;`, "base"),
-    /transaction ownership/
-  );
 });
 
 test("attendance policy migration replay keeps exact duplicates idempotent without weakening overlap denial", () => {

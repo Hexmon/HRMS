@@ -48,13 +48,20 @@ New execution evidence must record exact head, environment and actual status. Ex
 
 ## Migration And Compatibility
 
-This increment adds no migration. The integrated release ledger remains:
+This increment adds no migration and preserves the released `0065` bytes and
+checksum. The migration runner recognizes only that exact legacy checksum and
+executes its body inside the runner-owned transaction; every new or modified
+migration containing standalone `BEGIN`/`COMMIT` is rejected. The integrated
+release ledger remains:
 
 1. `0065_holiday_company_unique_constraint.sql`
 2. `0066_attendance_policy_version_replay_guard.sql`
 3. `0067_signup_employee_code_sequence.sql`
 
-Before QA promotion, verify clean install, upgrade, replay/status and compatible recovery on disposable PostgreSQL. Do not import colliding `0065`-`0067` migrations from open Asset/Report/Expense/Media branches.
+Before QA promotion, verify clean install, upgrade from a ledger written by the
+released runner, replay/status and compatible recovery on disposable
+PostgreSQL. Do not import colliding `0065`-`0067` migrations from open
+Asset/Report/Expense/Media branches.
 
 ## Verification Order
 
@@ -68,7 +75,9 @@ Before QA promotion, verify clean install, upgrade, replay/status and compatible
 ## Rollback
 
 - Revert the focused contract synchronization commit/PR.
-- Runtime Holiday behavior and migrations are unchanged by this increment.
+- The historical migration files remain immutable. If the runner compatibility
+  change is rolled back, databases that already recorded `0065` remain usable;
+  a fresh install again uses the released migration's legacy inner transaction.
 - Do not remove or rewrite applied migrations `0065`-`0067`.
 - The browser journey mutates only a dedicated disposable QA database. Reset or
   discard that database after the run; never attempt deterministic cleanup in a
