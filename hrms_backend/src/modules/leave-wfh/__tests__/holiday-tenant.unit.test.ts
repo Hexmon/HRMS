@@ -89,6 +89,31 @@ describe("holiday ID tenant ownership", () => {
     })).resolves.toMatchObject({ request: { duration: 0.5 } });
   });
 
+  it("keeps another company's working week and holidays out of leave duration", async () => {
+    const store = createMemoryDataStore();
+    const employee = store.users.find((user) => user.employee_code === "E1")!;
+    const companyA = store.userSessionPreferences.find((row) => row.user_id === employee.id)!.company_id!;
+    const companyB = randomUUID();
+    store.companyProfiles.find((company) => company.id === companyA)!.working_week = "Mon-Fri";
+    store.companyProfiles.unshift({
+      ...store.companyProfiles.find((company) => company.id === companyA)!,
+      id: companyB,
+      company_name: "Company B",
+      company_slug: "company-b",
+      working_week: "Mon-Sat",
+    });
+    store.holidays = [{
+      id: randomUUID(), company_id: companyB, name: "Company B Holiday",
+      holiday_date: "2026-12-28", region: "All", optional: false, version: 1,
+      created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z", deleted_at: null,
+    }];
+
+    const service = new LeaveWfhService(store);
+    await expect(service.createWfhRequest(employee, {
+      date_from: "2026-12-28", date_to: "2026-12-28", half_day: true, reason: "Company A workday",
+    })).resolves.toMatchObject({ request: { duration: 0.5 } });
+  });
+
   it("fails closed when persistent calendar readers are incomplete", async () => {
     const store = createMemoryDataStore();
     const employee = store.users.find((user) => user.employee_code === "E1")!;
