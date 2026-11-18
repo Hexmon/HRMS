@@ -5,10 +5,14 @@ import { Client } from "pg";
 import { getLocalDemoPassword, hashPasswordSync } from "#auth";
 import { AssetStatuses, EmploymentStatuses, ExpenseSubTypes, Roles } from "#shared";
 import { seedIds } from "../src/platform/data-store.js";
-import { getQaSeedEmails } from "../src/platform/seed-personas.js";
+import {
+  getQaSeedEmails,
+  getReleaseSeedEmails,
+} from "../src/platform/seed-personas.js";
 import { loadRuntimeEnv, requireEnv } from "./env.js";
 import {
   ensureQaAdminCompanyContext,
+  ensureQaPersonaCompanyContexts,
   requireQaPersonaIdentity,
   requireQaSeedTarget,
   requireQaTenantAdminIdentity,
@@ -20,6 +24,7 @@ loadRuntimeEnv();
 requireQaSeedTarget(process.env);
 const localDemoPassword = getLocalDemoPassword();
 const qaSeedEmails = getQaSeedEmails();
+const releaseSeedEmails = getReleaseSeedEmails();
 
 const reportDir = process.env.HRMS_REPORT_DIR ?? "docs/qa/runs/qa-readiness";
 mkdirSync(reportDir, { recursive: true });
@@ -59,6 +64,18 @@ const ids = {
   compromisedKey: uuidFromName("qa-compromised-device")
 };
 
+const releasePersonaContexts = [
+  [seedIds.director, "S1", releaseSeedEmails.director, Roles.Director],
+  [seedIds.reviewer, "D1", releaseSeedEmails.reviewer, Roles.Reviewer],
+  [seedIds.employee1, "E1", releaseSeedEmails.employee1, Roles.Employee],
+  [seedIds.employee2, "E2", releaseSeedEmails.employee2, Roles.Employee],
+  [seedIds.financeManager, "N1", releaseSeedEmails.financeManager, Roles.FinanceManager],
+  [seedIds.alternateFinance, "N2", releaseSeedEmails.alternateFinance, Roles.FinanceManager],
+  [seedIds.admin, "ADM", releaseSeedEmails.admin, Roles.Admin],
+  [seedIds.auditor, "AUD", releaseSeedEmails.auditor, Roles.Auditor],
+  [seedIds.assetManager, "AST", releaseSeedEmails.assetManager, Roles.AssetManager],
+] as const;
+
 const client = new Client({ connectionString: requireEnv("DATABASE_URL") });
 let connected = false;
 let transactionStarted = false;
@@ -74,6 +91,20 @@ try {
     companyId: ids.companyDefault,
     preferenceId: ids.adminPreference,
   });
+  await ensureQaPersonaCompanyContexts(
+    client,
+    defaultCompanyId,
+    releasePersonaContexts.map(([userId, employeeCode, email, activeRole]) => ({
+      userId,
+      employeeCode,
+      email,
+      activeRole,
+      preferenceId:
+        userId === seedIds.admin
+          ? ids.adminPreference
+          : uuidFromName(`qa-session-preference-${employeeCode}`),
+    })),
+  );
 
   await client.query(
     `INSERT INTO core.designations (id, designation_code, title, level, status)

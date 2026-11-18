@@ -20,6 +20,14 @@ Use untracked local env files for real values:
 
 Do not commit `.env.local`. Do not paste secret values into docs, issues, screenshots, or PR descriptions.
 
+The release and composite QA seeds fail closed outside `APP_ENV=local`,
+`APP_ENV=development`, or `APP_ENV=qa`. Local/development targets must use a
+loopback or Compose PostgreSQL host. A
+hosted QA target also requires an independently provisioned database marker and
+`HRMS_QA_SEED_DATABASE_FINGERPRINT`; production seeding is rejected. Put the
+opt-in and exact database name in the approved untracked environment or pass
+them for the one seed command only.
+
 ## Backend Setup
 
 From the repository root:
@@ -29,6 +37,8 @@ cd hrms_backend
 pnpm install
 pnpm dev:infra:up
 pnpm db:migrate
+HRMS_QA_SEED_ALLOW=true \
+HRMS_QA_SEED_CONFIRM_DATABASE=<local-database-name> \
 pnpm release:seed
 pnpm dev
 ```
@@ -40,7 +50,7 @@ What these commands do:
 | `pnpm install` | Installs backend dependencies from `pnpm-lock.yaml`. |
 | `pnpm dev:infra:up` | Starts local PostgreSQL and Valkey through `infra/docker/docker-compose.dev.yml`. |
 | `pnpm db:migrate` | Applies all SQL migrations from `src/db/migrations/` to `DATABASE_URL`. |
-| `pnpm release:seed` | Seeds representative release/demo data. |
+| guarded `pnpm release:seed` | Seeds representative synthetic release/demo data only after `HRMS_QA_SEED_ALLOW=true` and `HRMS_QA_SEED_CONFIRM_DATABASE` exactly match the isolated target. |
 | `pnpm dev` | Runs `tsx scripts/run-with-env.ts .env.local -- tsx src/server.ts`. |
 
 The local, QA, and production Compose files use `postgis/postgis:16-3.5-alpine` so PostgreSQL has the PostGIS and

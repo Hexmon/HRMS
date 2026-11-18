@@ -81,9 +81,14 @@ Common commands:
 
 ```bash
 pnpm seed:dev
-pnpm release:seed
-pnpm qa:seed
+HRMS_QA_SEED_ALLOW=true HRMS_QA_SEED_CONFIRM_DATABASE=<local-database-name> pnpm release:seed
+HRMS_QA_SEED_ALLOW=true HRMS_QA_SEED_CONFIRM_DATABASE=<qa-database-name> pnpm qa:seed
 ```
 
-Do not enable automatic production seeding unless explicitly approved.
+Release/QA demo data is synthetic and guarded: the seed requires an explicit
+mutation opt-in, exact target database name, and a local or QA application
+environment. Development is accepted only with loopback/Compose PostgreSQL.
+Hosted QA also requires an independently provisioned database
+marker/fingerprint. The seed rejects production targets and must never be wired
+to automatic production startup.
 

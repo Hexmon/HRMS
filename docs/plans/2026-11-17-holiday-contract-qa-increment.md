@@ -111,3 +111,26 @@ Asset/Report/Expense/Media branches.
 - Independent preliminary senior, security/database and QA reviews found
   actionable gaps; fixes are implemented but exact-commit re-review remains
   required.
+- The seed hardening working tree now binds every deterministic release persona
+  to its exact UUID, employee code and normalized email before assigning roles,
+  credentials or tenant preferences. Built-in role bootstrap inserts missing
+  rows but refuses inactive, deleted or non-built-in collisions instead of
+  reactivating them.
+- Persona context assignment locks and re-verifies the exact active company.
+  The focused seed unit/migration run passed 97/97 tests, backend typecheck and
+  lint passed, and the expanded disposable-PostgreSQL seed suite passed 19/19
+  cases, including rollback and concurrent company deactivation.
+- The actual composite seed completed twice against the same isolated local
+  Docker database, proving guarded first-run and idempotent rerun behavior.
+  This evidence is still pre-commit; changed coverage, CI and independent
+  exact-head re-review remain pending.
+- A fresh 67-migration install and two guarded composite seed runs then passed
+  on a second disposable PostGIS/Valkey stack. The production frontend build
+  completed, and its generated Nitro server plus the real API passed both
+  Holiday Playwright journeys (2/2) with mocks disabled.
+- Two preceding browser attempts are retained as environment/tooling failures:
+  Vite development compilation exceeded the UI assertion window, and the
+  repository's `vite preview` path returned HTTP 500 because it looked for the
+  nonexistent `dist/server/server.js`. The generated
+  `.output/server/index.mjs` served the same successful build. Fixing the
+  preview command is separate tooling work, not part of this Holiday increment.

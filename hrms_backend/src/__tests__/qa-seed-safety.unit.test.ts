@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { Roles } from "#shared";
 import {
   ensureQaAdminCompanyContext,
+  ensureQaPersonaCompanyContexts,
   preflightQaAdminCompanyContext,
   requireQaPersonaIdentity,
   requireQaSeedTarget,
@@ -10,6 +11,10 @@ import {
   runGuardedQaSeed,
   verifyQaSeedDatabaseIdentity,
 } from "../../scripts/qa-seed-safety.js";
+import {
+  ensureReleaseBuiltinRoles,
+  verifyReleasePersonaIdentity,
+} from "../../scripts/release-seed-support.js";
 
 const safe = {
   APP_ENV: "local",
@@ -19,16 +24,29 @@ const safe = {
   HRMS_QA_SEED_CONFIRM_DATABASE: "hrms_holiday_qa",
 };
 
+const personaIdentity = {
+  employeeCode: "ADM",
+  email: "admin@example.test",
+};
+
 describe("QA seed target guard", () => {
   it("accepts an explicitly confirmed isolated local database", () => {
     expect(requireQaSeedTarget(safe).pathname).toBe("/hrms_holiday_qa");
+    expect(
+      requireQaSeedTarget({ ...safe, APP_ENV: "development" }).pathname,
+    ).toBe("/hrms_holiday_qa");
   });
 
   it.each([
-    [{ ...safe, APP_ENV: "production" }, /only isolated local or QA/],
+    [{ ...safe, APP_ENV: "production" }, /only isolated local\/development or QA/],
     [{ ...safe, HRMS_QA_SEED_ALLOW: undefined }, /explicit mutation opt-in/],
     [{ ...safe, HRMS_QA_SEED_CONFIRM_DATABASE: "another_database" }, /exactly match/],
     [{ ...safe, DATABASE_URL: "postgresql://qa:sample@db.example/hrms_holiday_qa" }, /refused remote database/],
+    [{
+      ...safe,
+      APP_ENV: "development",
+      DATABASE_URL: "postgresql://qa:sample@dev-db.example/hrms_holiday_qa",
+    }, /refused remote database/],
   ])("rejects an unsafe target %#", (env, message) => {
     expect(() => requireQaSeedTarget(env)).toThrow(message);
   });
@@ -115,6 +133,386 @@ describe("QA seed target guard", () => {
       company_id: expected.companyId,
       active_role: Roles.Admin,
     }], expected)).not.toThrow();
+  });
+
+  it("seeds every builtin role idempotently", async () => {
+    const query = vi.fn(async (sql: string, values?: unknown[]) =>
+      sql.includes("SELECT role_key, status, builtin, deleted_at")
+        ? {
+            rows: [
+              {
+                role_key: values?.[0],
+                status: "active",
+                builtin: true,
+                deleted_at: null,
+              },
+            ],
+          }
+        : { rows: [] },
+    );
+    await ensureReleaseBuiltinRoles({ query: query as never });
+    expect(query).toHaveBeenCalledTimes(Object.values(Roles).length * 2);
+    expect(query.mock.calls[0]?.[0]).toContain(
+      "ON CONFLICT (role_key) DO NOTHING",
+    );
+    expect(query.mock.calls[1]?.[0]).toContain("FOR UPDATE");
+  });
+
+  it.each([
+    ["inactive", { status: "inactive", builtin: true, deleted_at: null }],
+    ["deleted", { status: "active", builtin: true, deleted_at: "deleted" }],
+    ["custom", { status: "active", builtin: false, deleted_at: null }],
+  ])("refuses an existing %s builtin-role collision", async (_label, state) => {
+    const query = vi.fn(async (sql: string, values?: unknown[]) =>
+      sql.includes("SELECT role_key, status, builtin, deleted_at")
+        ? { rows: [{ role_key: values?.[0], ...state }] }
+        : { rows: [] },
+    );
+    await expect(
+      ensureReleaseBuiltinRoles({ query: query as never }),
+    ).rejects.toThrow(
+      /inactive, deleted, or non-builtin role collision/,
+    );
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    [
+      "employee code",
+      [{ id: "foreign", employee_code: "ADM", email: "admin@example.test" }],
+    ],
+    [
+      "user ID",
+      [{ id: "user-a", employee_code: "FOREIGN", email: "foreign@example.test" }],
+    ],
+    [
+      "email",
+      [{ id: "foreign", employee_code: "FOREIGN", email: "admin@example.test" }],
+    ],
+  ])("refuses a release persona %s collision", async (_label, rows) => {
+    const query = vi.fn().mockResolvedValue({ rows });
+    await expect(
+      verifyReleasePersonaIdentity({ query }, {
+        userId: "user-a",
+        employeeCode: personaIdentity.employeeCode,
+        email: personaIdentity.email,
+      }),
+    ).rejects.toThrow(/identity collision for ADM/);
+  });
+
+  it("accepts one exact release persona identity without mutation", async () => {
+    const query = vi.fn().mockResolvedValue({
+      rows: [
+        {
+          id: "user-a",
+          employee_code: personaIdentity.employeeCode,
+          email: personaIdentity.email.toUpperCase(),
+        },
+      ],
+    });
+    await expect(
+      verifyReleasePersonaIdentity({ query }, {
+        userId: "user-a",
+        employeeCode: personaIdentity.employeeCode,
+        email: personaIdentity.email,
+      }),
+    ).resolves.toBeUndefined();
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  it("does no persona-context work for an empty seed set", async () => {
+    const query = vi.fn();
+    await expect(
+      ensureQaPersonaCompanyContexts({ query }, "company-a", []),
+    ).resolves.toBeUndefined();
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      "user IDs",
+      [
+        {
+          ...personaIdentity,
+          userId: "user-a",
+          preferenceId: "preference-a",
+          activeRole: Roles.Admin,
+        },
+        {
+          ...personaIdentity,
+          userId: "user-a",
+          preferenceId: "preference-b",
+          activeRole: Roles.Employee,
+        },
+      ],
+    ],
+    [
+      "preference IDs",
+      [
+        {
+          ...personaIdentity,
+          userId: "user-a",
+          preferenceId: "preference-a",
+          activeRole: Roles.Admin,
+        },
+        {
+          ...personaIdentity,
+          userId: "user-b",
+          preferenceId: "preference-a",
+          activeRole: Roles.Employee,
+        },
+      ],
+    ],
+  ])(
+    "rejects duplicate persona %s before querying",
+    async (_label, contexts) => {
+      const query = vi.fn();
+      await expect(
+        ensureQaPersonaCompanyContexts({ query }, "company-a", contexts),
+      ).rejects.toThrow(/require unique users and preference IDs/);
+      expect(query).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rejects a persona without the expected active registered role", async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [{ id: "company-a" }] })
+      .mockResolvedValueOnce({ rows: [] });
+    await expect(
+      ensureQaPersonaCompanyContexts({ query }, "company-a", [
+        {
+          ...personaIdentity,
+          userId: "user-a",
+          preferenceId: "preference-a",
+          activeRole: Roles.Admin,
+        },
+      ]),
+    ).rejects.toThrow(/without the expected active identity and role assignment/);
+    expect(query).toHaveBeenCalledTimes(2);
+  });
+
+  it.each(["missing", "inactive"])(
+    "refuses a %s persona company before any user or preference query",
+    async () => {
+      const query = vi.fn().mockResolvedValueOnce({ rows: [] });
+      await expect(
+        ensureQaPersonaCompanyContexts({ query }, "company-a", [
+          {
+            ...personaIdentity,
+            userId: "user-a",
+            preferenceId: "preference-a",
+            activeRole: Roles.Admin,
+          },
+        ]),
+      ).rejects.toThrow(/missing or inactive persona company context/);
+      expect(query).toHaveBeenCalledTimes(1);
+      expect(query.mock.calls[0]?.[0]).toContain("FOR SHARE");
+    },
+  );
+
+  it("inserts a missing exact persona context and verifies the durable row", async () => {
+    const context = {
+      ...personaIdentity,
+      userId: "user-a",
+      preferenceId: "preference-a",
+      activeRole: Roles.Admin,
+    };
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({
+        rows: [{ id: "company-a" }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          id: context.userId,
+          employee_code: context.employeeCode,
+          email: context.email,
+          role_key: context.activeRole,
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({
+        rows: [
+          {
+            id: context.preferenceId,
+            user_id: context.userId,
+            company_id: "company-a",
+            active_role: context.activeRole,
+          },
+        ],
+      });
+
+    await expect(
+      ensureQaPersonaCompanyContexts({ query }, "company-a", [context]),
+    ).resolves.toBeUndefined();
+    expect(query).toHaveBeenCalledTimes(5);
+    expect(query.mock.calls[3]?.[0]).toContain(
+      "ON CONFLICT (user_id) DO NOTHING",
+    );
+  });
+
+  it.each([
+    [
+      "identity",
+      {
+        id: "foreign-preference",
+        company_id: "company-a",
+        active_role: Roles.Admin,
+      },
+    ],
+    [
+      "company",
+      { id: "preference-a", company_id: "company-b", active_role: Roles.Admin },
+    ],
+    [
+      "role",
+      {
+        id: "preference-a",
+        company_id: "company-a",
+        active_role: Roles.Employee,
+      },
+    ],
+  ])(
+    "rejects an existing persona preference %s collision",
+    async (_label, conflicting) => {
+      const context = {
+        ...personaIdentity,
+        userId: "user-a",
+        preferenceId: "preference-a",
+        activeRole: Roles.Admin,
+      };
+      const query = vi
+        .fn()
+        .mockResolvedValueOnce({
+          rows: [{ id: "company-a" }],
+        })
+        .mockResolvedValueOnce({
+          rows: [{
+            id: context.userId,
+            employee_code: context.employeeCode,
+            email: context.email,
+            role_key: context.activeRole,
+          }],
+        })
+        .mockResolvedValueOnce({
+          rows: [{ user_id: context.userId, ...conflicting }],
+        });
+
+      await expect(
+        ensureQaPersonaCompanyContexts({ query }, "company-a", [context]),
+      ).rejects.toThrow(/preference identity, company, or role collision/);
+      expect(query).toHaveBeenCalledTimes(3);
+    },
+  );
+
+  it.each([
+    ["missing", []],
+    [
+      "identity",
+      [
+        {
+          id: "foreign-preference",
+          user_id: "user-a",
+          company_id: "company-a",
+          active_role: Roles.Admin,
+        },
+      ],
+    ],
+    [
+      "company",
+      [
+        {
+          id: "preference-a",
+          user_id: "user-a",
+          company_id: "company-b",
+          active_role: Roles.Admin,
+        },
+      ],
+    ],
+    [
+      "role",
+      [
+        {
+          id: "preference-a",
+          user_id: "user-a",
+          company_id: "company-a",
+          active_role: Roles.Employee,
+        },
+      ],
+    ],
+  ])(
+    "fails closed when the inserted persona preference is %s",
+    async (_label, verifiedRows) => {
+      const context = {
+        ...personaIdentity,
+        userId: "user-a",
+        preferenceId: "preference-a",
+        activeRole: Roles.Admin,
+      };
+      const query = vi
+        .fn()
+        .mockResolvedValueOnce({
+          rows: [{ id: "company-a" }],
+        })
+        .mockResolvedValueOnce({
+          rows: [{
+            id: context.userId,
+            employee_code: context.employeeCode,
+            email: context.email,
+            role_key: context.activeRole,
+          }],
+        })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: [] })
+        .mockResolvedValueOnce({ rows: verifiedRows });
+
+      await expect(
+        ensureQaPersonaCompanyContexts({ query }, "company-a", [context]),
+      ).rejects.toThrow(
+        /could not establish the exact deterministic persona company context/,
+      );
+      expect(query).toHaveBeenCalledTimes(5);
+    },
+  );
+
+  it("reuses an exact persona preference without rewriting it", async () => {
+    const context = {
+      ...personaIdentity,
+      userId: "user-a",
+      preferenceId: "preference-a",
+      activeRole: Roles.Admin,
+    };
+    const row = {
+      id: context.preferenceId,
+      user_id: context.userId,
+      company_id: "company-a",
+      active_role: context.activeRole,
+    };
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({
+        rows: [{ id: "company-a" }],
+      })
+      .mockResolvedValueOnce({
+        rows: [{
+          id: context.userId,
+          employee_code: context.employeeCode,
+          email: context.email,
+          role_key: context.activeRole,
+        }],
+      })
+      .mockResolvedValueOnce({ rows: [row] })
+      .mockResolvedValueOnce({ rows: [row] });
+
+    await expect(
+      ensureQaPersonaCompanyContexts({ query }, "company-a", [context]),
+    ).resolves.toBeUndefined();
+    expect(query).toHaveBeenCalledTimes(4);
+    expect(
+      query.mock.calls.some((call) => String(call[0]).includes("INSERT INTO")),
+    ).toBe(false);
   });
 
   it.each([
@@ -242,7 +640,7 @@ describe("QA seed target guard", () => {
           extrasSeed: async () => calls.push("extras"),
         },
       ),
-    ).rejects.toThrow(/only isolated local or QA/);
+    ).rejects.toThrow(/only isolated local\/development or QA/);
     expect(calls).toEqual([]);
   });
 

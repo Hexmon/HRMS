@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { QueryResultRow } from "pg";
-import { Roles } from "#shared";
+import { Roles, type RoleKey } from "#shared";
 
 export interface QaSeedEnvironment {
   APP_ENV?: string;
@@ -28,6 +28,14 @@ interface QaAdminCompanyContextIds {
   adminUserId: string;
   companyId: string;
   preferenceId: string;
+}
+
+export interface QaPersonaCompanyContext {
+  userId: string;
+  preferenceId: string;
+  activeRole: RoleKey;
+  employeeCode: string;
+  email: string;
 }
 
 export interface QaTenantAdminIdentityRow {
@@ -65,8 +73,10 @@ const qaCompanySlug = "hawkaii-hrms";
 
 export function requireQaSeedTarget(env: QaSeedEnvironment): URL {
   const appEnv = env.APP_ENV ?? (env.NODE_ENV === "production" ? "production" : "local");
-  if (!new Set(["local", "qa"]).has(appEnv)) {
-    throw new Error(`QA seed refused APP_ENV=${appEnv}; only isolated local or QA targets are allowed.`);
+  if (!new Set(["local", "development", "qa"]).has(appEnv)) {
+    throw new Error(
+      `QA seed refused APP_ENV=${appEnv}; only isolated local/development or QA targets are allowed.`,
+    );
   }
   if (env.HRMS_QA_SEED_ALLOW !== "true") {
     throw new Error("QA seed requires HRMS_QA_SEED_ALLOW=true as an explicit mutation opt-in.");
@@ -81,8 +91,13 @@ export function requireQaSeedTarget(env: QaSeedEnvironment): URL {
       "QA seed requires HRMS_QA_SEED_CONFIRM_DATABASE to exactly match the target database name.",
     );
   }
-  if (appEnv === "local" && !new Set(["127.0.0.1", "localhost", "postgres"]).has(target.hostname)) {
-    throw new Error(`Local QA seed refused remote database host ${target.hostname}.`);
+  if (
+    new Set(["local", "development"]).has(appEnv) &&
+    !new Set(["127.0.0.1", "localhost", "postgres"]).has(target.hostname)
+  ) {
+    throw new Error(
+      `Local/development QA seed refused remote database host ${target.hostname}.`,
+    );
   }
   return target;
 }
@@ -267,6 +282,146 @@ export async function ensureQaAdminCompanyContext(
     throw new Error("QA seed could not establish the exact deterministic Admin company context.");
   }
   return ids.companyId;
+}
+
+export async function ensureQaPersonaCompanyContexts(
+  client: QaSeedSqlClient,
+  companyId: string,
+  contexts: QaPersonaCompanyContext[],
+): Promise<void> {
+  if (contexts.length === 0) return;
+  const userIds = contexts.map((context) => context.userId);
+  const preferenceIds = contexts.map((context) => context.preferenceId);
+  if (
+    new Set(userIds).size !== userIds.length ||
+    new Set(preferenceIds).size !== preferenceIds.length
+  ) {
+    throw new Error(
+      "QA seed persona company contexts require unique users and preference IDs.",
+    );
+  }
+
+  const company = await client.query<{ id: string }>(
+    `SELECT id
+       FROM platform.company_profiles
+      WHERE id = $1
+        AND status = 'active'
+      FOR SHARE`,
+    [companyId],
+  );
+  if (company.rows.length !== 1 || company.rows[0]?.id !== companyId) {
+    throw new Error(
+      "QA seed refused a missing or inactive persona company context.",
+    );
+  }
+
+  const eligibleUsers = await client.query<{
+    id: string;
+    employee_code: string;
+    email: string;
+    role_key: RoleKey;
+  }>(
+    `SELECT users.id, users.employee_code, users.email, roles.role_key
+       FROM core.users users
+       JOIN core.user_roles assignments
+         ON assignments.user_id = users.id
+        AND assignments.status = 'active'
+        AND assignments.deleted_at IS NULL
+        AND assignments.effective_from <= CURRENT_DATE
+        AND (assignments.effective_to IS NULL OR assignments.effective_to >= CURRENT_DATE)
+       JOIN core.roles roles
+         ON roles.role_key = assignments.role_key
+        AND roles.status = 'active'
+        AND roles.deleted_at IS NULL
+      WHERE users.id = ANY($1::uuid[])
+        AND users.employment_status = 'active'
+        AND users.deleted_at IS NULL`,
+    [userIds],
+  );
+  const eligible = new Set(eligibleUsers.rows.map((row) => `${row.id}:${row.role_key}`));
+  for (const context of contexts) {
+    const exact = eligibleUsers.rows.filter(
+      (row) =>
+        row.id === context.userId &&
+        row.employee_code === context.employeeCode &&
+        row.email.toLowerCase() === context.email.toLowerCase() &&
+        row.role_key === context.activeRole,
+    );
+    if (
+      !eligible.has(`${context.userId}:${context.activeRole}`) ||
+      exact.length !== 1
+    ) {
+      throw new Error(
+        "QA seed refused a persona without the expected active identity and role assignment.",
+      );
+    }
+  }
+
+  const existing = await client.query<{
+    id: string;
+    user_id: string;
+    company_id: string | null;
+    active_role: RoleKey | null;
+  }>(
+    `SELECT id, user_id, company_id, active_role
+       FROM platform.user_session_preferences
+      WHERE user_id = ANY($1::uuid[])
+      FOR UPDATE`,
+    [userIds],
+  );
+  const byUser = new Map(existing.rows.map((row) => [row.user_id, row]));
+  for (const context of contexts) {
+    const current = byUser.get(context.userId);
+    if (current) {
+      if (
+        current.id !== context.preferenceId ||
+        current.company_id !== companyId ||
+        current.active_role !== context.activeRole
+      ) {
+        throw new Error(
+          "QA seed refused a persona preference identity, company, or role collision.",
+        );
+      }
+      continue;
+    }
+    await client.query(
+      `INSERT INTO platform.user_session_preferences
+       (id, user_id, active_role, company_id, landing_page, locale, timezone)
+       VALUES ($1, $2, $3, $4, '/dashboard', 'en-IN', 'Asia/Kolkata')
+       ON CONFLICT (user_id) DO NOTHING`,
+      [context.preferenceId, context.userId, context.activeRole, companyId],
+    );
+  }
+
+  const verified = await client.query<{
+    id: string;
+    user_id: string;
+    company_id: string;
+    active_role: RoleKey;
+  }>(
+    `SELECT preference.id, preference.user_id, preference.company_id, preference.active_role
+       FROM platform.user_session_preferences preference
+       JOIN platform.company_profiles company
+         ON company.id = preference.company_id
+        AND company.status = 'active'
+      WHERE preference.user_id = ANY($1::uuid[])
+        AND company.id = $2`,
+    [userIds, companyId],
+  );
+  const verifiedByUser = new Map(verified.rows.map((row) => [row.user_id, row]));
+  for (const context of contexts) {
+    const row = verifiedByUser.get(context.userId);
+    if (
+      !row ||
+      row.id !== context.preferenceId ||
+      row.company_id !== companyId ||
+      row.active_role !== context.activeRole
+    ) {
+      throw new Error(
+        "QA seed could not establish the exact deterministic persona company context.",
+      );
+    }
+  }
 }
 
 export async function rethrowAfterQaSeedRollback(

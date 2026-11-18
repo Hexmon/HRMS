@@ -4,9 +4,18 @@ import { AssetStatuses, EmploymentStatuses, Roles } from "#shared";
 import { seedIds } from "../src/platform/data-store.js";
 import { getReleaseSeedEmails } from "../src/platform/seed-personas.js";
 import { loadRuntimeEnv, requireEnv } from "./env.js";
-import { rethrowAfterQaSeedRollback } from "./qa-seed-safety.js";
+import {
+  requireQaSeedTarget,
+  rethrowAfterQaSeedRollback,
+  verifyQaSeedDatabaseIdentity,
+} from "./qa-seed-safety.js";
+import {
+  ensureReleaseBuiltinRoles,
+  verifyReleasePersonaIdentity,
+} from "./release-seed-support.js";
 
 loadRuntimeEnv();
+requireQaSeedTarget(process.env);
 const localDemoPassword = getLocalDemoPassword();
 const seedEmails = getReleaseSeedEmails();
 
@@ -14,7 +23,9 @@ const client = new Client({ connectionString: requireEnv("DATABASE_URL") });
 await client.connect();
 
 try {
+  await verifyQaSeedDatabaseIdentity(client, process.env);
   await client.query("BEGIN");
+  await ensureReleaseBuiltinRoles(client);
   await client.query(
     `INSERT INTO core.designations (id, designation_code, title, level, status)
      VALUES
@@ -97,9 +108,14 @@ try {
         hierarchy_path, employment_status, timezone, joined_on, terminated_on
       )
       VALUES ($1, $2, $3, $4, $5, $6, $7, $8::ltree, $9, 'Asia/Kolkata', '2026-01-01', CASE WHEN $9 = 'terminated' THEN '2026-04-01'::date ELSE NULL END)
-      ON CONFLICT (employee_code) DO NOTHING`,
+      ON CONFLICT DO NOTHING`,
       [id, employeeCode, email, fullName, departmentId, designationId, managerUserId, hierarchyPath, status]
     );
+    await verifyReleasePersonaIdentity(client, {
+      userId: String(id),
+      employeeCode: String(employeeCode),
+      email: String(email),
+    });
     await client.query(
       `INSERT INTO core.user_roles (user_id, role_key, status, effective_from)
        SELECT $1, $2, 'active', '2026-01-01'
