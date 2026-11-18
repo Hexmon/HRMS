@@ -553,6 +553,7 @@ test("trusted removal contracts require exact source and regression blobs", () =
   assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", 7, [contract]), /non-empty string/);
   assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, null), /must be an array/);
   assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, id: "OTHER-1" }]), /invalid task-scoped ID/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, id: undefined }]), /invalid task-scoped ID/);
   for (const invalidPath of [null, "", "/absolute.ts", "../escape.ts", "hrms_backend//src/decision.ts", "hrms_backend/src/other.ts"]) {
     assert.throws(
       () => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, path: invalidPath }]),
@@ -562,7 +563,9 @@ test("trusted removal contracts require exact source and regression blobs", () =
   assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, behavior: null }]), /describe the replacement/);
   assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, behavior: "too short" }]), /describe the replacement/);
   assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, oldBlob: "bad" }]), /old blob is invalid/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, oldBlob: undefined }]), /old blob is invalid/);
   assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, newBlob: "bad" }]), /new blob is invalid/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, newBlob: undefined }]), /new blob is invalid/);
   assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, regressions: null }]), /no regression tests/);
   assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, regressions: [null] }]), /non-test regression path/);
   assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{
@@ -576,6 +579,10 @@ test("trusted removal contracts require exact source and regression blobs", () =
   assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{
     ...contract,
     regressions: [{ ...contract.regressions[0], blob: "bad" }],
+  }]), /regression blob is invalid/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{
+    ...contract,
+    regressions: [{ ...contract.regressions[0], blob: undefined }],
   }]), /regression blob is invalid/);
   assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{
     ...contract,

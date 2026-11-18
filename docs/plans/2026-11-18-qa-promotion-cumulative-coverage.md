@@ -69,6 +69,7 @@
 - The first disposable full-suite run at that SHA passed backend unit/integration 1,011/1,011 and frontend component 60/60, then correctly failed the submitted delta at 72/85 changed lines, 26/43 changed branches and one removal disposition.
 - Root cause: newly added fail-closed validation branches lacked adversarial cases, and the counter rewrite appeared as a deletion-only hunk. This is recorded as red-before evidence, not a completion result.
 - Remediation in progress: cover every printed validation outcome, parse Git tree identities through a directly testable fail-closed boundary, and retain a replacement line for the legacy removal counter so the mechanism does not need circular self-approval.
+- `9942fad854f475c42286a414c452200505eb992a`: focused real V8 conversion and gate verification improved the delta to 83/83 changed lines, 38/42 changed branches and zero removal dispositions. The remaining four branches were the fail-closed null/undefined fallbacks for ID and blob fields; explicit negative cases were added before the next exact-head run.
 
 ## Risks, Compatibility And Recovery
 
