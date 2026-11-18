@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { authHeader, loginAs, projectTravelPayload } from "#testing";
@@ -396,7 +396,7 @@ describe("non-expense reports", () => {
       url: "/api/v1/reports/exports",
       headers: authHeader(admin.token),
       payload: {
-        report_type: "hr/employees",
+        report_type: "  HR/Employees  ",
         format: "csv",
         filters: { status: "active" }
       }
@@ -513,5 +513,31 @@ describe("non-expense reports", () => {
         })
       ])
     );
+  });
+
+  it("rejects an unknown export type before storage, document, or outbox side effects", async () => {
+    const admin = await loginAs(app, "ADM");
+    const documentsBefore = structuredClone(app.store.documents);
+    const versionsBefore = structuredClone(app.store.documentVersions);
+    const outboxBefore = structuredClone(app.store.outbox);
+    const putObject = vi.spyOn(app.store.objectStorage!, "putObject");
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/api/v1/reports/exports",
+      headers: authHeader(admin.token),
+      payload: {
+        report_type: "unknown-report",
+        format: "xlsx",
+        filters: {},
+      },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toMatchObject({ code: "VALIDATION_FAILED" });
+    expect(putObject).not.toHaveBeenCalled();
+    expect(app.store.documents).toEqual(documentsBefore);
+    expect(app.store.documentVersions).toEqual(versionsBefore);
+    expect(app.store.outbox).toEqual(outboxBefore);
   });
 });

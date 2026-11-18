@@ -11,6 +11,7 @@ import { resolveActiveCompanyMembershipContext } from "../../platform/company-me
 import { ReportService } from "./service.js";
 import { AttendanceReportingEvidenceCategoryValues } from "../attendance/reporting-evidence.js";
 import { AttendanceReportSourceCategoryValues } from "../attendance/reporting-projection.js";
+import { normalizeReportExportType, ReportExportTypeValues } from "./export-contract.js";
 
 const attendanceApprovalStateValues = Object.values(AttendanceApprovalStates) as [
   AttendanceApprovalState,
@@ -64,6 +65,19 @@ const reportSummaryQuerySchema = paginationQuerySchema.extend({
 });
 
 const idParamSchema = z.object({ id: z.uuid() });
+const reportExportTypeSchema = z
+  .string()
+  .min(1)
+  .max(80)
+  .transform((value, context) => {
+    const normalized = normalizeReportExportType(value);
+    if (normalized) return normalized;
+    context.addIssue({
+      code: "custom",
+      message: `Unsupported report type. Expected one of: ${ReportExportTypeValues.join(", ")}`,
+    });
+    return z.NEVER;
+  });
 
 export const reportRoutes: FastifyPluginAsync = async (fastify) => {
   const withActor = (request: { actor?: AuthUser }) => {
@@ -218,7 +232,7 @@ export const reportRoutes: FastifyPluginAsync = async (fastify) => {
     const body = z
       .object({
         format: z.enum(["csv", "xlsx"]).default("csv"),
-        report_type: z.string().min(1).max(80).default("expense"),
+        report_type: reportExportTypeSchema.default("expense"),
         filters: z.record(z.string(), z.unknown()).default({})
       })
       .parse(request.body ?? {});

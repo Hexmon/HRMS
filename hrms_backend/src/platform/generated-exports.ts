@@ -194,8 +194,7 @@ function csvCell(value: unknown): string {
 }
 
 function neutralizeSpreadsheetFormula(value: string): string {
-  const first = value.trimStart()[0];
-  if (first === "=" || first === "+" || first === "-" || first === "@") {
+  if (/^[\s\u0000-\u001f\u007f\ufeff]*[=+\-@]/u.test(value)) {
     return `'${value}`;
   }
   return value;
@@ -304,12 +303,30 @@ function xmlText(value: unknown): string {
     : typeof value === "object"
       ? JSON.stringify(value)
       : String(value);
-  return text
+  return xml10Text(text)
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll("\"", "&quot;")
     .replaceAll("'", "&apos;");
+}
+
+function xml10Text(value: string): string {
+  let result = "";
+  for (const character of value) {
+    const codePoint = character.codePointAt(0)!;
+    if (
+      codePoint === 0x09 ||
+      codePoint === 0x0a ||
+      codePoint === 0x0d ||
+      (codePoint >= 0x20 && codePoint <= 0xd7ff) ||
+      (codePoint >= 0xe000 && codePoint <= 0xfffd) ||
+      (codePoint >= 0x10000 && codePoint <= 0x10ffff)
+    ) {
+      result += character;
+    }
+  }
+  return result;
 }
 
 interface ZipEntryInput {

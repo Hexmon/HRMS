@@ -7565,7 +7565,7 @@ Required: yes
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `format` | string enum("csv", "xlsx") | optional | default "csv" |
-| `report_type` | string | optional | default "expense" |
+| `report_type` | string enum("expense", "expenses", "expenses/register", "expenses/my", "expenses/manager-queue", "expenses/manager-history", "expenses/finance-dashboard", "expenses/finance-history", "hr", "hr/employees", "attendance", "attendance/summary", "leave", "leave-wfh", "leave-wfh/summary", "projects", "projects/summary", "timesheets", "timesheets/summary", "assets", "assets/summary", "helpdesk", "helpdesk/summary", "audit") | optional | default "expense" |
 | `filters` | object | optional | - |
 
 **Responses**
