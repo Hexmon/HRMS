@@ -38,6 +38,7 @@ import {
   stampExternalReport,
   stampReport,
   validateTrustedExecutable,
+  validateRemovalContract,
   validateSemanticPath,
   verify,
 } from "./changed-coverage.mjs";
@@ -468,6 +469,154 @@ test("a source rename remains a deletion plus new file and fails pending regress
   const result = verify(root, base, "HEAD");
   assert.equal(result.pass, false);
   assert.ok(result.totals.uncovered.some((item) => item.includes("deleted source file")));
+});
+
+test("trusted removal contracts require exact source and regression blobs", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-coverage-removal-contract-"));
+  roots.push(root);
+  git(root, "init", "-q");
+  const path = "hrms_backend/src/decision.ts";
+  const regressionPath = "hrms_backend/src/__tests__/decision.unit.test.ts";
+  write(root, path, "export function access(role: string) {\n  if (role === 'admin') return 'allow';\n  if (role === 'legacy-admin') return 'allow';\n  return 'deny';\n}\n");
+  write(root, regressionPath, "test('non-admin remains denied', () => { expect('deny').toBe('deny'); });\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "base decision");
+  const base = git(root, "rev-parse", "HEAD");
+  const oldBlob = git(root, "rev-parse", `${base}:${path}`);
+  write(root, path, "export function access(role: string) {\n  if (role === 'admin') return 'allow';\n  return 'deny';\n}\n");
+  write(root, regressionPath, "test('non-admin remains denied after simplification', () => { expect('deny').toBe('deny'); });\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "simplify guarded decision");
+  const head = git(root, "rev-parse", "HEAD");
+  const deletion = changedLines(root, base, head).deletionOnly[0];
+  assert.ok(deletion, "fixture must contain a deletion-only hunk");
+  const contract = {
+    id: "QA-S25-003-RM-01",
+    kind: "deletion-only",
+    signature: deletion,
+    path,
+    behavior: "non-admin callers remain denied after the equivalent decision rewrite",
+    oldBlob,
+    newBlob: git(root, "rev-parse", `${head}:${path}`),
+    regressions: [{ path: regressionPath, blob: git(root, "rev-parse", `${head}:${regressionPath}`) }],
+  };
+
+  assert.match(
+    validateRemovalContract(root, base, head, "deletion-only", deletion, [contract]),
+    /exact replacement regression contract passed/,
+  );
+  const accepted = verify(root, base, head, undefined, { removalContracts: [contract] });
+  assert.equal(accepted.pass, true);
+  assert.ok(accepted.lines.some((line) => line.includes("QA-S25-003-RM-01")));
+
+  assert.throws(
+    () => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, oldBlob: "0".repeat(40) }]),
+    /old blob is stale/,
+  );
+  assert.throws(
+    () => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, newBlob: "0".repeat(40) }]),
+    /new blob is stale/,
+  );
+  assert.throws(
+    () => validateRemovalContract(root, base, head, "deletion-only", deletion, [{
+      ...contract,
+      regressions: [{ ...contract.regressions[0], blob: "0".repeat(40) }],
+    }]),
+    /regression blob is stale/,
+  );
+  assert.throws(
+    () => validateRemovalContract(root, base, head, "deletion-only", deletion, [{
+      ...contract,
+      regressions: [{ path, blob: contract.newBlob }],
+    }]),
+    /non-test regression path/,
+  );
+  assert.throws(
+    () => validateRemovalContract(root, base, head, "deletion-only", deletion, [{
+      ...contract,
+      regressions: [{ path: "hrms_backend/src/__tests__/evidence.md", blob: contract.regressions[0].blob }],
+    }]),
+    /non-test regression path/,
+  );
+  assert.throws(
+    () => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, regressions: [] }]),
+    /no regression tests/,
+  );
+  assert.throws(
+    () => validateRemovalContract(root, base, head, "deletion-only", deletion, [contract, contract]),
+    /Ambiguous trusted removal contract/,
+  );
+  assert.equal(validateRemovalContract(root, base, head, "deletion-only", `${path}:different hunk`, [contract]), null);
+  const unknown = verify(root, base, head);
+  assert.equal(unknown.pass, false);
+  assert.ok(unknown.totals.uncovered.some((item) => item.includes("deletion-only")));
+});
+
+test("a whole-file deletion contract is bound to the absent head blob", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-coverage-file-removal-contract-"));
+  roots.push(root);
+  git(root, "init", "-q");
+  const path = "hrms_backend/src/legacy.ts";
+  const regressionPath = "hrms_backend/src/__tests__/legacy.unit.test.ts";
+  write(root, path, "export const legacy = true;\n");
+  write(root, regressionPath, "test('replacement path is authoritative', () => { expect(true).toBe(true); });\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "base legacy path");
+  const base = git(root, "rev-parse", "HEAD");
+  const oldBlob = git(root, "rev-parse", `${base}:${path}`);
+  rmSync(join(root, path));
+  git(root, "add", "-A");
+  git(root, "commit", "-qm", "remove legacy path");
+  const head = git(root, "rev-parse", "HEAD");
+  const deletion = changedLines(root, base, head).deletionOnly.find((item) => item.endsWith(":deleted source file"));
+  const contract = {
+    id: "QA-S25-003-RM-04",
+    kind: "deletion-only",
+    signature: deletion,
+    path,
+    behavior: "the retained replacement remains authoritative after deleting the legacy module",
+    oldBlob,
+    newBlob: null,
+    regressions: [{ path: regressionPath, blob: git(root, "rev-parse", `${head}:${regressionPath}`) }],
+  };
+  assert.equal(verify(root, base, head, undefined, { removalContracts: [contract] }).pass, true);
+  assert.throws(
+    () => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, newBlob: oldBlob }]),
+    /new blob is stale/,
+  );
+});
+
+test("runtime-to-comment removal uses the same fail-closed exact contract", () => {
+  const root = mkdtempSync(join(tmpdir(), "hrms-coverage-runtime-removal-contract-"));
+  roots.push(root);
+  git(root, "init", "-q");
+  const path = "hrms_backend/src/obsolete.ts";
+  const regressionPath = "hrms_backend/src/__tests__/obsolete.unit.test.ts";
+  write(root, path, "export const obsoleteFallback = true;\n");
+  write(root, regressionPath, "test('replacement owns the fallback', () => { expect(true).toBe(true); });\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "base fallback");
+  const base = git(root, "rev-parse", "HEAD");
+  const oldBlob = git(root, "rev-parse", `${base}:${path}`);
+  write(root, path, "// fallback is now owned by the shared client\n");
+  git(root, "add", ".");
+  git(root, "commit", "-qm", "remove duplicate fallback");
+  const head = git(root, "rev-parse", "HEAD");
+  const removal = changedLines(root, base, head).removedRuntime[0];
+  const contract = {
+    id: "QA-S25-003-RM-05",
+    kind: "removed-runtime",
+    signature: removal,
+    path,
+    behavior: "the shared client retains the fallback previously owned by this module",
+    oldBlob,
+    newBlob: git(root, "rev-parse", `${head}:${path}`),
+    regressions: [{ path: regressionPath, blob: git(root, "rev-parse", `${head}:${regressionPath}`) }],
+  };
+  writeCoverage(root, "backend", "{}");
+  stampReport(root, "backend");
+  assert.equal(verify(root, base, head).pass, false);
+  assert.equal(verify(root, base, head, undefined, { removalContracts: [contract] }).pass, true);
 });
 
 test("source status, mode and missing-hunk variants fail before excluded paths or symlink reads", () => {

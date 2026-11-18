@@ -1335,6 +1335,89 @@ function semanticFailure(path, message) {
   throw new Error(`${path}: ${message}`);
 }
 
+/*
+ * Runtime deletion has no new executable line that a numeric coverage engine
+ * can attribute. A trusted validator may therefore recognize only a reviewed,
+ * immutable removal contract. The contract is deliberately kept in validator
+ * source (rather than a candidate-supplied JSON/CLI input) and is bound to the
+ * exact removal signature, old/new Git blobs and exact regression-test blobs.
+ * An unrelated edit, moved hunk, weakened test or unknown removal remains red.
+ */
+export const trustedRemovalContracts = Object.freeze([]);
+
+function commitFileIdentity(root, revision, path, label) {
+  const output = git(root, "ls-tree", "-z", revision, "--", `:(literal)${path}`);
+  if (!output) return null;
+  const entries = output.split("\0").filter(Boolean);
+  if (entries.length !== 1) semanticFailure(path, `${label} resolved to ${entries.length} Git entries`);
+  const match = /^(100644|100755) blob ([0-9a-f]{40})\t(.+)$/.exec(entries[0]);
+  if (!match || match[3] !== path) semanticFailure(path, `${label} is not one canonical regular Git file`);
+  return { mode: match[1], blob: match[2] };
+}
+
+function validRegressionPath(path) {
+  return !isAbsolute(path) && !path.startsWith("../") &&
+    /(?:^|\/)(?:[^/]+\.(?:test|spec)\.[cm]?[jt]sx?|tests\/test_[^/]+\.py)$/.test(path);
+}
+
+export function validateRemovalContract(root, mergeBase, head, kind, signature, contracts = trustedRemovalContracts) {
+  if (kind !== "deletion-only" && kind !== "removed-runtime") throw new Error(`Unsupported removal contract kind: ${kind}`);
+  if (typeof signature !== "string" || !signature) throw new Error("Removal contract signature must be a non-empty string");
+  if (!Array.isArray(contracts)) throw new Error("Trusted removal contracts must be an array");
+  const matches = contracts.filter((contract) => contract.kind === kind && contract.signature === signature);
+  if (matches.length === 0) return null;
+  if (matches.length !== 1) throw new Error(`Ambiguous trusted removal contract for ${kind} ${signature}`);
+  const contract = matches[0];
+  if (!/^QA-S25-003-[A-Z0-9-]+$/.test(contract.id ?? "")) {
+    throw new Error(`Trusted removal contract has an invalid task-scoped ID for ${signature}`);
+  }
+  if (typeof contract.path !== "string" || !contract.path || isAbsolute(contract.path) || contract.path.startsWith("../") ||
+      contract.path.includes("//") || !signature.startsWith(`${contract.path}:`)) {
+    throw new Error(`Trusted removal contract path does not match ${signature}`);
+  }
+  if (typeof contract.behavior !== "string" || contract.behavior.trim().length < 12) {
+    throw new Error(`Trusted removal contract must describe the replacement behavior for ${signature}`);
+  }
+  if (!/^[0-9a-f]{40}$/.test(contract.oldBlob ?? "")) {
+    throw new Error(`Trusted removal contract old blob is invalid for ${signature}`);
+  }
+  if (contract.newBlob !== null && !/^[0-9a-f]{40}$/.test(contract.newBlob ?? "")) {
+    throw new Error(`Trusted removal contract new blob is invalid for ${signature}`);
+  }
+  const oldIdentity = commitFileIdentity(root, mergeBase, contract.path, "removal base");
+  const newIdentity = commitFileIdentity(root, head, contract.path, "removal head");
+  if (oldIdentity?.blob !== contract.oldBlob) {
+    throw new Error(`Trusted removal contract old blob is stale for ${signature}`);
+  }
+  if ((newIdentity?.blob ?? null) !== contract.newBlob) {
+    throw new Error(`Trusted removal contract new blob is stale for ${signature}`);
+  }
+  if (oldIdentity?.mode !== "100644" || (newIdentity && newIdentity.mode !== "100644")) {
+    throw new Error(`Trusted removal contract requires regular non-executable source blobs for ${signature}`);
+  }
+  if (!Array.isArray(contract.regressions) || contract.regressions.length === 0) {
+    throw new Error(`Trusted removal contract has no regression tests for ${signature}`);
+  }
+  const seen = new Set();
+  for (const regression of contract.regressions) {
+    if (!regression || typeof regression.path !== "string" || !validRegressionPath(regression.path)) {
+      throw new Error(`Trusted removal contract has a non-test regression path for ${signature}`);
+    }
+    if (seen.has(regression.path)) {
+      throw new Error(`Trusted removal contract repeats regression ${regression.path} for ${signature}`);
+    }
+    seen.add(regression.path);
+    if (!/^[0-9a-f]{40}$/.test(regression.blob ?? "")) {
+      throw new Error(`Trusted removal contract regression blob is invalid for ${signature}`);
+    }
+    const identity = commitFileIdentity(root, head, regression.path, "removal regression");
+    if (!identity || identity.mode !== "100644" || identity.blob !== regression.blob) {
+      throw new Error(`Trusted removal contract regression blob is stale for ${signature}: ${regression.path}`);
+    }
+  }
+  return `${contract.id} ${kind} ${signature}: exact replacement regression contract passed`;
+}
+
 function requireText(path, content, pattern, message) {
   if (!pattern.test(content)) semanticFailure(path, message);
 }
@@ -1600,7 +1683,7 @@ export const semanticCoveragePaths = new Set([
   "hrms_backend/scripts/seed-release-data.ts",
 ]);
 
-export function verify(root, base, head, suitePaths = fullSuitePaths(coverageOutputRoot(root))) {
+export function verify(root, base, head, suitePaths = fullSuitePaths(coverageOutputRoot(root)), options = {}) {
   assertCleanRepository(root);
   const actualHead = git(root, "rev-parse", "HEAD").trim();
   const resolvedHead = git(root, "rev-parse", head).trim();
@@ -1610,17 +1693,31 @@ export function verify(root, base, head, suitePaths = fullSuitePaths(coverageOut
   const totals = { executable: 0, nonExecutable: 0, branches: 0, uncovered: [] };
   let uncoveredLines = 0;
   let uncoveredBranches = 0;
-  let unmeasuredCount = deletionOnly.length + removedRuntime.length;
+  let unmeasuredCount = 0;
   const semanticLines = [];
   const lines = [`Coverage diff ${mergeBase}..${resolvedHead}`];
   for (const path of testSource) lines.push(`TEST SOURCE ${path}: excluded from product line denominator; independent assertion-quality review required`);
   for (const risk of importRisks) lines.push(`IMPORT GRAPH ${risk}: changed in-source test files require review`);
   for (const path of excludedGenerated) lines.push(`EXCLUDED TYPE/GENERATED ${path}: no product line denominator; typecheck/build regeneration evidence required`);
   for (const item of deletionOnly) {
+    const contract = validateRemovalContract(root, mergeBase, resolvedHead, "deletion-only", item, options.removalContracts);
+    if (contract) {
+      semanticLines.push(contract);
+      continue;
+    }
     const message = `deletion-only ${item}: behavior requires explicit regression evidence`;
     totals.uncovered.push(message);
+    unmeasuredCount += 1;
   }
-  for (const item of removedRuntime) totals.uncovered.push(`removed runtime ${item}: replacement has no executable coverage target`);
+  for (const item of removedRuntime) {
+    const contract = validateRemovalContract(root, mergeBase, resolvedHead, "removed-runtime", item, options.removalContracts);
+    if (contract) {
+      semanticLines.push(contract);
+      continue;
+    }
+    totals.uncovered.push(`removed runtime ${item}: replacement has no executable coverage target`);
+    unmeasuredCount += 1;
+  }
   for (const path of outside) {
     if (semanticCoveragePaths.has(path)) {
       semanticLines.push(validateSemanticPath(root, path, readFileSync(join(root, path), "utf8"), mergeBase));
