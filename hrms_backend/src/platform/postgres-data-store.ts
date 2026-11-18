@@ -1667,7 +1667,6 @@ class PostgresPersistence {
       await this.flushPlatform(client);
       await this.flushExpenses(client);
       await this.flushDocuments(client);
-      await this.flushAssets(client);
       await this.flushTimesheets(client);
       await this.flushProjects(client);
       await this.flushHelpdesk(client);
@@ -4112,7 +4111,11 @@ class PostgresPersistence {
   }
 
   private async flushCore(client: PoolClient): Promise<void> {
-    await this.flushCoreMasterData(client);
+    await this.flushCoreMasterData(
+      client,
+      new Set(this.store.companyProfiles.map((company) => company.id)),
+      true,
+    );
     // Keep authority writers on one lock order: user -> role definitions ->
     // user-role assignments. Asset commands use the same order, avoiding a
     // user/role deadlock with the full persistence fallback.
