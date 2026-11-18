@@ -984,14 +984,17 @@ export function runFullCoverageWorker(root, outputRoot, expectedHead, tools, run
   execute("Python report", tools.python, ["-m", "coverage", "json", "--pretty-print", "--include=scripts/agent/assert-disposable-test-db.py,scripts/agent/validate-doc-references.py", "-o", pythonJson], { COVERAGE_FILE: pythonData }, ["NODE_V8_COVERAGE"]);
   execute("agent setup validation", tools.bash, ["scripts/agent/validate-agent-setup.sh"], {}, ["NODE_V8_COVERAGE"]);
   const includes = [
+    "hrms_backend/scripts/db-migration-lib.ts",
     "hrms_backend/scripts/lib.ts",
     "qa-artifacts/hrms/discovery-2026-11-09/admin-settings-cross-company-probe.ts",
     "qa-artifacts/hrms/discovery-2026-11-09/disposable-probe-guard.ts",
     "qa-artifacts/hrms/discovery-2026-11-09/multi-instance-asset-probe.ts",
     "qa-artifacts/hrms/discovery-2026-11-09/tenant-boundary-probe.ts",
   ];
-  execute("isolated TypeScript tests", tools.pnpm, ["--dir", "hrms_backend", "exec", "vitest", "run", "--project", "unit",
+  execute("isolated TypeScript tests", tools.pnpm, ["--dir", "hrms_backend", "exec", "vitest", "run",
+    "--project", "unit", "--project", "integration",
     "src/__tests__/discovery-probes.unit.test.ts", "src/__tests__/disposable-probe-guard.unit.test.ts", "src/__tests__/walk-files.unit.test.ts",
+    "src/db/__tests__/migration-runner.unit.test.ts", "src/db/__tests__/migration-runner.integration.test.ts",
     "--coverage", "--coverage.allowExternal=true", ...includes.flatMap((path) => ["--coverage.include", resolve(root, path)]),
     "--coverage.reporter=text", "--coverage.reporter=json", `--coverage.reportsDirectory=${typescriptReport}`], {}, ["NODE_V8_COVERAGE"]);
   execute("backend unit and integration coverage", tools.pnpm, ["--dir", "hrms_backend", "exec", "vitest", "run",
