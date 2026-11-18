@@ -2053,12 +2053,23 @@ test("backend coverage measures unit and integration projects together", () => {
     runFullCoverageWorker(root, outputRoot, expectedHead,
       { node: "/trusted/node", pnpm: "/trusted/pnpm", python: "/trusted/python3", bash: "/trusted/bash" },
       (command, args) => commands.push({ command, args }));
-    const backend = commands.find(({ args }) =>
-      args.includes("hrms_backend") && args.includes("--coverage") && args.includes("integration"));
+    const backendResults = `--outputFile=${join(outputRoot, "external-input", "backend-tests.json")}`;
+    const backend = commands.find(({ args }) => args.includes(backendResults));
     assert.ok(backend, "backend coverage command must include the integration project");
     assert.deepEqual(backend.args.filter((_argument, index) => backend.args[index - 1] === "--project"), ["unit", "integration"]);
     assert.ok(backend.args.includes("--reporter=json"));
-    assert.ok(backend.args.some((argument) => argument === `--outputFile=${join(outputRoot, "external-input", "backend-tests.json")}`));
+    assert.ok(backend.args.includes(backendResults));
+    const externalTypeScript = commands.find(({ args }) =>
+      args.includes("src/db/__tests__/migration-runner.unit.test.ts"));
+    assert.ok(externalTypeScript, "migration runner tests must emit external TypeScript coverage");
+    assert.deepEqual(
+      externalTypeScript.args.filter((_argument, index) => externalTypeScript.args[index - 1] === "--project"),
+      ["unit", "integration"],
+    );
+    assert.ok(externalTypeScript.args.includes("src/db/__tests__/migration-runner.integration.test.ts"));
+    assert.ok(
+      externalTypeScript.args.includes(join(root, "hrms_backend/scripts/db-migration-lib.ts")),
+    );
     const frontend = commands.find(({ args }) => args.includes("hrms-client") && args.includes("--coverage"));
     assert.ok(frontend, "frontend coverage command must emit trusted test results");
     assert.ok(frontend.args.includes("--reporter=json"));
