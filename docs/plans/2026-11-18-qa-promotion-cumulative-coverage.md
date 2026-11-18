@@ -63,6 +63,13 @@
 | Pending | Trusted changed-line/branch coverage | Disposable local PostgreSQL/Valkey; exact committed head. |
 | Pending | Independent senior, security/database and QA review | Exact final SHA; separate reviewers. |
 
+### Exact-head execution ledger
+
+- `6af0a1065f8c72c712413eef5adfb109cafbd030`: change-aware verification passed (30 verifier tests; 95 documentation references) and the gate regression suite passed 80/80.
+- The first disposable full-suite run at that SHA passed backend unit/integration 1,011/1,011 and frontend component 60/60, then correctly failed the submitted delta at 72/85 changed lines, 26/43 changed branches and one removal disposition.
+- Root cause: newly added fail-closed validation branches lacked adversarial cases, and the counter rewrite appeared as a deletion-only hunk. This is recorded as red-before evidence, not a completion result.
+- Remediation in progress: cover every printed validation outcome, parse Git tree identities through a directly testable fail-closed boundary, and retain a replacement line for the legacy removal counter so the mechanism does not need circular self-approval.
+
 ## Risks, Compatibility And Recovery
 
 - Tenant/security risks: a false green could hide cross-tenant, payroll or session regressions. Contracts therefore use exact Git identities and cannot be supplied through candidate runtime arguments.

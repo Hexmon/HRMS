@@ -18,7 +18,9 @@ import {
   coverageArtifactPath,
   instrumentableExternal,
   outsideExecutableOrConfig,
+  parseCommitFileIdentity,
   prepareCoverageIntegrationServices,
+  requireRegularRemovalModes,
   verifyCoverageIntegrationServiceClaim,
   removeExactCommitCheckout,
   runFullCoverageGate,
@@ -546,10 +548,60 @@ test("trusted removal contracts require exact source and regression blobs", () =
     () => validateRemovalContract(root, base, head, "deletion-only", deletion, [contract, contract]),
     /Ambiguous trusted removal contract/,
   );
+  assert.throws(() => validateRemovalContract(root, base, head, "other", deletion, [contract]), /Unsupported removal contract kind/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", "", [contract]), /non-empty string/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", 7, [contract]), /non-empty string/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, null), /must be an array/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, id: "OTHER-1" }]), /invalid task-scoped ID/);
+  for (const invalidPath of [null, "", "/absolute.ts", "../escape.ts", "hrms_backend//src/decision.ts", "hrms_backend/src/other.ts"]) {
+    assert.throws(
+      () => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, path: invalidPath }]),
+      /path does not match/,
+    );
+  }
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, behavior: null }]), /describe the replacement/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, behavior: "too short" }]), /describe the replacement/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, oldBlob: "bad" }]), /old blob is invalid/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, newBlob: "bad" }]), /new blob is invalid/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, regressions: null }]), /no regression tests/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{ ...contract, regressions: [null] }]), /non-test regression path/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{
+    ...contract,
+    regressions: [{ ...contract.regressions[0], path: 7 }],
+  }]), /non-test regression path/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{
+    ...contract,
+    regressions: [contract.regressions[0], contract.regressions[0]],
+  }]), /repeats regression/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{
+    ...contract,
+    regressions: [{ ...contract.regressions[0], blob: "bad" }],
+  }]), /regression blob is invalid/);
+  assert.throws(() => validateRemovalContract(root, base, head, "deletion-only", deletion, [{
+    ...contract,
+    regressions: [{ path: "hrms_backend/src/__tests__/missing.unit.test.ts", blob: contract.regressions[0].blob }],
+  }]), /regression blob is stale/);
   assert.equal(validateRemovalContract(root, base, head, "deletion-only", `${path}:different hunk`, [contract]), null);
   const unknown = verify(root, base, head);
   assert.equal(unknown.pass, false);
   assert.ok(unknown.totals.uncovered.some((item) => item.includes("deletion-only")));
+});
+
+test("Git removal identities reject ambiguous and noncanonical tree entries", () => {
+  const path = "hrms_backend/src/example.ts";
+  const blob = "a".repeat(40);
+  assert.equal(parseCommitFileIdentity(path, "test", ""), null);
+  assert.deepEqual(parseCommitFileIdentity(path, "test", `100644 blob ${blob}\t${path}\0`), { mode: "100644", blob });
+  assert.throws(
+    () => parseCommitFileIdentity(path, "test", `100644 blob ${blob}\t${path}\x00100644 blob ${blob}\tother.ts\x00`),
+    /resolved to 2 Git entries/,
+  );
+  assert.throws(() => parseCommitFileIdentity(path, "test", `120000 blob ${blob}\t${path}\0`), /not one canonical regular Git file/);
+  assert.throws(() => parseCommitFileIdentity(path, "test", `100644 blob ${blob}\tother.ts\0`), /not one canonical regular Git file/);
+  assert.doesNotThrow(() => requireRegularRemovalModes("signature", { mode: "100644" }, { mode: "100644" }));
+  assert.doesNotThrow(() => requireRegularRemovalModes("signature", { mode: "100644" }, null));
+  assert.throws(() => requireRegularRemovalModes("signature", { mode: "100755" }, { mode: "100644" }), /regular non-executable/);
+  assert.throws(() => requireRegularRemovalModes("signature", { mode: "100644" }, { mode: "100755" }), /regular non-executable/);
 });
 
 test("a whole-file deletion contract is bound to the absent head blob", () => {
