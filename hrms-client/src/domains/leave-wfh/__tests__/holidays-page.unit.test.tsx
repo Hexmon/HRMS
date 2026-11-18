@@ -20,12 +20,10 @@ const mock = vi.hoisted(() => ({
 }));
 
 vi.mock("@tanstack/react-router", () => ({
-  createFileRoute:
-    () =>
-    (configuration: Record<string, unknown>) => ({
-      ...configuration,
-      useSearch: () => ({ month: mock.routeMonth }),
-    }),
+  createFileRoute: () => (configuration: Record<string, unknown>) => ({
+    ...configuration,
+    useSearch: () => ({ month: mock.routeMonth }),
+  }),
   useNavigate: () => mock.navigate,
 }));
 vi.mock("@/lib/auth", () => ({ useAuth: () => ({ activeRole: mock.activeRole }) }));
