@@ -1082,6 +1082,18 @@ const adminMasterDataQuerySchema = {
   },
 };
 
+const adminDepartmentQuerySchema = {
+  ...adminMasterDataQuerySchema,
+  properties: {
+    ...adminMasterDataQuerySchema.properties,
+    parent_candidate_for: {
+      ...uuid("Department UUID being edited"),
+      description:
+        "When supplied, return only active parent candidates that cannot create a self-reference or hierarchy cycle.",
+    },
+  },
+};
+
 const adminDepartmentSchema = {
   type: "object",
   required: [
@@ -1100,6 +1112,12 @@ const adminDepartmentSchema = {
     name: { type: "string", example: "Sales" },
     parent_department_id: { ...uuid("Parent department UUID"), nullable: true },
     parent_id: { ...uuid("Parent department UUID"), nullable: true },
+    parent_department_name: {
+      type: "string",
+      nullable: true,
+      description: "Current same-company parent department name when the parent is available.",
+      example: "Operations",
+    },
     director_user_id: { ...uuid("Director user UUID"), nullable: true },
     status: { type: "string", enum: ["active", "inactive"], example: "active" },
     active: { type: "boolean", example: true },
@@ -11288,9 +11306,9 @@ const routeDocs: Record<string, RouteSchema> = {
   "GET /api/v1/admin/master-data/departments": operation(
     "Admin / Configuration",
     "List departments",
-    "Lists core departments for Admin Settings master-data management. Admin and HR Manager roles can read the list.",
+    "Lists core departments for Admin Settings master-data management. Admin and HR Manager roles can read the list. parent_candidate_for returns authoritative cycle-safe parent choices.",
     {
-      querystring: adminMasterDataQuerySchema,
+      querystring: adminDepartmentQuerySchema,
       response200: paginated(adminDepartmentSchema),
     },
   ),
@@ -11314,7 +11332,7 @@ const routeDocs: Record<string, RouteSchema> = {
   "PATCH /api/v1/admin/master-data/departments/{id}": operation(
     "Admin / Configuration",
     "Update department",
-    "Updates department name, code, parent, or active status with optimistic concurrency. Deactivation is blocked while active employees reference the department.",
+    "Updates department name, code, parent, or active status with optimistic concurrency. Deactivation is blocked while active employees or active child departments reference the department.",
     {
       params: idParamSchema,
       body: adminDepartmentUpdateBody,

@@ -1038,12 +1038,17 @@ describe("admin master data", () => {
       department_code: "DURABLE_CHILD",
       parent_id: root.id,
     });
+    expect(child.parent_department_name).toBe(root.name);
     const beforeRejectedWrites = await pool.query<{ departments: string; events: string }>(
       `SELECT (SELECT count(*)::text FROM core.departments) AS departments,
               (SELECT count(*)::text FROM platform.outbox_events WHERE aggregate_type = 'department') AS events`,
     );
 
     await expect(update(root.id, { parent_id: root.id, expected_version: 1 })).rejects.toMatchObject({ statusCode: 409 });
+    await expect(update(root.id, { status: "inactive", expected_version: 1 })).rejects.toMatchObject({
+      statusCode: 409,
+      message: "Cannot deactivate department while active child departments reference it.",
+    });
     await expect(create({ name: "Missing Parent", parent_id: randomUUID() })).rejects.toMatchObject({ statusCode: 404 });
     await expect(update(root.id, { parent_department_id: child.id, expected_version: 1 })).rejects.toMatchObject({ statusCode: 409 });
 
