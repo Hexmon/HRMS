@@ -15,8 +15,19 @@ const mock = vi.hoisted(() => ({
   isError: false,
   queryError: null as unknown,
   holidayYears: [] as number[],
+  navigate: vi.fn(),
+  routeMonth: undefined as string | undefined,
 }));
 
+vi.mock("@tanstack/react-router", () => ({
+  createFileRoute:
+    () =>
+    (configuration: Record<string, unknown>) => ({
+      ...configuration,
+      useSearch: () => ({ month: mock.routeMonth }),
+    }),
+  useNavigate: () => mock.navigate,
+}));
 vi.mock("@/lib/auth", () => ({ useAuth: () => ({ activeRole: mock.activeRole }) }));
 vi.mock("@/domains/leave-wfh", () => ({
   useHolidayMutation: () => ({ mutateAsync: mock.mutateAsync, isPending: false }),
@@ -38,10 +49,13 @@ vi.mock("sonner", () => ({ toast: { error: mock.toastError, success: mock.toastS
 import { formatHolidayDate, isHolidayInMonth } from "@/domains/leave-wfh/calendar-date";
 import {
   holidayCursorFromHref,
+  holidayMonthRedirectSearch,
   holidaySearchFromRecord,
   HolidaysPage,
+  HolidaysRoutePage,
   hrefWithHolidayCursor,
   initialHolidayCursor,
+  requiredHolidayMonth,
 } from "@/routes/_app/leave-wfh.holidays";
 
 const firstId = "11111111-1111-4111-8111-111111111111";
@@ -66,6 +80,8 @@ afterEach(() => {
   mock.isError = false;
   mock.queryError = null;
   mock.holidayYears = [];
+  mock.navigate.mockReset();
+  mock.routeMonth = undefined;
 });
 
 function fillHoliday(name = "Founders Day") {
@@ -220,6 +236,10 @@ describe("holiday create form retry", () => {
     ).toBe("?month=2026-12");
     expect(holidaySearchFromRecord({ month: "2027-01" })).toEqual({ month: "2027-01" });
     expect(holidaySearchFromRecord({ month: "2027-13" })).toEqual({ month: undefined });
+    expect(requiredHolidayMonth({}, today)).toBe("2026-11");
+    expect(requiredHolidayMonth({ month: "2027-01" }, today)).toBe("2027-01");
+    expect(holidayMonthRedirectSearch({}, today)).toEqual({ month: "2026-11" });
+    expect(holidayMonthRedirectSearch({ month: "2027-01" }, today)).toBeNull();
   });
 
   it("preserves controlled router navigation across January and December boundaries", () => {
@@ -257,6 +277,39 @@ describe("holiday create form retry", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Previous month" }));
     expect(screen.getByRole("heading", { name: "January 2027" })).toBeInTheDocument();
+  });
+
+  it("canonicalizes a missing routed month before rendering the calendar", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-17T12:00:00.000Z"));
+    render(<HolidaysRoutePage />);
+
+    expect(screen.getByRole("status", { name: "Loading holiday calendar" })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(mock.navigate).toHaveBeenCalledWith({
+        to: "/leave-wfh/holidays",
+        search: { month: "2026-11" },
+        replace: true,
+      });
+    });
+    expect(mock.holidayYears).toEqual([]);
+  });
+
+  it("renders a routed month and preserves it through router navigation", () => {
+    mock.routeMonth = "2027-01";
+    render(<HolidaysRoutePage />);
+
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Calendar" }), {
+      button: 0,
+      ctrlKey: false,
+    });
+    expect(screen.getByRole("heading", { name: "January 2027" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Next month" }));
+    expect(mock.navigate).toHaveBeenCalledWith({
+      to: "/leave-wfh/holidays",
+      search: { month: "2027-02" },
+      replace: true,
+    });
   });
 
   it("hydrates a non-current routed month without changing the server calendar", async () => {

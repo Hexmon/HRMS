@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,15 +24,41 @@ export const Route = createFileRoute("/_app/leave-wfh/holidays")({
 
 const ADMIN: Role[] = ["hr_admin", "main_admin"];
 type HolidayView = Holiday & { expectedVersion: number };
-interface HolidaySearch { month?: string }
+interface HolidaySearch {
+  month?: string;
+}
 interface HolidaysPageProps {
   month?: string;
   onMonthChange?: (month: string) => void;
 }
 
-function HolidaysRoutePage() {
+export function HolidaysRoutePage() {
   const navigate = useNavigate();
   const { month } = Route.useSearch();
+
+  useEffect(() => {
+    const canonicalSearch = holidayMonthRedirectSearch({ month }, new Date());
+    if (canonicalSearch) {
+      void navigate({
+        to: "/leave-wfh/holidays",
+        search: canonicalSearch,
+        replace: true,
+      });
+    }
+  }, [month, navigate]);
+
+  if (!month) {
+    return (
+      <div className="flex min-h-48 items-center justify-center">
+        <div
+          className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent"
+          aria-label="Loading holiday calendar"
+          role="status"
+        />
+      </div>
+    );
+  }
+
   return (
     <HolidaysPage
       month={month}
@@ -440,6 +466,17 @@ export function holidaySearchFromRecord(search: Record<string, unknown>): Holida
   return { month: canonicalHolidayMonth(search.month) };
 }
 
+export function requiredHolidayMonth(search: HolidaySearch, today: Date): string {
+  return search.month ?? holidayMonthFromDate(today);
+}
+
+export function holidayMonthRedirectSearch(
+  search: HolidaySearch,
+  today: Date,
+): HolidaySearch | null {
+  return search.month ? null : { month: requiredHolidayMonth(search, today) };
+}
+
 export function canonicalHolidayMonth(value: unknown): string | undefined {
   return typeof value === "string" && /^(?:\d{4})-(?:0[1-9]|1[0-2])$/u.test(value)
     ? value
@@ -454,7 +491,10 @@ export function holidayMonthFromCursor(cursor: { y: number; m: number }): string
   return `${cursor.y}-${String(cursor.m + 1).padStart(2, "0")}`;
 }
 
-export function holidayCursorFromMonth(month: string | undefined, today: Date): { y: number; m: number } {
+export function holidayCursorFromMonth(
+  month: string | undefined,
+  today: Date,
+): { y: number; m: number } {
   const canonical = canonicalHolidayMonth(month);
   if (!canonical) return initialHolidayCursor(today);
   const [year, calendarMonth] = canonical.split("-").map(Number);
