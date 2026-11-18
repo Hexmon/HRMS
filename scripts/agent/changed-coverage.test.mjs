@@ -2070,6 +2070,10 @@ test("backend coverage measures unit and integration projects together", () => {
     assert.ok(
       externalTypeScript.args.includes(join(root, "hrms_backend/scripts/db-migration-lib.ts")),
     );
+    assert.ok(externalTypeScript.args.includes("src/__tests__/qa-seed-safety.unit.test.ts"));
+    assert.ok(
+      externalTypeScript.args.includes(join(root, "hrms_backend/scripts/release-seed-support.ts")),
+    );
     const frontend = commands.find(({ args }) => args.includes("hrms-client") && args.includes("--coverage"));
     assert.ok(frontend, "frontend coverage command must emit trusted test results");
     assert.ok(frontend.args.includes("--reporter=json"));
