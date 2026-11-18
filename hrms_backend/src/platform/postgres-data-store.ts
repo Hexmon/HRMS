@@ -611,7 +611,6 @@ export async function createPostgresDataStore(
     }
     store.persistence = new PostgresPersistence(pool, store);
     await (store.persistence as PostgresPersistence).flushSeedSnapshot();
-    await (store.persistence as PostgresPersistence).flushInitialAssetSeed();
     await store.persistence.reload();
   }
 
@@ -623,42 +622,6 @@ class PostgresPersistence {
     private readonly pool: Pool,
     private readonly store: DataStore,
   ) {}
-
-  async flushInitialAssetSeed(): Promise<void> {
-    const client = await this.pool.connect();
-    let destroyClient = false;
-    try {
-      await client.query("BEGIN");
-      await client.query("SELECT pg_advisory_xact_lock(hashtext(current_database()), hashtext('hrms_asset_command'))");
-      const existing = await client.query<{ populated: boolean }>(`
-        SELECT EXISTS (
-          SELECT 1 FROM assets.assets UNION ALL
-          SELECT 1 FROM assets.asset_assignments UNION ALL
-          SELECT 1 FROM assets.asset_state_events UNION ALL
-          SELECT 1 FROM assets.asset_requests UNION ALL
-          SELECT 1 FROM assets.asset_acknowledgements UNION ALL
-          SELECT 1 FROM assets.asset_maintenance_records UNION ALL
-          SELECT 1 FROM assets.software_vendors UNION ALL
-          SELECT 1 FROM assets.software_products UNION ALL
-          SELECT 1 FROM assets.asset_recovery_tickets UNION ALL
-          SELECT 1 FROM assets.license_entitlements UNION ALL
-          SELECT 1 FROM assets.license_activations UNION ALL
-          SELECT 1 FROM assets.compromised_keys UNION ALL
-          SELECT 1 FROM assets.asset_command_results
-        ) AS populated`);
-      if (existing.rows[0]?.populated) {
-        throw new Error("Initial asset seed requires empty asset tables.");
-      }
-      await client.query("SELECT set_config('hrms.asset_writer_v2', 'on', true)");
-      await this.flushAssets(client, this.store);
-      await client.query("COMMIT");
-    } catch (error) {
-      destroyClient = await rollbackAssetTransaction(client);
-      throw error;
-    } finally {
-      client.release(destroyClient);
-    }
-  }
 
   async assetReadStore(baseStore?: DataStore): Promise<DataStore> {
     const sourceStore = baseStore ?? this.store;
@@ -1667,6 +1630,11 @@ class PostgresPersistence {
       await this.flushPlatform(client);
       await this.flushExpenses(client);
       await this.flushDocuments(client);
+      // Initial asset rows are part of the same seed transaction. The
+      // migration fence permits this trusted seed boundary only through a
+      // transaction-local writer marker.
+      await client.query("SELECT set_config('hrms.asset_writer_v2', 'on', true)");
+      await this.flushAssets(client, this.store);
       await this.flushTimesheets(client);
       await this.flushProjects(client);
       await this.flushHelpdesk(client);

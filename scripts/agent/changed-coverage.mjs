@@ -1800,6 +1800,19 @@ function validateQaSeedPhase(path, content) {
   requireSemanticText(path, content, /client\.end\(\)/, "QA seed phase must close its database client");
 }
 
+function validateFrontendContractRouteCoverageScript(path, content) {
+  requireSemanticText(path, content, /endsWith\(\"\.tsx\"\)\s*&&\s*!file\.endsWith\(\"\.test\.tsx\"\)/,
+    "frontend route coverage must exclude test route files");
+  requireSemanticText(path, content, /walk\(join\(root, \"src\"\)\)/,
+    "frontend route coverage must inspect the complete source tree");
+  requireSemanticText(path, content, /!\/\\\.test\\\.\(\?:ts\|tsx\)\$\/.test\(file\)/,
+    "frontend route coverage must exclude test modules from policy scanning");
+  requireSemanticText(path, content, /!file\.endsWith\(\"\.d\.ts\"\)/,
+    "frontend route coverage must exclude declaration files from policy scanning");
+  requireSemanticText(path, content, /!file\.endsWith\(\"routeTree\.gen\.ts\"\)/,
+    "frontend route coverage must exclude generated route trees");
+}
+
 export function validateSemanticPath(root, path, content, base) {
   switch (path) {
     case ".github/workflows/branch-ci-cd.yml": validateWorkflow(path, content, false); break;
@@ -1822,6 +1835,8 @@ export function validateSemanticPath(root, path, content, base) {
     case "hrms_backend/scripts/seed-qa.ts": validateQaSeedEntrypoint(path, content); break;
     case "hrms_backend/scripts/seed-qa-data.ts":
     case "hrms_backend/scripts/seed-release-data.ts": validateQaSeedPhase(path, content); break;
+    case "hrms-client/scripts/frontend-contract-route-coverage.mjs":
+      validateFrontendContractRouteCoverageScript(path, content); break;
     default: return null;
   }
   return `${path}: semantic contract passed`;
@@ -1848,6 +1863,7 @@ export const semanticCoveragePaths = new Set([
   "hrms_backend/scripts/seed-qa.ts",
   "hrms_backend/scripts/seed-qa-data.ts",
   "hrms_backend/scripts/seed-release-data.ts",
+  "hrms-client/scripts/frontend-contract-route-coverage.mjs",
 ]);
 
 export function verify(root, base, head, suitePaths = fullSuitePaths(coverageOutputRoot(root)), options = {}) {

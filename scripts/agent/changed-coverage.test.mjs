@@ -1441,8 +1441,20 @@ test("asset transaction migrations use append-only semantic contracts", () => {
   assert.match(validateSemanticPath("", "hrms_backend/src/db/migrations/0068_asset_transaction_fence.sql", fence, "base"), /semantic contract passed/);
   assert.match(validateSemanticPath("", "hrms_backend/src/db/migrations/0069_asset_recovery_assignment_identity.sql", recovery, "base"), /semantic contract passed/);
   assert.throws(() => validateSemanticPath("", "hrms_backend/src/db/migrations/0068_asset_transaction_fence.sql", fence.replace("asset_writer_v2", "wrong_marker"), "base"), /transaction-local writer marker/);
+  assert.throws(() => validateSemanticPath("", "hrms_backend/src/db/migrations/0068_asset_transaction_fence.sql", `${fence}\nBEGIN;`, "base"), /transaction ownership/);
   assert.throws(() => validateSemanticPath("", "hrms_backend/src/db/migrations/0069_asset_recovery_assignment_identity.sql", recovery.replace("HAVING count(*) = 1", "HAVING count(*) >= 0"), "base"), /unique history/);
   assert.throws(() => validateSemanticPath("", "hrms_backend/src/db/migrations/0069_asset_recovery_assignment_identity.sql", `${recovery}\nCOMMIT;`, "base"), /transaction ownership/);
+});
+
+test("frontend route coverage script has an explicit semantic contract", () => {
+  const path = "hrms-client/scripts/frontend-contract-route-coverage.mjs";
+  const root = process.cwd();
+  const content = readFileSync(join(root, path), "utf8");
+  assert.match(validateSemanticPath(root, path, content, "base"), /semantic contract passed/);
+  assert.throws(
+    () => validateSemanticPath(root, path, content.replace("!file.endsWith(\".d.ts\")", "file.endsWith(\".d.ts\")"), "base"),
+    /declaration files/,
+  );
 });
 
 test("semantic QA scripts are classified before generic external coverage", () => {
