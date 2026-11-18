@@ -114,6 +114,23 @@ describe("holiday ID tenant ownership", () => {
     })).resolves.toMatchObject({ request: { duration: 0.5 } });
   });
 
+  it("uses the default working week when the in-memory company profile is absent", async () => {
+    const store = createMemoryDataStore();
+    const employee = store.users.find((user) => user.employee_code === "E1")!;
+    const companyId = store.userSessionPreferences.find(
+      (row) => row.user_id === employee.id,
+    )!.company_id!;
+    store.companyProfiles = store.companyProfiles.filter((company) => company.id !== companyId);
+    const service = new LeaveWfhService(store);
+
+    await expect(service.createWfhRequest(employee, {
+      date_from: "2026-12-29",
+      date_to: "2026-12-29",
+      half_day: true,
+      reason: "Default calendar workday",
+    })).resolves.toMatchObject({ request: { duration: 0.5 } });
+  });
+
   it("fails closed when persistent calendar readers are incomplete", async () => {
     const store = createMemoryDataStore();
     const employee = store.users.find((user) => user.employee_code === "E1")!;

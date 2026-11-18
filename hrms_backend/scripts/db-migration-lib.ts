@@ -43,6 +43,7 @@ CREATE TABLE IF NOT EXISTS platform.schema_migrations (
 
 const LOCK_NAMESPACE = 76001;
 const LOCK_ID = 1002;
+
 const LEGACY_RUNNER_TRANSACTION_MIGRATIONS = new Map([
   [
     "0065",

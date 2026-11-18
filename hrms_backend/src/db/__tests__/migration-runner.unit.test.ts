@@ -145,6 +145,7 @@ describe("migration runner transaction ownership", () => {
   it.each([
     "SELECT 1; -- COMMIT;",
     "SELECT 1; /* ROLLBACK;",
+    "SELECT E'escaped\\",
     "SELECT $1;",
   ])("leaves other incomplete or parameter SQL for PostgreSQL validation: %s", (sql) => {
     const candidate = migration("0068", "0068_incomplete.sql", sql);

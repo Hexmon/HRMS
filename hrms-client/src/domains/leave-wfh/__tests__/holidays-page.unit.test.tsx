@@ -231,6 +231,10 @@ describe("holiday create form retry", () => {
     expect(
       holidayCursorFromHref("https://hrms.example/leave-wfh/holidays?month=invalid", today),
     ).toEqual({ y: today.getFullYear(), m: today.getMonth() });
+    expect(holidayCursorFromHref("https://hrms.example/leave-wfh/holidays", today)).toEqual({
+      y: today.getFullYear(),
+      m: today.getMonth(),
+    });
     expect(
       hrefWithHolidayCursor("https://hrms.example/leave-wfh/holidays", { y: 2026, m: 11 }).search,
     ).toBe("?month=2026-12");
@@ -277,6 +281,20 @@ describe("holiday create form retry", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Previous month" }));
     expect(screen.getByRole("heading", { name: "January 2027" })).toBeInTheDocument();
+  });
+
+  it("keeps calendar navigation usable without a router callback", () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-17T12:00:00.000Z"));
+    render(<HolidaysPage />);
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Calendar" }), {
+      button: 0,
+      ctrlKey: false,
+    });
+
+    expect(screen.getByRole("heading", { name: "November 2026" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Next month" }));
+    expect(screen.getByRole("heading", { name: "December 2026" })).toBeInTheDocument();
   });
 
   it("canonicalizes a missing routed month before rendering the calendar", async () => {
