@@ -1418,6 +1418,33 @@ test("signup employee-code allocation uses a runner-owned sequence isolated from
   );
 });
 
+test("asset transaction migrations use append-only semantic contracts", () => {
+  const fence = `
+    CREATE OR REPLACE FUNCTION assets.require_transactional_writer() RETURNS trigger AS $$
+    BEGIN
+      IF current_setting('hrms.asset_writer_v2', true) IS DISTINCT FROM 'on' THEN
+        RAISE EXCEPTION 'Asset writes require the transactional command boundary';
+      END IF;
+      RETURN NEW;
+    END; $$ LANGUAGE plpgsql;
+    CREATE TABLE IF NOT EXISTS assets.asset_command_results (id uuid PRIMARY KEY,
+      CONSTRAINT asset_command_results_scope_key_uq UNIQUE (company_id, actor_user_id, action_key, idempotency_key));
+    CREATE UNIQUE INDEX asset_assignments_one_active_per_asset_uq ON assets.asset_assignments(asset_id);
+    FOREACH table_name IN ARRAY ARRAY['assets','asset_assignments','asset_state_events','asset_requests','asset_acknowledgements','asset_maintenance_records','software_vendors','software_products','asset_recovery_tickets','license_entitlements','license_activations','compromised_keys','asset_command_results'] LOOP EXECUTE format('%s', table_name); END LOOP;`;
+  const recovery = `
+    ALTER TABLE assets.asset_recovery_tickets ADD COLUMN IF NOT EXISTS assignment_id uuid;
+    ADD CONSTRAINT asset_recovery_tickets_assignment_id_fkey FOREIGN KEY (assignment_id) REFERENCES assets.asset_assignments(id);
+    CREATE INDEX asset_recovery_tickets_assignment_idx ON assets.asset_recovery_tickets(assignment_id);
+    SET LOCAL hrms.asset_writer_v2 = 'on';
+    WITH unique_matches AS (SELECT ticket.id FROM assets.asset_recovery_tickets ticket GROUP BY ticket.id HAVING count(*) = 1)
+    UPDATE assets.asset_recovery_tickets SET assignment_id = unique_matches.id FROM unique_matches;`;
+  assert.match(validateSemanticPath("", "hrms_backend/src/db/migrations/0068_asset_transaction_fence.sql", fence, "base"), /semantic contract passed/);
+  assert.match(validateSemanticPath("", "hrms_backend/src/db/migrations/0069_asset_recovery_assignment_identity.sql", recovery, "base"), /semantic contract passed/);
+  assert.throws(() => validateSemanticPath("", "hrms_backend/src/db/migrations/0068_asset_transaction_fence.sql", fence.replace("asset_writer_v2", "wrong_marker"), "base"), /transaction-local writer marker/);
+  assert.throws(() => validateSemanticPath("", "hrms_backend/src/db/migrations/0069_asset_recovery_assignment_identity.sql", recovery.replace("HAVING count(*) = 1", "HAVING count(*) >= 0"), "base"), /unique history/);
+  assert.throws(() => validateSemanticPath("", "hrms_backend/src/db/migrations/0069_asset_recovery_assignment_identity.sql", `${recovery}\nCOMMIT;`, "base"), /transaction ownership/);
+});
+
 test("semantic QA scripts are classified before generic external coverage", () => {
   const root = mkdtempSync(join(tmpdir(), "hrms-coverage-semantic-external-"));
   roots.push(root);
