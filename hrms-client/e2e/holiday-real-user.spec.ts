@@ -335,7 +335,9 @@ async function addHoliday(
   await page.getByLabel("Name", { exact: true }).fill(input.name);
   await page.getByLabel("Date", { exact: true }).fill(input.date);
   await page.getByLabel("Region", { exact: true }).fill(input.region);
-  if (input.optional) await page.getByRole("switch").click();
+  if (input.optional) {
+    await page.getByRole("switch", { name: "Optional holiday" }).click();
+  }
   const response = page.waitForResponse(
     (candidate) =>
       /\/api\/v1\/holidays\/[^/]+$/.test(new URL(candidate.url()).pathname) &&

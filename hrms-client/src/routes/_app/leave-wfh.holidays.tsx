@@ -396,7 +396,11 @@ export function HolidaysPage() {
                 Employees can choose whether to take it.
               </p>
             </div>
-            <Switch checked={optional} onCheckedChange={setOptional} />
+            <Switch
+              aria-label="Optional holiday"
+              checked={optional}
+              onCheckedChange={setOptional}
+            />
           </div>
         </div>
       </Modal>

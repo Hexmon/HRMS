@@ -127,10 +127,12 @@ describe("holiday create form retry", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add holiday" }));
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Founders Day" } });
     fireEvent.change(screen.getByLabelText("Date"), { target: { value: "2026-12-26" } });
+    fireEvent.click(screen.getByRole("switch", { name: "Optional holiday" }));
     fireEvent.click(screen.getByRole("button", { name: /^Add$/ }));
 
     await waitFor(() => expect(mock.mutateAsync).toHaveBeenCalledTimes(1));
     expect(mock.mutateAsync.mock.calls[0]?.[0].input.region).toBe("All");
+    expect(mock.mutateAsync.mock.calls[0]?.[0].input.optional).toBe(true);
   });
 
   it("keeps date-only holidays in their calendar month across local time zones", () => {
