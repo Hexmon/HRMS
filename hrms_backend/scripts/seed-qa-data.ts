@@ -60,11 +60,15 @@ const ids = {
 };
 
 const client = new Client({ connectionString: requireEnv("DATABASE_URL") });
-await client.connect();
-await verifyQaSeedDatabaseIdentity(client, process.env);
+let connected = false;
+let transactionStarted = false;
 
 try {
+  await client.connect();
+  connected = true;
+  await verifyQaSeedDatabaseIdentity(client, process.env);
   await client.query("BEGIN");
+  transactionStarted = true;
   const defaultCompanyId = await ensureQaAdminCompanyContext(client, {
     adminUserId: seedIds.admin,
     companyId: ids.companyDefault,
@@ -343,10 +347,16 @@ try {
   );
 
   await client.query("COMMIT");
+  transactionStarted = false;
 } catch (error) {
-  await rethrowAfterQaSeedRollback(client, error);
+  if (transactionStarted) {
+    await rethrowAfterQaSeedRollback(client, error);
+  }
+  throw error;
 } finally {
-  await client.end();
+  if (connected) {
+    await client.end();
+  }
 }
 
 const result = {
