@@ -45,14 +45,111 @@ const LOCK_NAMESPACE = 76001;
 const LOCK_ID = 1002;
 const LEGACY_RUNNER_TRANSACTION_MIGRATIONS = new Map([
   [
-    "0065",
+    "0065_holiday_company_unique_constraint.sql",
     "231b5a18f0d0eab8b94c8b7aec8c55fdf92fccdf97f4160c648a36a4f0cf5408",
   ],
 ]);
 
+function maskSqlFragment(fragment: string): string {
+  return fragment.replace(/[^\n]/gu, " ");
+}
+
+function sqlCodeOnly(sql: string): string {
+  let code = "";
+  let cursor = 0;
+
+  while (cursor < sql.length) {
+    if (sql.startsWith("--", cursor)) {
+      const lineEnd = sql.indexOf("\n", cursor + 2);
+      const end = lineEnd < 0 ? sql.length : lineEnd;
+      code += maskSqlFragment(sql.slice(cursor, end));
+      cursor = end;
+      continue;
+    }
+
+    if (sql.startsWith("/*", cursor)) {
+      let depth = 1;
+      let end = cursor + 2;
+      while (end < sql.length && depth > 0) {
+        if (sql.startsWith("/*", end)) {
+          depth += 1;
+          end += 2;
+        } else if (sql.startsWith("*/", end)) {
+          depth -= 1;
+          end += 2;
+        } else {
+          end += 1;
+        }
+      }
+      code += maskSqlFragment(sql.slice(cursor, end));
+      cursor = end;
+      continue;
+    }
+
+    const dollarTag = sql.slice(cursor).match(/^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/u)?.[0];
+    if (dollarTag) {
+      const closingIndex = sql.indexOf(dollarTag, cursor + dollarTag.length);
+      if (closingIndex < 0) {
+        throw new Error("Migration SQL contains an unterminated dollar-quoted body");
+      }
+      const end = closingIndex + dollarTag.length;
+      code += maskSqlFragment(sql.slice(cursor, end));
+      cursor = end;
+      continue;
+    }
+
+    const quotePrefix = sql.slice(cursor).match(/^(?:[Ee]|[Uu]&)?'/u)?.[0];
+    if (quotePrefix) {
+      let end = cursor + quotePrefix.length;
+      while (end < sql.length) {
+        if (sql[end] === "'" && sql[end + 1] === "'") {
+          end += 2;
+        } else if (sql[end] === "'") {
+          end += 1;
+          break;
+        } else if (sql[end] === "\\" && quotePrefix.toLowerCase() === "e'") {
+          end += 2;
+        } else {
+          end += 1;
+        }
+      }
+      code += maskSqlFragment(sql.slice(cursor, end));
+      cursor = end;
+      continue;
+    }
+
+    if (sql[cursor] === '"') {
+      let end = cursor + 1;
+      while (end < sql.length) {
+        if (sql[end] === '"' && sql[end + 1] === '"') {
+          end += 2;
+        } else if (sql[end] === '"') {
+          end += 1;
+          break;
+        } else {
+          end += 1;
+        }
+      }
+      code += maskSqlFragment(sql.slice(cursor, end));
+      cursor = end;
+      continue;
+    }
+
+    code += sql[cursor];
+    cursor += 1;
+  }
+
+  return code;
+}
+
+function containsTopLevelTransactionControl(sql: string): boolean {
+  const code = sqlCodeOnly(sql);
+  return /(?:^|;)\s*(?:BEGIN\b|START\s+TRANSACTION\b|COMMIT\b|END\b|ROLLBACK\b|ABORT\b|SAVEPOINT\b|RELEASE(?:\s+SAVEPOINT)?\b|PREPARE\s+TRANSACTION\b|SET\s+TRANSACTION\b)/imu.test(code);
+}
+
 export function migrationExecutionSql(migration: MigrationFile): string {
   const standaloneTransaction = /^\s*(?:BEGIN|COMMIT)\s*;\s*$/gimu;
-  const expectedLegacyChecksum = LEGACY_RUNNER_TRANSACTION_MIGRATIONS.get(migration.id);
+  const expectedLegacyChecksum = LEGACY_RUNNER_TRANSACTION_MIGRATIONS.get(migration.filename);
   if (expectedLegacyChecksum === migration.checksumSha256) {
     const transactionStatements = migration.sql.match(standaloneTransaction) ?? [];
     if (transactionStatements.length !== 2 || !/^\s*BEGIN/im.test(transactionStatements[0] ?? "") || !/^\s*COMMIT/im.test(transactionStatements[1] ?? "")) {
@@ -60,7 +157,7 @@ export function migrationExecutionSql(migration: MigrationFile): string {
     }
     return migration.sql.replace(standaloneTransaction, "").trimStart();
   }
-  if (standaloneTransaction.test(migration.sql)) {
+  if (containsTopLevelTransactionControl(migration.sql)) {
     throw new Error(
       `Migration ${migration.filename} must leave transaction ownership to the migration runner`,
     );

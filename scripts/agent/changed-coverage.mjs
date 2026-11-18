@@ -985,7 +985,9 @@ export function runFullCoverageWorker(root, outputRoot, expectedHead, tools, run
     "--coverage", "--coverage.allowExternal=true", ...includes.flatMap((path) => ["--coverage.include", resolve(root, path)]),
     "--coverage.reporter=text", "--coverage.reporter=json", `--coverage.reportsDirectory=${typescriptReport}`], {}, ["NODE_V8_COVERAGE"]);
   execute("backend unit and integration coverage", tools.pnpm, ["--dir", "hrms_backend", "exec", "vitest", "run",
-    "--project", "unit", "--project", "integration", "--coverage", "--coverage.reporter=json",
+    "--project", "unit", "--project", "integration", "--coverage", "--coverage.allowExternal=true",
+    "--coverage.include=src/**/*.{ts,tsx}", `--coverage.include=${resolve(root, "hrms_backend/scripts/db-migration-lib.ts")}`,
+    "--coverage.reporter=json",
     `--coverage.reportsDirectory=${dirname(coverageArtifactPath(root, "backend"))}`], {}, ["NODE_V8_COVERAGE"]);
   execute("frontend coverage", tools.pnpm, ["--dir", "hrms-client", "exec", "vitest", "run", "--coverage", "--coverage.reporter=json", `--coverage.reportsDirectory=${dirname(coverageArtifactPath(root, "frontend"))}`], {}, ["NODE_V8_COVERAGE"]);
   return completed;
