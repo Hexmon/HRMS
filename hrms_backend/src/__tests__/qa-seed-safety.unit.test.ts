@@ -38,7 +38,7 @@ describe("QA seed target guard", () => {
   });
 
   it.each([
-    [{ ...safe, APP_ENV: "production" }, /only isolated local\/development or QA/],
+    [{ ...safe, APP_ENV: "production" }, /only isolated local or QA/],
     [{ ...safe, HRMS_QA_SEED_ALLOW: undefined }, /explicit mutation opt-in/],
     [{ ...safe, HRMS_QA_SEED_CONFIRM_DATABASE: "another_database" }, /exactly match/],
     [{ ...safe, DATABASE_URL: "postgresql://qa:sample@db.example/hrms_holiday_qa" }, /refused remote database/],
@@ -640,7 +640,7 @@ describe("QA seed target guard", () => {
           extrasSeed: async () => calls.push("extras"),
         },
       ),
-    ).rejects.toThrow(/only isolated local\/development or QA/);
+    ).rejects.toThrow(/only isolated local or QA/);
     expect(calls).toEqual([]);
   });
 

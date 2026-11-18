@@ -75,7 +75,7 @@ export function requireQaSeedTarget(env: QaSeedEnvironment): URL {
   const appEnv = env.APP_ENV ?? (env.NODE_ENV === "production" ? "production" : "local");
   if (!new Set(["local", "development", "qa"]).has(appEnv)) {
     throw new Error(
-      `QA seed refused APP_ENV=${appEnv}; only isolated local/development or QA targets are allowed.`,
+      `QA seed refused APP_ENV=${appEnv}; only isolated local or QA targets are allowed (development targets must be local).`,
     );
   }
   if (env.HRMS_QA_SEED_ALLOW !== "true") {
