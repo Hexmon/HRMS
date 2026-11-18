@@ -1623,8 +1623,31 @@ class PostgresPersistence {
   /** Initial empty-database seed only. Runtime snapshot flushes must never own master data. */
   async flushSeedSnapshot(): Promise<void> {
     const client = await this.pool.connect();
+    let destroyClient = false;
     try {
       await client.query("BEGIN");
+      await client.query(
+        "SELECT pg_advisory_xact_lock(hashtext(current_database()), hashtext('hrms_asset_command'))",
+      );
+      const existingAssets = await client.query<{ populated: boolean }>(`
+        SELECT EXISTS (
+          SELECT 1 FROM assets.assets UNION ALL
+          SELECT 1 FROM assets.asset_assignments UNION ALL
+          SELECT 1 FROM assets.asset_state_events UNION ALL
+          SELECT 1 FROM assets.asset_requests UNION ALL
+          SELECT 1 FROM assets.asset_acknowledgements UNION ALL
+          SELECT 1 FROM assets.asset_maintenance_records UNION ALL
+          SELECT 1 FROM assets.software_vendors UNION ALL
+          SELECT 1 FROM assets.software_products UNION ALL
+          SELECT 1 FROM assets.asset_recovery_tickets UNION ALL
+          SELECT 1 FROM assets.license_entitlements UNION ALL
+          SELECT 1 FROM assets.license_activations UNION ALL
+          SELECT 1 FROM assets.compromised_keys UNION ALL
+          SELECT 1 FROM assets.asset_command_results
+        ) AS populated`);
+      if (existingAssets.rows[0]?.populated) {
+        throw new Error("Initial asset seed requires empty asset tables.");
+      }
       await this.flushCoreMasterData(client, new Set(this.store.companyProfiles.map((company) => company.id)), true);
       await this.flushCore(client);
       await this.flushPlatform(client);
@@ -1643,10 +1666,10 @@ class PostgresPersistence {
       await this.flushEms(client);
       await client.query("COMMIT");
     } catch (error) {
-      await client.query("ROLLBACK").catch(Boolean);
+      destroyClient = await rollbackAssetTransaction(client);
       throw error;
     } finally {
-      client.release();
+      client.release(destroyClient);
     }
   }
 

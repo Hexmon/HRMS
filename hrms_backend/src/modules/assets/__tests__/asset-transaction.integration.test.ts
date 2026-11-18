@@ -783,12 +783,12 @@ describe("asset transaction boundary", () => {
 
   it("rolls back failed snapshot reads and refuses a second initial asset seed", async () => {
     const persistence = first.store.persistence as typeof first.store.persistence & {
-      flushInitialAssetSeed(): Promise<void>;
+      flushSeedSnapshot(): Promise<void>;
     };
-    if (!persistence?.assetReadStore || !persistence.flushInitialAssetSeed) {
+    if (!persistence?.assetReadStore || !persistence.flushSeedSnapshot) {
       throw new Error("Expected PostgreSQL asset persistence");
     }
-    await expect(persistence.flushInitialAssetSeed())
+    await expect(persistence.flushSeedSnapshot())
       .rejects.toThrow(/requires empty asset tables/u);
 
     const pool = first.store.pgPool!;
@@ -819,9 +819,9 @@ describe("asset transaction boundary", () => {
     const manager = await loginAs(first, "AST");
     const employee = await loginAs(first, "E1");
     const persistence = first.store.persistence as typeof first.store.persistence & {
-      flushInitialAssetSeed(): Promise<void>;
+      flushSeedSnapshot(): Promise<void>;
     };
-    if (!persistence?.assetReadStore || !persistence.flushInitialAssetSeed) {
+    if (!persistence?.assetReadStore || !persistence.flushSeedSnapshot) {
       throw new Error("Expected PostgreSQL asset persistence");
     }
     const pool = first.store.pgPool!;
@@ -853,7 +853,7 @@ describe("asset transaction boundary", () => {
     };
 
     let spy = interceptNextClient();
-    await expect(persistence.flushInitialAssetSeed()).rejects.toThrow(/requires empty asset tables/u);
+    await expect(persistence.flushSeedSnapshot()).rejects.toThrow(/requires empty asset tables/u);
     spy.mockRestore();
 
     spy = interceptNextClient((sql) => sql.includes("FROM assets.assets")
