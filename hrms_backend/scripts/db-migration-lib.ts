@@ -45,123 +45,149 @@ const LOCK_NAMESPACE = 76001;
 const LOCK_ID = 1002;
 const LEGACY_RUNNER_TRANSACTION_MIGRATIONS = new Map([
   [
-    "0065_holiday_company_unique_constraint.sql",
-    "231b5a18f0d0eab8b94c8b7aec8c55fdf92fccdf97f4160c648a36a4f0cf5408",
+    "0065",
+    {
+      filename: "0065_holiday_company_unique_constraint.sql",
+      checksumSha256:
+        "231b5a18f0d0eab8b94c8b7aec8c55fdf92fccdf97f4160c648a36a4f0cf5408",
+    },
   ],
 ]);
 
-function maskSqlFragment(fragment: string): string {
-  return fragment.replace(/[^\n]/gu, " ");
-}
-
-function sqlCodeOnly(sql: string): string {
-  let code = "";
+function maskPostgresNonCode(sql: string): string {
+  let masked = "";
   let cursor = 0;
+
+  const maskCharacter = (character: string): string =>
+    character === "\n" || character === "\r" ? character : " ";
+
+  const maskRange = (end: number): void => {
+    while (cursor < end) {
+      masked += maskCharacter(sql[cursor]!);
+      cursor += 1;
+    }
+  };
 
   while (cursor < sql.length) {
     if (sql.startsWith("--", cursor)) {
       const lineEnd = sql.indexOf("\n", cursor + 2);
-      const end = lineEnd < 0 ? sql.length : lineEnd;
-      code += maskSqlFragment(sql.slice(cursor, end));
-      cursor = end;
+      maskRange(lineEnd < 0 ? sql.length : lineEnd);
       continue;
     }
 
     if (sql.startsWith("/*", cursor)) {
       let depth = 1;
-      let end = cursor + 2;
-      while (end < sql.length && depth > 0) {
-        if (sql.startsWith("/*", end)) {
+      let commentEnd = cursor + 2;
+      while (commentEnd < sql.length && depth > 0) {
+        if (sql.startsWith("/*", commentEnd)) {
           depth += 1;
-          end += 2;
-        } else if (sql.startsWith("*/", end)) {
+          commentEnd += 2;
+        } else if (sql.startsWith("*/", commentEnd)) {
           depth -= 1;
-          end += 2;
+          commentEnd += 2;
         } else {
-          end += 1;
+          commentEnd += 1;
         }
       }
-      code += maskSqlFragment(sql.slice(cursor, end));
-      cursor = end;
-      continue;
-    }
-
-    const dollarTag = sql.slice(cursor).match(/^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/u)?.[0];
-    if (dollarTag) {
-      const closingIndex = sql.indexOf(dollarTag, cursor + dollarTag.length);
-      if (closingIndex < 0) {
-        throw new Error("Migration SQL contains an unterminated dollar-quoted body");
-      }
-      const end = closingIndex + dollarTag.length;
-      code += maskSqlFragment(sql.slice(cursor, end));
-      cursor = end;
+      maskRange(commentEnd);
       continue;
     }
 
     const quotePrefix = sql.slice(cursor).match(/^(?:[Ee]|[Uu]&)?'/u)?.[0];
     if (quotePrefix) {
-      let end = cursor + quotePrefix.length;
-      while (end < sql.length) {
-        if (sql[end] === "'" && sql[end + 1] === "'") {
-          end += 2;
-        } else if (sql[end] === "'") {
-          end += 1;
-          break;
-        } else if (sql[end] === "\\" && quotePrefix.toLowerCase() === "e'") {
-          end += 2;
-        } else {
-          end += 1;
+      maskRange(cursor + quotePrefix.length);
+      while (cursor < sql.length) {
+        const quotedCharacter = sql[cursor]!;
+        masked += maskCharacter(quotedCharacter);
+        cursor += 1;
+        if (quotedCharacter === "\\" && quotePrefix.toLowerCase() === "e'") {
+          if (cursor < sql.length) {
+            masked += maskCharacter(sql[cursor]!);
+            cursor += 1;
+          }
+          continue;
         }
+        if (quotedCharacter !== "'") {
+          continue;
+        }
+        if (sql[cursor] === "'") {
+          masked += " ";
+          cursor += 1;
+          continue;
+        }
+        break;
       }
-      code += maskSqlFragment(sql.slice(cursor, end));
-      cursor = end;
       continue;
     }
 
     if (sql[cursor] === '"') {
-      let end = cursor + 1;
-      while (end < sql.length) {
-        if (sql[end] === '"' && sql[end + 1] === '"') {
-          end += 2;
-        } else if (sql[end] === '"') {
-          end += 1;
-          break;
-        } else {
-          end += 1;
+      masked += " ";
+      cursor += 1;
+      while (cursor < sql.length) {
+        const quotedCharacter = sql[cursor]!;
+        masked += maskCharacter(quotedCharacter);
+        cursor += 1;
+        if (quotedCharacter !== '"') {
+          continue;
         }
+        if (sql[cursor] === '"') {
+          masked += " ";
+          cursor += 1;
+          continue;
+        }
+        break;
       }
-      code += maskSqlFragment(sql.slice(cursor, end));
-      cursor = end;
       continue;
     }
 
-    code += sql[cursor];
+    if (sql[cursor] === "$") {
+      const delimiter = sql.slice(cursor).match(/^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/u)?.[0];
+      if (delimiter) {
+        const bodyEnd = sql.indexOf(delimiter, cursor + delimiter.length);
+        if (bodyEnd < 0) {
+          throw new Error("Migration SQL contains an unterminated dollar-quoted body");
+        }
+        maskRange(bodyEnd + delimiter.length);
+        continue;
+      }
+    }
+
+    masked += sql[cursor];
     cursor += 1;
   }
 
-  return code;
+  return masked;
 }
 
 function containsTopLevelTransactionControl(sql: string): boolean {
-  const code = sqlCodeOnly(sql);
-  return /(?:^|;)\s*(?:BEGIN\b|START\s+TRANSACTION\b|COMMIT\b|END\b|ROLLBACK\b|ABORT\b|SAVEPOINT\b|RELEASE(?:\s+SAVEPOINT)?\b|PREPARE\s+TRANSACTION\b|SET\s+TRANSACTION\b)/imu.test(code);
+  const executableSql = maskPostgresNonCode(sql);
+  const transactionControl = /(?:^|;)\s*(?:BEGIN\b|START\s+TRANSACTION\b|COMMIT\b|END\b|ROLLBACK\b|ABORT\b|SAVEPOINT\b|RELEASE(?:\s+SAVEPOINT)?\b|PREPARE\s+TRANSACTION\b|SET\s+TRANSACTION\b)/iu;
+  return transactionControl.test(executableSql);
 }
 
 export function migrationExecutionSql(migration: MigrationFile): string {
-  const standaloneTransaction = /^\s*(?:BEGIN|COMMIT)\s*;\s*$/gimu;
-  const expectedLegacyChecksum = LEGACY_RUNNER_TRANSACTION_MIGRATIONS.get(migration.filename);
-  if (expectedLegacyChecksum === migration.checksumSha256) {
-    const transactionStatements = migration.sql.match(standaloneTransaction) ?? [];
-    if (transactionStatements.length !== 2 || !/^\s*BEGIN/im.test(transactionStatements[0] ?? "") || !/^\s*COMMIT/im.test(transactionStatements[1] ?? "")) {
-      throw new Error(`Legacy migration ${migration.filename} no longer has its reviewed transaction wrapper`);
-    }
-    return migration.sql.replace(standaloneTransaction, "").trimStart();
+  const calculatedChecksum = checksumSql(migration.sql);
+  if (calculatedChecksum !== migration.checksumSha256) {
+    throw new Error(
+      `Migration ${migration.filename} checksum does not match its SQL content`,
+    );
   }
+
+  const legacy = LEGACY_RUNNER_TRANSACTION_MIGRATIONS.get(migration.id);
+  if (
+    legacy?.filename === migration.filename &&
+    legacy.checksumSha256 === migration.checksumSha256
+  ) {
+    const standaloneWrapper = /^[ \t]*(BEGIN|COMMIT)[ \t]*;[ \t]*$/gimu;
+    return migration.sql.replace(standaloneWrapper, "");
+  }
+
   if (containsTopLevelTransactionControl(migration.sql)) {
     throw new Error(
       `Migration ${migration.filename} must leave transaction ownership to the migration runner`,
     );
   }
+
   return migration.sql;
 }
 
@@ -360,8 +386,12 @@ export async function applyPendingMigrations(
   migrations: MigrationFile[],
 ): Promise<number> {
   let appliedCount = 0;
+  const executionPlan = migrations.map((migration) => ({
+    migration,
+    sql: migrationExecutionSql(migration),
+  }));
 
-  for (const migration of migrations) {
+  for (const { migration, sql } of executionPlan) {
     const startedAt = Date.now();
 
     console.log(`Applying migration ${migration.filename}`);
@@ -369,7 +399,7 @@ export async function applyPendingMigrations(
     await client.query("BEGIN");
 
     try {
-      await client.query(migrationExecutionSql(migration));
+      await client.query(sql);
 
       const executionTimeMs = Date.now() - startedAt;
 

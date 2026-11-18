@@ -511,6 +511,14 @@ export function stampReport(root, packageName) {
     sourceDigest: sourceDigest(root, packageName),
     reportDigest: createHash("sha256").update(readFileSync(reportPath)).digest("hex"),
   };
+  const suitePaths = fullSuitePaths(coverageOutputRoot(root));
+  const testResultPath = packageName === "backend" ? suitePaths.backendTestResults : suitePaths.frontendTestResults;
+  if (existsSync(testResultPath)) {
+    const safeResultPath = assertExternalArtifact(root, testResultPath, `${packageName} test result`);
+    const rawTestResults = readFileSync(safeResultPath);
+    parsePassedTestResults(root, head, packageName, rawTestResults.toString("utf8"));
+    stamp.testResultsDigest = createHash("sha256").update(rawTestResults).digest("hex");
+  }
   const stampPath = assertExternalArtifactDestination(root, join(dirname(reportPath), "coverage-stamp.json"), `${packageName} stamp`);
   writeFileSync(stampPath, `${JSON.stringify(stamp, null, 2)}\n`);
   return stamp;
@@ -696,6 +704,8 @@ function fullSuitePaths(outputRoot) {
     pythonData: join(externalInput, "python.data"),
     pythonJson: join(externalInput, "python.json"),
     typescriptReport: join(externalInput, "typescript"),
+    backendTestResults: join(externalInput, "backend-tests.json"),
+    frontendTestResults: join(externalInput, "frontend-tests.json"),
   };
 }
 
@@ -955,7 +965,7 @@ function replaceProcessEnvironment(environment) {
 export function runFullCoverageWorker(root, outputRoot, expectedHead, tools, runCommand = execFileSync) {
   const guard = (phase) => assertExactCleanCommit(root, expectedHead, `full coverage worker ${phase}`);
   guard("entry");
-  const { resolverV8, gateV8, pythonData, pythonJson, typescriptReport } = fullSuitePaths(outputRoot);
+  const { resolverV8, gateV8, pythonData, pythonJson, typescriptReport, backendTestResults, frontendTestResults } = fullSuitePaths(outputRoot);
   for (const directory of [resolverV8, gateV8, typescriptReport, process.env.HOME, process.env.XDG_CONFIG_HOME, process.env.XDG_CACHE_HOME]) {
     if (directory) mkdirSync(directory, { recursive: true });
   }
@@ -974,22 +984,26 @@ export function runFullCoverageWorker(root, outputRoot, expectedHead, tools, run
   execute("Python report", tools.python, ["-m", "coverage", "json", "--pretty-print", "--include=scripts/agent/assert-disposable-test-db.py,scripts/agent/validate-doc-references.py", "-o", pythonJson], { COVERAGE_FILE: pythonData }, ["NODE_V8_COVERAGE"]);
   execute("agent setup validation", tools.bash, ["scripts/agent/validate-agent-setup.sh"], {}, ["NODE_V8_COVERAGE"]);
   const includes = [
+    "hrms_backend/scripts/db-migration-lib.ts",
     "hrms_backend/scripts/lib.ts",
     "qa-artifacts/hrms/discovery-2026-11-09/admin-settings-cross-company-probe.ts",
     "qa-artifacts/hrms/discovery-2026-11-09/disposable-probe-guard.ts",
     "qa-artifacts/hrms/discovery-2026-11-09/multi-instance-asset-probe.ts",
     "qa-artifacts/hrms/discovery-2026-11-09/tenant-boundary-probe.ts",
   ];
-  execute("isolated TypeScript tests", tools.pnpm, ["--dir", "hrms_backend", "exec", "vitest", "run", "--project", "unit",
+  execute("isolated TypeScript tests", tools.pnpm, ["--dir", "hrms_backend", "exec", "vitest", "run",
+    "--project", "unit", "--project", "integration",
     "src/__tests__/discovery-probes.unit.test.ts", "src/__tests__/disposable-probe-guard.unit.test.ts", "src/__tests__/walk-files.unit.test.ts",
+    "src/db/__tests__/migration-runner.unit.test.ts", "src/db/__tests__/migration-runner.integration.test.ts",
     "--coverage", "--coverage.allowExternal=true", ...includes.flatMap((path) => ["--coverage.include", resolve(root, path)]),
     "--coverage.reporter=text", "--coverage.reporter=json", `--coverage.reportsDirectory=${typescriptReport}`], {}, ["NODE_V8_COVERAGE"]);
   execute("backend unit and integration coverage", tools.pnpm, ["--dir", "hrms_backend", "exec", "vitest", "run",
-    "--project", "unit", "--project", "integration", "--coverage", "--coverage.allowExternal=true",
-    "--coverage.include=src/**/*.{ts,tsx}", `--coverage.include=${resolve(root, "hrms_backend/scripts/db-migration-lib.ts")}`,
-    "--coverage.reporter=json",
-    `--coverage.reportsDirectory=${dirname(coverageArtifactPath(root, "backend"))}`], {}, ["NODE_V8_COVERAGE"]);
-  execute("frontend coverage", tools.pnpm, ["--dir", "hrms-client", "exec", "vitest", "run", "--coverage", "--coverage.reporter=json", `--coverage.reportsDirectory=${dirname(coverageArtifactPath(root, "frontend"))}`], {}, ["NODE_V8_COVERAGE"]);
+    "--project", "unit", "--project", "integration", "--coverage", "--coverage.reporter=json",
+    `--coverage.reportsDirectory=${dirname(coverageArtifactPath(root, "backend"))}`,
+    "--reporter=json", `--outputFile=${backendTestResults}`], {}, ["NODE_V8_COVERAGE"]);
+  execute("frontend coverage", tools.pnpm, ["--dir", "hrms-client", "exec", "vitest", "run", "--coverage", "--coverage.reporter=json",
+    `--coverage.reportsDirectory=${dirname(coverageArtifactPath(root, "frontend"))}`,
+    "--reporter=json", `--outputFile=${frontendTestResults}`], {}, ["NODE_V8_COVERAGE"]);
   return completed;
 }
 
@@ -1337,6 +1351,204 @@ function semanticFailure(path, message) {
   throw new Error(`${path}: ${message}`);
 }
 
+/*
+ * Runtime deletion has no new executable line that a numeric coverage engine
+ * can attribute. A trusted validator may therefore recognize only a reviewed,
+ * immutable removal contract. The contract is deliberately kept in validator
+ * source (rather than a candidate-supplied JSON/CLI input) and is bound to the
+ * exact removal signature, old/new Git blobs and exact regression-test blobs.
+ * An unrelated edit, moved hunk, weakened test or unknown removal remains red.
+ */
+export const trustedRemovalContracts = Object.freeze([]);
+
+export function parseCommitFileIdentity(path, label, output) {
+  if (!output) return null;
+  const entries = output.split("\0").filter(Boolean);
+  if (entries.length !== 1) semanticFailure(path, `${label} resolved to ${entries.length} Git entries`);
+  const match = /^(100644|100755) blob ([0-9a-f]{40})\t(.+)$/.exec(entries[0]);
+  if (!match || match[3] !== path) semanticFailure(path, `${label} is not one canonical regular Git file`);
+  return { mode: match[1], blob: match[2] };
+}
+
+function commitFileIdentity(root, revision, path, label) {
+  return parseCommitFileIdentity(path, label, git(root, "ls-tree", "-z", revision, "--", `:(literal)${path}`));
+}
+
+function validCanonicalRepoPath(path) {
+  return typeof path === "string" && path.length > 0 && !isAbsolute(path) && !/[\\\u0000-\u001f\u007f]/u.test(path) &&
+    path.split("/").every((part) => part && part !== "." && part !== "..");
+}
+
+function regressionSuiteForPath(path) {
+  if (/^hrms_backend\/src\/.*\.(?:unit|integration)\.test\.ts$/u.test(path)) return "backend";
+  if (/^hrms-client\/src\/.*\.unit\.test\.tsx?$/u.test(path)) return "frontend";
+  return null;
+}
+
+function validRegressionPath(path) {
+  return validCanonicalRepoPath(path) && regressionSuiteForPath(path) !== null;
+}
+
+export function parsePassedTestResults(root, head, suite, content) {
+  if (suite !== "backend" && suite !== "frontend") throw new Error(`Unsupported passed-test suite: ${suite}`);
+  const parsed = parseJsonSemantic(`${suite} test results`, content);
+  if (!Array.isArray(parsed.testResults)) throw new Error(`${suite} test results: testResults must be an array`);
+  if (parsed.success !== true) throw new Error(`${suite} test results: run must report success`);
+  const countNames = ["numTotalTestSuites", "numPassedTestSuites", "numFailedTestSuites", "numPendingTestSuites",
+    "numTotalTests", "numPassedTests", "numFailedTests", "numPendingTests", "numTodoTests"];
+  for (const count of countNames) {
+    if (!Number.isSafeInteger(parsed[count]) || parsed[count] < 0) {
+      throw new Error(`${suite} test results: ${count} must be a non-negative integer`);
+    }
+  }
+  if (parsed.numTotalTestSuites < 1 || parsed.numTotalTests < 1 || parsed.testResults.length < 1 ||
+      parsed.numPassedTestSuites + parsed.numFailedTestSuites + parsed.numPendingTestSuites !== parsed.numTotalTestSuites ||
+      parsed.numPassedTests + parsed.numFailedTests + parsed.numPendingTests + parsed.numTodoTests !== parsed.numTotalTests) {
+    throw new Error(`${suite} test results: run summary counts are inconsistent or empty`);
+  }
+  if (parsed.numFailedTestSuites !== 0 || parsed.numPendingTestSuites !== 0 ||
+      parsed.numFailedTests !== 0 || parsed.numPendingTests !== 0 || parsed.numTodoTests !== 0) {
+    throw new Error(`${suite} test results: failed, skipped, pending or todo results are not trusted evidence`);
+  }
+  const passed = new Map();
+  const seenPaths = new Set();
+  const passedSuites = new Set();
+  let passedAssertions = 0;
+  for (const result of parsed.testResults) {
+    if (!result || typeof result.name !== "string" || !isAbsolute(result.name)) {
+      throw new Error(`${suite} test results: test file path must be absolute`);
+    }
+    const path = relative(root, result.name).replaceAll("\\", "/");
+    if (!validRegressionPath(path) || regressionSuiteForPath(path) !== suite) {
+      throw new Error(`${suite} test results: path is outside the trusted suite selector: ${path}`);
+    }
+    if (seenPaths.has(path)) throw new Error(`${suite} test results: duplicate file result for ${path}`);
+    seenPaths.add(path);
+    passedSuites.add(`${path}\0`);
+    const assertions = Array.isArray(result.assertionResults) ? result.assertionResults : [];
+    if (result.status !== "passed" || assertions.length === 0 || assertions.some((assertion) => assertion?.status !== "passed")) {
+      throw new Error(`${suite} test results: each test file must contain only passed assertions: ${path}`);
+    }
+    for (const assertion of assertions) {
+      if (!Array.isArray(assertion.ancestorTitles) ||
+          assertion.ancestorTitles.some((title) => typeof title !== "string" || title.length === 0)) {
+        throw new Error(`${suite} test results: assertion suite ancestry is malformed: ${path}`);
+      }
+      const ancestry = [];
+      for (const title of assertion.ancestorTitles) {
+        ancestry.push(title);
+        passedSuites.add(`${path}\0${JSON.stringify(ancestry)}`);
+      }
+    }
+    const identity = commitFileIdentity(root, head, path, `${suite} passed test`);
+    if (!identity || identity.mode !== "100644") throw new Error(`${suite} test results: test source is not a regular Git file: ${path}`);
+    passed.set(path, { suite, blob: identity.blob, passedAssertions: assertions.length });
+    passedAssertions += assertions.length;
+  }
+  if (passedAssertions !== parsed.numPassedTests || passedAssertions !== parsed.numTotalTests) {
+    throw new Error(`${suite} test results: assertion totals do not match the run summary`);
+  }
+  if (passedSuites.size !== parsed.numPassedTestSuites || passedSuites.size !== parsed.numTotalTestSuites) {
+    throw new Error(`${suite} test results: suite totals do not match file and assertion ancestry`);
+  }
+  return passed;
+}
+
+function readPassedTestResults(root, head, suitePaths) {
+  const combined = new Map();
+  for (const [suite, resultPath] of [["backend", suitePaths.backendTestResults], ["frontend", suitePaths.frontendTestResults]]) {
+    const safePath = assertExternalArtifact(root, resultPath, `${suite} test result`);
+    const raw = readFileSync(safePath);
+    const stampPath = join(dirname(coverageArtifactPath(root, suite)), "coverage-stamp.json");
+    const safeStampPath = assertExternalArtifact(root, stampPath, `${suite} coverage stamp`);
+    const stamp = parseJsonSemantic(`${suite} coverage stamp`, readFileSync(safeStampPath, "utf8"));
+    const digest = createHash("sha256").update(raw).digest("hex");
+    if (stamp.head !== head || stamp.testResultsDigest !== digest) {
+      throw new Error(`${suite} test results: stale, modified or exact-head-unbound result artifact`);
+    }
+    const results = parsePassedTestResults(root, head, suite, raw.toString("utf8"));
+    for (const [path, result] of results) {
+      combined.set(path, result);
+    }
+  }
+  return combined;
+}
+
+export function requireRegularRemovalModes(signature, oldIdentity, newIdentity) {
+  if (oldIdentity?.mode !== "100644" || (newIdentity && newIdentity.mode !== "100644")) {
+    throw new Error(`Trusted removal contract requires regular non-executable source blobs for ${signature}`);
+  }
+}
+
+export function validateRemovalContract(root, mergeBase, head, kind, signature, contracts = trustedRemovalContracts, passedTests = new Map()) {
+  if (kind !== "deletion-only" && kind !== "removed-runtime") throw new Error(`Unsupported removal contract kind: ${kind}`);
+  if (typeof signature !== "string" || !signature) throw new Error("Removal contract signature must be a non-empty string");
+  if (!Array.isArray(contracts)) throw new Error("Trusted removal contracts must be an array");
+  const contractIds = new Set();
+  for (const candidate of contracts) {
+    if (typeof candidate?.id !== "string" || !candidate.id) throw new Error("Trusted removal contract has an invalid task-scoped ID");
+    if (contractIds.has(candidate.id)) throw new Error(`Trusted removal contract ID is duplicated: ${candidate.id}`);
+    contractIds.add(candidate.id);
+  }
+  const matches = contracts.filter((contract) => contract.kind === kind && contract.signature === signature);
+  if (matches.length === 0) return null;
+  if (matches.length !== 1) throw new Error(`Ambiguous trusted removal contract for ${kind} ${signature}`);
+  const contract = matches[0];
+  if (!/^QA-S25-003-[A-Z0-9-]+$/.test(contract.id)) {
+    throw new Error(`Trusted removal contract has an invalid task-scoped ID for ${signature}`);
+  }
+  if (!validCanonicalRepoPath(contract.path) || !signature.startsWith(`${contract.path}:`)) {
+    throw new Error(`Trusted removal contract path does not match ${signature}`);
+  }
+  if (typeof contract.behavior !== "string" || contract.behavior.trim().length < 12) {
+    throw new Error(`Trusted removal contract must describe the replacement behavior for ${signature}`);
+  }
+  if (!/^[0-9a-f]{40}$/.test(contract.oldBlob ?? "")) {
+    throw new Error(`Trusted removal contract old blob is invalid for ${signature}`);
+  }
+  if (contract.newBlob !== null && !/^[0-9a-f]{40}$/.test(contract.newBlob ?? "")) {
+    throw new Error(`Trusted removal contract new blob is invalid for ${signature}`);
+  }
+  const oldIdentity = commitFileIdentity(root, mergeBase, contract.path, "removal base");
+  const newIdentity = commitFileIdentity(root, head, contract.path, "removal head");
+  if (oldIdentity?.blob !== contract.oldBlob) {
+    throw new Error(`Trusted removal contract old blob is stale for ${signature}`);
+  }
+  if ((newIdentity?.blob ?? null) !== contract.newBlob) {
+    throw new Error(`Trusted removal contract new blob is stale for ${signature}`);
+  }
+  requireRegularRemovalModes(signature, oldIdentity, newIdentity);
+  if (!Array.isArray(contract.regressions) || contract.regressions.length === 0) {
+    throw new Error(`Trusted removal contract has no regression tests for ${signature}`);
+  }
+  const seen = new Set();
+  for (const regression of contract.regressions) {
+    if (!regression || typeof regression.path !== "string" || !validRegressionPath(regression.path)) {
+      throw new Error(`Trusted removal contract has a non-test regression path for ${signature}`);
+    }
+    if (seen.has(regression.path)) {
+      throw new Error(`Trusted removal contract repeats regression ${regression.path} for ${signature}`);
+    }
+    seen.add(regression.path);
+    if (!/^[0-9a-f]{40}$/.test(regression.blob ?? "")) {
+      throw new Error(`Trusted removal contract regression blob is invalid for ${signature}`);
+    }
+    const identity = commitFileIdentity(root, head, regression.path, "removal regression");
+    if (!identity || identity.mode !== "100644" || identity.blob !== regression.blob) {
+      throw new Error(`Trusted removal contract regression blob is stale for ${signature}: ${regression.path}`);
+    }
+    const expectedSuite = regressionSuiteForPath(regression.path);
+    if (regression.suite !== expectedSuite) {
+      throw new Error(`Trusted removal contract regression suite is invalid for ${signature}: ${regression.path}`);
+    }
+    const execution = passedTests.get(regression.path);
+    if (!execution || execution.suite !== expectedSuite || execution.blob !== regression.blob || execution.passedAssertions < 1) {
+      throw new Error(`Trusted removal contract regression was not executed and passed for ${signature}: ${regression.path}`);
+    }
+  }
+  return `${contract.id} ${kind} ${signature}: exact replacement regression contract passed`;
+}
+
 function requireText(path, content, pattern, message) {
   if (!pattern.test(content)) semanticFailure(path, message);
 }
@@ -1602,7 +1814,7 @@ export const semanticCoveragePaths = new Set([
   "hrms_backend/scripts/seed-release-data.ts",
 ]);
 
-export function verify(root, base, head, suitePaths = fullSuitePaths(coverageOutputRoot(root))) {
+export function verify(root, base, head, suitePaths = fullSuitePaths(coverageOutputRoot(root)), options = {}) {
   assertCleanRepository(root);
   const actualHead = git(root, "rev-parse", "HEAD").trim();
   const resolvedHead = git(root, "rev-parse", head).trim();
@@ -1612,17 +1824,25 @@ export function verify(root, base, head, suitePaths = fullSuitePaths(coverageOut
   const totals = { executable: 0, nonExecutable: 0, branches: 0, uncovered: [] };
   let uncoveredLines = 0;
   let uncoveredBranches = 0;
-  let unmeasuredCount = deletionOnly.length + removedRuntime.length;
+  let unmeasuredCount = 0;
   const semanticLines = [];
+  const removalContracts = options.removalContracts ?? trustedRemovalContracts;
+  const passedTests = removalContracts.length > 0 ? (options.passedTests ?? readPassedTestResults(root, resolvedHead, suitePaths)) : new Map();
   const lines = [`Coverage diff ${mergeBase}..${resolvedHead}`];
   for (const path of testSource) lines.push(`TEST SOURCE ${path}: excluded from product line denominator; independent assertion-quality review required`);
   for (const risk of importRisks) lines.push(`IMPORT GRAPH ${risk}: changed in-source test files require review`);
   for (const path of excludedGenerated) lines.push(`EXCLUDED TYPE/GENERATED ${path}: no product line denominator; typecheck/build regeneration evidence required`);
-  for (const item of deletionOnly) {
-    const message = `deletion-only ${item}: behavior requires explicit regression evidence`;
+  const recordRemoval = (kind, item, message) => {
+    const contract = validateRemovalContract(root, mergeBase, resolvedHead, kind, item, removalContracts, passedTests);
+    if (contract) {
+      semanticLines.push(contract);
+      return;
+    }
     totals.uncovered.push(message);
-  }
-  for (const item of removedRuntime) totals.uncovered.push(`removed runtime ${item}: replacement has no executable coverage target`);
+    unmeasuredCount += 1;
+  };
+  for (const item of deletionOnly) recordRemoval("deletion-only", item, `deletion-only ${item}: behavior requires explicit regression evidence`);
+  for (const item of removedRuntime) recordRemoval("removed-runtime", item, `removed runtime ${item}: replacement has no executable coverage target`);
   for (const path of outside) {
     if (semanticCoveragePaths.has(path)) {
       semanticLines.push(validateSemanticPath(root, path, readFileSync(join(root, path), "utf8"), mergeBase));
