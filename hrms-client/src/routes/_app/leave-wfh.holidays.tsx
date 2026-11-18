@@ -306,6 +306,11 @@ export function HolidaysPage() {
         open={open}
         onOpenChange={closeForm}
         title={editing ? "Edit holiday" : "Add holiday"}
+        description={
+          editing
+            ? "Review and update this company holiday."
+            : "Add a holiday to your company calendar."
+        }
         footer={
           <>
             <Button
