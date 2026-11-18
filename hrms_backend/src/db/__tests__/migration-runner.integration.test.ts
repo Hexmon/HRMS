@@ -371,10 +371,10 @@ describe("migration runner PostgreSQL atomicity", () => {
   it("clean-installs through 0064, rolls back the actual 0065 body with its ledger, then upgrades and replays", async () => {
     const files = discoverMigrations();
     const through0064 = files.filter((migration) => Number(migration.id) <= 64);
-    const from0065Through0067 = files.filter(
-      (migration) => Number(migration.id) >= 65 && Number(migration.id) <= 67,
+    const from0065Through0069 = files.filter(
+      (migration) => Number(migration.id) >= 65 && Number(migration.id) <= 69,
     );
-    const migration0065 = from0065Through0067.find(
+    const migration0065 = from0065Through0069.find(
       (migration) => migration.id === "0065",
     );
     if (!migration0065) throw new Error("Released migration 0065 is missing");
@@ -432,17 +432,19 @@ describe("migration runner PostgreSQL atomicity", () => {
       "ALTER TABLE platform.schema_migrations DROP CONSTRAINT reject_released_0065",
     );
     await expect(
-      applyPendingMigrations(client!, from0065Through0067),
-    ).resolves.toBe(3);
+      applyPendingMigrations(client!, from0065Through0069),
+    ).resolves.toBe(5);
     const ledger = await loadAppliedMigrations(client!);
     const releasedRows = ledger.filter(({ migration_id }) =>
-      ["0064", "0065", "0066", "0067"].includes(migration_id),
+      ["0064", "0065", "0066", "0067", "0068", "0069"].includes(migration_id),
     );
     expect(releasedRows.map(({ migration_id }) => migration_id)).toEqual([
       "0064",
       "0065",
       "0066",
       "0067",
+      "0068",
+      "0069",
     ]);
     expect(releasedRows.find(({ migration_id }) => migration_id === "0065")).toMatchObject({
       filename: migration0065.filename,
