@@ -111,9 +111,9 @@ Application services and repositories must enforce cross-domain relationships. R
 Important commands:
 
 ```bash
-pnpm release:seed
 pnpm seed:dev
-pnpm qa:seed
+HRMS_QA_SEED_ALLOW=true HRMS_QA_SEED_CONFIRM_DATABASE=<local-database-name> pnpm release:seed
+HRMS_QA_SEED_ALLOW=true HRMS_QA_SEED_CONFIRM_DATABASE=<qa-database-name> pnpm qa:seed
 pnpm qa:seed:extras
 ```
 
@@ -124,7 +124,14 @@ Seed personas and release data are under:
 - `hrms_backend/scripts/seed-release-data.ts`
 - `hrms_backend/scripts/seed-qa-data.ts`
 
-Do not enable production auto-seeding. `HRMS_SEED_IF_EMPTY` must stay controlled and environment-specific.
+`release:seed` and the composite `qa:seed` are synthetic, guarded mutation
+commands. They accept local/development environments only on loopback or
+Compose PostgreSQL, or a marked QA environment, and require an explicit opt-in
+plus an exact database-name confirmation. Remote QA additionally
+requires the independently provisioned `hawkaii-qa:<fingerprint>` database
+marker to match `HRMS_QA_SEED_DATABASE_FINGERPRINT`. Production seeding is
+rejected. Do not enable production auto-seeding; `HRMS_SEED_IF_EMPTY` must stay
+controlled and environment-specific.
 
 ## Object Storage Data
 

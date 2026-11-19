@@ -1,7 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ensureQaAdminCompanyContext, preflightQaAdminCompanyContext } from "../../scripts/qa-seed-safety.js";
+import { Roles } from "#shared";
+import {
+  ensureQaAdminCompanyContext,
+  ensureQaPersonaCompanyContexts,
+  preflightQaAdminCompanyContext,
+} from "../../scripts/qa-seed-safety.js";
+import {
+  ensureReleaseBuiltinRoles,
+  verifyReleasePersonaIdentity,
+} from "../../scripts/release-seed-support.js";
 import { resetPostgresDatabase } from "../platform/postgres-data-store.js";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
@@ -76,8 +85,8 @@ describe.skipIf(!databaseUrl)("QA seed deterministic company boundary", () => {
     );
     await client.query(
       `INSERT INTO platform.user_session_preferences (id, user_id, active_role, company_id)
-       VALUES ($1, $2, 'admin', $3)`,
-      [randomUUID(), adminUserId, foreignCompanyId],
+       VALUES ($1, $2, $3, $4)`,
+      [randomUUID(), adminUserId, Roles.Admin, foreignCompanyId],
     );
 
     await expect(runSeedContextWithMarker()).rejects.toThrow(
@@ -149,8 +158,8 @@ describe.skipIf(!databaseUrl)("QA seed deterministic company boundary", () => {
     );
     await client.query(
       `INSERT INTO platform.user_session_preferences (id, user_id, active_role, company_id)
-       VALUES ($1, $2, 'admin', $3)`,
-      [preferenceId, adminUserId, expectedCompanyId],
+       VALUES ($1, $2, $3, $4)`,
+      [preferenceId, adminUserId, Roles.Admin, expectedCompanyId],
     );
 
     await expect(runSeedContextWithMarker()).rejects.toThrow(/company identity/);
@@ -159,10 +168,10 @@ describe.skipIf(!databaseUrl)("QA seed deterministic company boundary", () => {
       "SELECT company_id, active_role FROM platform.user_session_preferences WHERE user_id = $1",
       [adminUserId],
     );
-    expect(preference.rows).toEqual([{ company_id: expectedCompanyId, active_role: "admin" }]);
+    expect(preference.rows).toEqual([{ company_id: expectedCompanyId, active_role: Roles.Admin }]);
   });
 
-  it.each(["admin", "employee"])(
+  it.each([Roles.Admin, "employee"])(
     "refuses an existing null-company preference with role %s before any marker write",
     async (role) => {
       await client.query(
@@ -222,6 +231,298 @@ describe.skipIf(!databaseUrl)("QA seed deterministic company boundary", () => {
     expect(await markerCount()).toBe(1);
   });
 
+  it("seeds builtin role authority and binds active release personas without rewriting a rerun", async () => {
+    const employeeUserId = randomUUID();
+    const employeePreferenceId = randomUUID();
+    await ensureReleaseBuiltinRoles(client);
+    await client.query(
+      `INSERT INTO core.user_roles (id, user_id, role_key, status, effective_from)
+       VALUES ($1, $2, $3, 'active', CURRENT_DATE),
+              ($4, $5, $6, 'active', CURRENT_DATE)`,
+      [
+        randomUUID(),
+        adminUserId,
+        Roles.Admin,
+        randomUUID(),
+        employeeUserId,
+        Roles.Employee,
+      ],
+    );
+    await client.query(
+      `INSERT INTO core.users (
+         id, employee_code, email, full_name, hierarchy_path, employment_status
+       ) VALUES ($1, 'E-QA', 'qa-employee@example.test', 'QA Employee', 'CEO.EQA'::ltree, 'active')`,
+      [employeeUserId],
+    );
+    const companyId = await ensureQaAdminCompanyContext(client, {
+      adminUserId,
+      companyId: expectedCompanyId,
+      preferenceId,
+    });
+    const contexts = [
+      {
+        userId: adminUserId,
+        preferenceId,
+        activeRole: Roles.Admin,
+        employeeCode: "ADM",
+        email: "qa-admin@example.test",
+      },
+      {
+        userId: employeeUserId,
+        preferenceId: employeePreferenceId,
+        activeRole: Roles.Employee,
+        employeeCode: "E-QA",
+        email: "qa-employee@example.test",
+      },
+    ];
+
+    await ensureQaPersonaCompanyContexts(client, companyId, contexts);
+    const first = await client.query(
+      `SELECT id, user_id, company_id, active_role, version, updated_at
+         FROM platform.user_session_preferences
+        WHERE user_id = ANY($1::uuid[])
+        ORDER BY user_id`,
+      [[adminUserId, employeeUserId]],
+    );
+    expect(first.rows).toHaveLength(2);
+
+    await ensureReleaseBuiltinRoles(client);
+    await ensureQaPersonaCompanyContexts(client, companyId, contexts);
+    const second = await client.query(
+      `SELECT id, user_id, company_id, active_role, version, updated_at
+         FROM platform.user_session_preferences
+        WHERE user_id = ANY($1::uuid[])
+        ORDER BY user_id`,
+      [[adminUserId, employeeUserId]],
+    );
+    expect(second.rows).toEqual(first.rows);
+    const roles = await client.query<{ role_key: string }>(
+      "SELECT role_key FROM core.roles WHERE status = 'active' AND deleted_at IS NULL ORDER BY role_key",
+    );
+    expect(roles.rows.map((row) => row.role_key)).toEqual(
+      [...Object.values(Roles)].sort(),
+    );
+  });
+
+  it("rejects a foreign persona preference before adding any missing company context", async () => {
+    const employeeUserId = randomUUID();
+    const foreignCompanyId = randomUUID();
+    await ensureReleaseBuiltinRoles(client);
+    await client.query(
+      `INSERT INTO core.users (
+         id, employee_code, email, full_name, hierarchy_path, employment_status
+       ) VALUES ($1, 'E-FOREIGN', 'foreign-employee@example.test', 'Foreign Employee', 'CEO.EFOREIGN'::ltree, 'active')`,
+      [employeeUserId],
+    );
+    await client.query(
+      `INSERT INTO core.user_roles (id, user_id, role_key, status, effective_from)
+       VALUES ($1, $2, $3, 'active', CURRENT_DATE),
+              ($4, $5, $6, 'active', CURRENT_DATE)`,
+      [
+        randomUUID(),
+        adminUserId,
+        Roles.Admin,
+        randomUUID(),
+        employeeUserId,
+        Roles.Employee,
+      ],
+    );
+    await client.query(
+      `INSERT INTO platform.company_profiles (id, company_name, company_slug, status)
+       VALUES ($1, 'Foreign Persona Company', 'foreign-persona-company', 'active')`,
+      [foreignCompanyId],
+    );
+    await client.query(
+      `INSERT INTO platform.user_session_preferences (id, user_id, active_role, company_id)
+       VALUES ($1, $2, $3, $4)`,
+      [randomUUID(), employeeUserId, Roles.Employee, foreignCompanyId],
+    );
+    const companyId = await ensureQaAdminCompanyContext(client, {
+      adminUserId,
+      companyId: expectedCompanyId,
+      preferenceId,
+    });
+
+    await expect(
+      ensureQaPersonaCompanyContexts(client, companyId, [
+        {
+          userId: adminUserId,
+          preferenceId,
+          activeRole: Roles.Admin,
+          employeeCode: "ADM",
+          email: "qa-admin@example.test",
+        },
+        {
+          userId: employeeUserId,
+          preferenceId: randomUUID(),
+          activeRole: Roles.Employee,
+          employeeCode: "E-FOREIGN",
+          email: "foreign-employee@example.test",
+        },
+      ]),
+    ).rejects.toThrow(
+      /persona preference identity, company, or role collision/,
+    );
+    const adminPreference = await client.query(
+      "SELECT company_id, active_role FROM platform.user_session_preferences WHERE user_id = $1",
+      [adminUserId],
+    );
+    expect(adminPreference.rows).toEqual([
+      { company_id: expectedCompanyId, active_role: Roles.Admin },
+    ]);
+    const employeePreference = await client.query(
+      "SELECT company_id, active_role FROM platform.user_session_preferences WHERE user_id = $1",
+      [employeeUserId],
+    );
+    expect(employeePreference.rows).toEqual([
+      { company_id: foreignCompanyId, active_role: Roles.Employee },
+    ]);
+  });
+
+  it.each([
+    ["same employee code", () => randomUUID(), "ADM", "qa-admin@example.test"],
+    ["same user ID with foreign email", () => adminUserId, "ADM", "foreign@example.test"],
+  ])(
+    "rolls back role authority and leaves no dependent state for a %s collision",
+    async (_label, expectedId, employeeCode, email) => {
+      await client.query("BEGIN");
+      try {
+        await ensureReleaseBuiltinRoles(client);
+        await verifyReleasePersonaIdentity(client, {
+          userId: expectedId(),
+          employeeCode,
+          email,
+        });
+        throw new Error("expected identity collision");
+      } catch (error) {
+        await client.query("ROLLBACK");
+        expect(error).toBeInstanceOf(Error);
+        expect((error as Error).message).toMatch(/identity collision for ADM/);
+      }
+
+      const state = await client.query<{
+        roles: number;
+        credentials: number;
+        preferences: number;
+        companies: number;
+      }>(
+        `SELECT
+           (SELECT count(*)::int FROM core.roles) AS roles,
+           (SELECT count(*)::int FROM platform.user_credentials) AS credentials,
+           (SELECT count(*)::int FROM platform.user_session_preferences) AS preferences,
+           (SELECT count(*)::int FROM platform.company_profiles) AS companies`,
+      );
+      expect(state.rows).toEqual([
+        { roles: 0, credentials: 0, preferences: 0, companies: 0 },
+      ]);
+    },
+  );
+
+  it("rolls back inserted builtin roles when an inactive authorization role collides", async () => {
+    await client.query(
+      `INSERT INTO core.roles (role_key, name, status, builtin)
+       VALUES ($1, 'Disabled Admin', 'inactive', true)`,
+      [Roles.Admin],
+    );
+    await client.query("BEGIN");
+    try {
+      await ensureReleaseBuiltinRoles(client);
+      throw new Error("expected role collision");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toMatch(/role collision/);
+    }
+    const roles = await client.query(
+      "SELECT role_key, name, status, builtin, deleted_at FROM core.roles ORDER BY role_key",
+    );
+    expect(roles.rows).toEqual([
+      {
+        role_key: Roles.Admin,
+        name: "Disabled Admin",
+        status: "inactive",
+        builtin: true,
+        deleted_at: null,
+      },
+    ]);
+  });
+
+  it("rejects an inactive company before creating a persona preference", async () => {
+    await ensureReleaseBuiltinRoles(client);
+    await client.query(
+      `INSERT INTO core.user_roles (id, user_id, role_key, status, effective_from)
+       VALUES ($1, $2, $3, 'active', CURRENT_DATE)`,
+      [randomUUID(), adminUserId, Roles.Admin],
+    );
+    await client.query(
+      `INSERT INTO platform.company_profiles (id, company_name, company_slug, status)
+       VALUES ($1, 'Inactive Company', 'inactive-company', 'inactive')`,
+      [expectedCompanyId],
+    );
+    await client.query("BEGIN");
+    await expect(
+      ensureQaPersonaCompanyContexts(client, expectedCompanyId, [
+        {
+          userId: adminUserId,
+          preferenceId,
+          activeRole: Roles.Admin,
+          employeeCode: "ADM",
+          email: "qa-admin@example.test",
+        },
+      ]),
+    ).rejects.toThrow(/missing or inactive persona company context/);
+    await client.query("ROLLBACK");
+    const preferences = await client.query(
+      "SELECT id FROM platform.user_session_preferences WHERE user_id = $1",
+      [adminUserId],
+    );
+    expect(preferences.rows).toEqual([]);
+  });
+
+  it("holds the active company boundary against concurrent deactivation", async () => {
+    await ensureReleaseBuiltinRoles(client);
+    await client.query(
+      `INSERT INTO core.user_roles (id, user_id, role_key, status, effective_from)
+       VALUES ($1, $2, $3, 'active', CURRENT_DATE)`,
+      [randomUUID(), adminUserId, Roles.Admin],
+    );
+    await client.query(
+      `INSERT INTO platform.company_profiles (id, company_name, company_slug, status)
+       VALUES ($1, 'Locked Company', 'locked-company', 'active')`,
+      [expectedCompanyId],
+    );
+    await client.query("BEGIN");
+    await ensureQaPersonaCompanyContexts(client, expectedCompanyId, [
+      {
+        userId: adminUserId,
+        preferenceId,
+        activeRole: Roles.Admin,
+        employeeCode: "ADM",
+        email: "qa-admin@example.test",
+      },
+    ]);
+
+    const concurrent = new Client({ connectionString: databaseUrl });
+    await concurrent.connect();
+    try {
+      await concurrent.query("SET lock_timeout = '250ms'");
+      await expect(
+        concurrent.query(
+          "UPDATE platform.company_profiles SET status = 'inactive' WHERE id = $1",
+          [expectedCompanyId],
+        ),
+      ).rejects.toMatchObject({ code: "55P03" });
+    } finally {
+      await concurrent.end();
+      await client.query("ROLLBACK");
+    }
+    const company = await client.query(
+      "SELECT status FROM platform.company_profiles WHERE id = $1",
+      [expectedCompanyId],
+    );
+    expect(company.rows).toEqual([{ status: "active" }]);
+  });
+
   it.each([
     ["inactive", false, "inactive", null],
     ["soft-deleted", true, "active", null],
@@ -237,7 +538,7 @@ describe.skipIf(!databaseUrl)("QA seed deterministic company boundary", () => {
     await client.query(
       `INSERT INTO platform.user_session_preferences (id, user_id, active_role, company_id)
        VALUES ($1, $2, $3, $4)`,
-      [preferenceId, adminUserId, role ?? "admin", companyId],
+      [preferenceId, adminUserId, role ?? Roles.Admin, companyId],
     );
 
     await expect(runSeedContextWithMarker()).rejects.toThrow();
@@ -248,7 +549,7 @@ describe.skipIf(!databaseUrl)("QA seed deterministic company boundary", () => {
       [adminUserId],
     );
     expect(state.rows[0]?.employment_status).toBe(status);
-    expect(state.rows[0]?.active_role).toBe(role ?? "admin");
+    expect(state.rows[0]?.active_role).toBe(role ?? Roles.Admin);
     expect(state.rows[0]?.company_id).toBe(companyId);
   });
 });

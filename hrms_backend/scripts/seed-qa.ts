@@ -6,6 +6,7 @@ import {
   preflightQaAdminCompanyContext,
   requireQaSeedTarget,
   runGuardedQaSeed,
+  verifyQaSeedDatabaseIdentity,
 } from "./qa-seed-safety.js";
 
 loadRuntimeEnv();
@@ -16,6 +17,7 @@ await runGuardedQaSeed(process.env, {
     const client = new Client({ connectionString: target.toString() });
     await client.connect();
     try {
+      await verifyQaSeedDatabaseIdentity(client, process.env);
       await client.query("BEGIN");
       await preflightQaAdminCompanyContext(client, {
         adminUserId: seedIds.admin,

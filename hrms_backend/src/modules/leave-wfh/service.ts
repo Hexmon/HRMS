@@ -576,17 +576,13 @@ export class LeaveWfhService {
     };
   }
 
-  private activeCompany() {
-    return this.store.companyProfiles.find((candidate) => candidate.status === "active") ?? this.store.companyProfiles[0];
-  }
-
-  private workingWeek(): string {
-    return this.activeCompany()?.working_week ?? "Mon-Fri";
+  private workingWeekForCompany(companyId: UUID): string {
+    return this.store.companyProfiles.find((candidate) => candidate.id === companyId)?.working_week ?? "Mon-Fri";
   }
 
   private async workingWeekForActor(actorUserId: UUID): Promise<string> {
     if (!this.store.persistence) {
-      return this.workingWeek();
+      return this.workingWeekForCompany(this.requireCompanyId(actorUserId));
     }
     if (!this.store.persistence.workingWeekForActor) {
       throw new Error("Company working-week SQL read is unavailable.");
@@ -596,9 +592,10 @@ export class LeaveWfhService {
 
   private async holidayDatesForActor(actorUserId: UUID, dateFrom: string, dateTo: string): Promise<Set<string>> {
     if (!this.store.persistence) {
+      const companyId = this.requireCompanyId(actorUserId);
       return new Set(
         this.store.holidays
-          .filter((holiday) => !holiday.optional && !holiday.deleted_at)
+          .filter((holiday) => holiday.company_id === companyId && !holiday.optional && !holiday.deleted_at)
           .map((holiday) => holiday.holiday_date)
       );
     }

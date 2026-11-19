@@ -77,24 +77,41 @@ function maskPostgresNonCode(sql: string): string {
     }
 
     if (sql.startsWith("/*", cursor)) {
-      const commentEnd = sql.indexOf("*/", cursor + 2);
-      maskRange(commentEnd < 0 ? sql.length : commentEnd + 2);
+      let depth = 1;
+      let commentEnd = cursor + 2;
+      while (commentEnd < sql.length && depth > 0) {
+        if (sql.startsWith("/*", commentEnd)) {
+          depth += 1;
+          commentEnd += 2;
+        } else if (sql.startsWith("*/", commentEnd)) {
+          depth -= 1;
+          commentEnd += 2;
+        } else {
+          commentEnd += 1;
+        }
+      }
+      maskRange(commentEnd);
       continue;
     }
 
-    const character = sql[cursor];
-    if (character === "'" || character === '"') {
-      const quote = character;
-      masked += " ";
-      cursor += 1;
+    const quotePrefix = sql.slice(cursor).match(/^(?:[Ee]|[Uu]&)?'/u)?.[0];
+    if (quotePrefix) {
+      maskRange(cursor + quotePrefix.length);
       while (cursor < sql.length) {
         const quotedCharacter = sql[cursor]!;
         masked += maskCharacter(quotedCharacter);
         cursor += 1;
-        if (quotedCharacter !== quote) {
+        if (quotedCharacter === "\\" && quotePrefix.toLowerCase() === "e'") {
+          if (cursor < sql.length) {
+            masked += maskCharacter(sql[cursor]!);
+            cursor += 1;
+          }
           continue;
         }
-        if (sql[cursor] === quote) {
+        if (quotedCharacter !== "'") {
+          continue;
+        }
+        if (sql[cursor] === "'") {
           masked += " ";
           cursor += 1;
           continue;
@@ -104,16 +121,39 @@ function maskPostgresNonCode(sql: string): string {
       continue;
     }
 
-    if (character === "$") {
+    if (sql[cursor] === '"') {
+      masked += " ";
+      cursor += 1;
+      while (cursor < sql.length) {
+        const quotedCharacter = sql[cursor]!;
+        masked += maskCharacter(quotedCharacter);
+        cursor += 1;
+        if (quotedCharacter !== '"') {
+          continue;
+        }
+        if (sql[cursor] === '"') {
+          masked += " ";
+          cursor += 1;
+          continue;
+        }
+        break;
+      }
+      continue;
+    }
+
+    if (sql[cursor] === "$") {
       const delimiter = sql.slice(cursor).match(/^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/u)?.[0];
       if (delimiter) {
         const bodyEnd = sql.indexOf(delimiter, cursor + delimiter.length);
-        maskRange(bodyEnd < 0 ? sql.length : bodyEnd + delimiter.length);
+        if (bodyEnd < 0) {
+          throw new Error("Migration SQL contains an unterminated dollar-quoted body");
+        }
+        maskRange(bodyEnd + delimiter.length);
         continue;
       }
     }
 
-    masked += character;
+    masked += sql[cursor];
     cursor += 1;
   }
 

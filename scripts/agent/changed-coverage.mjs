@@ -986,6 +986,7 @@ export function runFullCoverageWorker(root, outputRoot, expectedHead, tools, run
   const includes = [
     "hrms_backend/scripts/db-migration-lib.ts",
     "hrms_backend/scripts/lib.ts",
+    "hrms_backend/scripts/release-seed-support.ts",
     "qa-artifacts/hrms/discovery-2026-11-09/admin-settings-cross-company-probe.ts",
     "qa-artifacts/hrms/discovery-2026-11-09/disposable-probe-guard.ts",
     "qa-artifacts/hrms/discovery-2026-11-09/multi-instance-asset-probe.ts",
@@ -993,7 +994,7 @@ export function runFullCoverageWorker(root, outputRoot, expectedHead, tools, run
   ];
   execute("isolated TypeScript tests", tools.pnpm, ["--dir", "hrms_backend", "exec", "vitest", "run",
     "--project", "unit", "--project", "integration",
-    "src/__tests__/discovery-probes.unit.test.ts", "src/__tests__/disposable-probe-guard.unit.test.ts", "src/__tests__/walk-files.unit.test.ts",
+    "src/__tests__/discovery-probes.unit.test.ts", "src/__tests__/disposable-probe-guard.unit.test.ts", "src/__tests__/qa-seed-safety.unit.test.ts", "src/__tests__/walk-files.unit.test.ts",
     "src/db/__tests__/migration-runner.unit.test.ts", "src/db/__tests__/migration-runner.integration.test.ts",
     "--coverage", "--coverage.allowExternal=true", ...includes.flatMap((path) => ["--coverage.include", resolve(root, path)]),
     "--coverage.reporter=text", "--coverage.reporter=json", `--coverage.reportsDirectory=${typescriptReport}`], {}, ["NODE_V8_COVERAGE"]);
@@ -1719,13 +1720,13 @@ function validateQaCompose(path, content) {
 }
 
 function validateHolidayMigration(path, content) {
-  requireSemanticText(path, content, /BEGIN\s*;/i, "holiday migration must be transactional");
+  requireSemanticText(path, content, /BEGIN\s*;/i, "legacy holiday migration transaction wrapper is missing");
   requireSemanticText(path, content, /DROP\s+INDEX\s+IF\s+EXISTS\s+.*holiday/i, "holiday migration must remove the legacy global uniqueness rule");
   requireSemanticText(path, content, /CREATE\s+UNIQUE\s+INDEX/i, "holiday migration must create a unique index");
   requireSemanticText(path, content, /company_id/i, "holiday uniqueness must include company_id");
   requireSemanticText(path, content, /lower\s*\(/i, "holiday uniqueness must be case-insensitive");
   requireSemanticText(path, content, /deleted_at\s+IS\s+NULL/i, "holiday uniqueness must exclude soft-deleted rows");
-  requireSemanticText(path, content, /COMMIT\s*;/i, "holiday migration must commit transactionally");
+  requireSemanticText(path, content, /COMMIT\s*;/i, "legacy holiday migration transaction wrapper is missing");
 }
 
 function validateAttendancePolicyVersionMigration(path, content) {

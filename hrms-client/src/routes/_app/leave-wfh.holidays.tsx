@@ -1,5 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useRef, useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,13 +18,62 @@ import { ApiError, userFacingErrorMessage } from "@/shared/api";
 import type { Holiday } from "@/lib/leave-store";
 
 export const Route = createFileRoute("/_app/leave-wfh/holidays")({
-  component: HolidaysPage,
+  validateSearch: holidaySearchFromRecord,
+  component: HolidaysRoutePage,
 });
 
 const ADMIN: Role[] = ["hr_admin", "main_admin"];
 type HolidayView = Holiday & { expectedVersion: number };
+interface HolidaySearch {
+  month?: string;
+}
+interface HolidaysPageProps {
+  month?: string;
+  onMonthChange?: (month: string) => void;
+}
 
-export function HolidaysPage() {
+export function HolidaysRoutePage() {
+  const navigate = useNavigate();
+  const { month } = Route.useSearch();
+
+  useEffect(() => {
+    const canonicalSearch = holidayMonthRedirectSearch({ month }, new Date());
+    if (canonicalSearch) {
+      void navigate({
+        to: "/leave-wfh/holidays",
+        search: canonicalSearch,
+        replace: true,
+      });
+    }
+  }, [month, navigate]);
+
+  if (!month) {
+    return (
+      <div className="flex min-h-48 items-center justify-center">
+        <div
+          className="h-8 w-8 animate-spin rounded-full border-2 border-primary border-t-transparent"
+          aria-label="Loading holiday calendar"
+          role="status"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <HolidaysPage
+      month={month}
+      onMonthChange={(nextMonth) => {
+        void navigate({
+          to: "/leave-wfh/holidays",
+          search: { month: nextMonth },
+          replace: true,
+        });
+      }}
+    />
+  );
+}
+
+export function HolidaysPage({ month, onMonthChange }: HolidaysPageProps = {}) {
   const { activeRole } = useAuth();
   const isAdmin = !!activeRole && ADMIN.includes(activeRole);
   const [open, setOpen] = useState(false);
@@ -37,16 +86,26 @@ export function HolidaysPage() {
   const draftId = useRef<string | null>(null);
   const submissionInFlight = useRef(false);
 
-  const today = new Date();
-  const [cursor, setCursor] = useState({ y: today.getFullYear(), m: today.getMonth() });
+  const [localMonth, setLocalMonth] = useState(() => month ?? holidayMonthFromDate(new Date()));
+  const cursor = holidayCursorFromMonth(month ?? localMonth, new Date());
   const monthName = new Date(cursor.y, cursor.m, 1).toLocaleDateString(undefined, {
     month: "long",
     year: "numeric",
   });
   const firstDow = new Date(cursor.y, cursor.m, 1).getDay();
   const days = new Date(cursor.y, cursor.m + 1, 0).getDate();
-  const prev = () => setCursor((c) => (c.m === 0 ? { y: c.y - 1, m: 11 } : { y: c.y, m: c.m - 1 }));
-  const next = () => setCursor((c) => (c.m === 11 ? { y: c.y + 1, m: 0 } : { y: c.y, m: c.m + 1 }));
+  const moveCursor = (nextCursor: { y: number; m: number }) => {
+    const nextMonth = holidayMonthFromCursor(nextCursor);
+    if (onMonthChange) {
+      onMonthChange(nextMonth);
+      return;
+    }
+    setLocalMonth(nextMonth);
+  };
+  const prev = () =>
+    moveCursor(cursor.m === 0 ? { y: cursor.y - 1, m: 11 } : { y: cursor.y, m: cursor.m - 1 });
+  const next = () =>
+    moveCursor(cursor.m === 11 ? { y: cursor.y + 1, m: 0 } : { y: cursor.y, m: cursor.m + 1 });
   const holidaysQuery = useHolidays({ year: cursor.y, page: 1, page_size: 100 });
   const mutation = useHolidayMutation();
   const list = holidaysFromResponse(holidaysQuery.data);
@@ -297,6 +356,11 @@ export function HolidaysPage() {
         open={open}
         onOpenChange={closeForm}
         title={editing ? "Edit holiday" : "Add holiday"}
+        description={
+          editing
+            ? "Review and update this company holiday."
+            : "Add a holiday to your company calendar."
+        }
         footer={
           <>
             <Button
@@ -382,12 +446,69 @@ export function HolidaysPage() {
                 Employees can choose whether to take it.
               </p>
             </div>
-            <Switch checked={optional} onCheckedChange={setOptional} />
+            <Switch
+              aria-label="Optional holiday"
+              checked={optional}
+              onCheckedChange={setOptional}
+            />
           </div>
         </div>
       </Modal>
     </div>
   );
+}
+
+export function initialHolidayCursor(today = new Date()): { y: number; m: number } {
+  return { y: today.getFullYear(), m: today.getMonth() };
+}
+
+export function holidaySearchFromRecord(search: Record<string, unknown>): HolidaySearch {
+  return { month: canonicalHolidayMonth(search.month) };
+}
+
+export function requiredHolidayMonth(search: HolidaySearch, today: Date): string {
+  return search.month ?? holidayMonthFromDate(today);
+}
+
+export function holidayMonthRedirectSearch(
+  search: HolidaySearch,
+  today: Date,
+): HolidaySearch | null {
+  return search.month ? null : { month: requiredHolidayMonth(search, today) };
+}
+
+export function canonicalHolidayMonth(value: unknown): string | undefined {
+  return typeof value === "string" && /^(?:\d{4})-(?:0[1-9]|1[0-2])$/u.test(value)
+    ? value
+    : undefined;
+}
+
+export function holidayMonthFromDate(today: Date): string {
+  return holidayMonthFromCursor({ y: today.getFullYear(), m: today.getMonth() });
+}
+
+export function holidayMonthFromCursor(cursor: { y: number; m: number }): string {
+  return `${cursor.y}-${String(cursor.m + 1).padStart(2, "0")}`;
+}
+
+export function holidayCursorFromMonth(
+  month: string | undefined,
+  today: Date,
+): { y: number; m: number } {
+  const canonical = canonicalHolidayMonth(month);
+  if (!canonical) return initialHolidayCursor(today);
+  const [year, calendarMonth] = canonical.split("-").map(Number);
+  return { y: year!, m: calendarMonth! - 1 };
+}
+
+export function holidayCursorFromHref(href: string, today: Date): { y: number; m: number } {
+  return holidayCursorFromMonth(new URL(href).searchParams.get("month") ?? undefined, today);
+}
+
+export function hrefWithHolidayCursor(href: string, cursor: { y: number; m: number }): URL {
+  const url = new URL(href);
+  url.searchParams.set("month", holidayMonthFromCursor(cursor));
+  return url;
 }
 
 function createId(): string {

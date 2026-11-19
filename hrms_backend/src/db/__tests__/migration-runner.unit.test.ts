@@ -42,7 +42,10 @@ describe("migration runner transaction ownership", () => {
     "BEGIN;",
     "BEGIN TRANSACTION; -- trailing comment",
     "BEGIN ISOLATION LEVEL SERIALIZABLE READ WRITE;",
+    "BEGIN ISOLATION LEVEL SERIALIZABLE, READ WRITE;",
+    "BEGIN READ WRITE ISOLATION LEVEL SERIALIZABLE;",
     "BEGIN READ WRITE, DEFERRABLE;",
+    "BEGIN /* bypass attempt */;",
     "START TRANSACTION ISOLATION LEVEL REPEATABLE READ;",
     "START TRANSACTION READ ONLY, NOT DEFERRABLE;",
     "COMMIT WORK AND NO CHAIN;",
@@ -94,10 +97,12 @@ describe("migration runner transaction ownership", () => {
       "0068_procedure.sql",
       [
         "-- COMMIT;",
-        "/* ROLLBACK; */",
+        "/* outer /* nested BEGIN; */ ROLLBACK; */",
         "SELECT 'BEGIN;';",
         "SELECT 'it''s still not COMMIT;';",
-        'CREATE TABLE "END;" (value text);',
+        "SELECT '$$';",
+        "SELECT E'ROLLBACK\\' COMMIT';",
+        'CREATE TABLE "END;""COMMIT" (value text);',
         "DO $body$",
         "BEGIN",
         "  RAISE NOTICE 'COMMIT;';",
@@ -109,6 +114,28 @@ describe("migration runner transaction ownership", () => {
     expect(migrationExecutionSql(procedure)).toBe(procedure.sql);
   });
 
+  it("does not let quote-like text conceal later top-level control", () => {
+    const candidate = migration(
+      "0068",
+      "0068_quote_boundary.sql",
+      "SELECT '$$'; COMMIT; SELECT '$$';",
+    );
+    expect(() => migrationExecutionSql(candidate)).toThrow(
+      "must leave transaction ownership to the migration runner",
+    );
+  });
+
+  it("rejects an unterminated dollar-quoted body before database execution", () => {
+    const candidate = migration(
+      "0068",
+      "0068_unterminated_dollar_quote.sql",
+      "SELECT 1; $hidden$ COMMIT;",
+    );
+    expect(() => migrationExecutionSql(candidate)).toThrow(
+      "unterminated dollar-quoted body",
+    );
+  });
+
   it("does not mistake a multiline SQL CASE END for transaction control", () => {
     const sql = "UPDATE probe SET value = CASE WHEN value = 1 THEN 2\nELSE 3\nEND\nWHERE id = 1;\n";
     const candidate = migration("0068", "0068_case.sql", sql);
@@ -118,9 +145,9 @@ describe("migration runner transaction ownership", () => {
   it.each([
     "SELECT 1; -- COMMIT;",
     "SELECT 1; /* ROLLBACK;",
-    "DO $tag$ BEGIN; COMMIT;",
+    "SELECT E'escaped\\",
     "SELECT $1;",
-  ])("fails safely through PostgreSQL rather than misclassifying incomplete or parameter SQL: %s", (sql) => {
+  ])("leaves other incomplete or parameter SQL for PostgreSQL validation: %s", (sql) => {
     const candidate = migration("0068", "0068_incomplete.sql", sql);
     expect(migrationExecutionSql(candidate)).toBe(candidate.sql);
   });

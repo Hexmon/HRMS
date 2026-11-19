@@ -5,19 +5,26 @@ import { Client } from "pg";
 import { getLocalDemoPassword, hashPasswordSync } from "#auth";
 import { AssetStatuses, EmploymentStatuses, ExpenseSubTypes, Roles } from "#shared";
 import { seedIds } from "../src/platform/data-store.js";
-import { getQaSeedEmails } from "../src/platform/seed-personas.js";
+import {
+  getQaSeedEmails,
+  getReleaseSeedEmails,
+} from "../src/platform/seed-personas.js";
 import { loadRuntimeEnv, requireEnv } from "./env.js";
 import {
   ensureQaAdminCompanyContext,
+  ensureQaPersonaCompanyContexts,
   requireQaPersonaIdentity,
   requireQaSeedTarget,
+  requireQaTenantAdminIdentity,
   rethrowAfterQaSeedRollback,
+  verifyQaSeedDatabaseIdentity,
 } from "./qa-seed-safety.js";
 
 loadRuntimeEnv();
 requireQaSeedTarget(process.env);
 const localDemoPassword = getLocalDemoPassword();
 const qaSeedEmails = getQaSeedEmails();
+const releaseSeedEmails = getReleaseSeedEmails();
 
 const reportDir = process.env.HRMS_REPORT_DIR ?? "docs/qa/runs/qa-readiness";
 mkdirSync(reportDir, { recursive: true });
@@ -34,6 +41,8 @@ function sha256(value: string): string {
 
 const ids = {
   companyDefault: uuidFromName("company-default"),
+  companyTenantB: uuidFromName("qa-company-tenant-b"),
+  tenantBAdmin: uuidFromName("qa-user-tenant-b-admin"),
   adminPreference: uuidFromName(`session-preference-${seedIds.admin}`),
   departmentHr: uuidFromName("qa-department-hr"),
   designationHrManager: seedIds.designationHrManager,
@@ -55,16 +64,47 @@ const ids = {
   compromisedKey: uuidFromName("qa-compromised-device")
 };
 
+const releasePersonaContexts = [
+  [seedIds.director, "S1", releaseSeedEmails.director, Roles.Director],
+  [seedIds.reviewer, "D1", releaseSeedEmails.reviewer, Roles.Reviewer],
+  [seedIds.employee1, "E1", releaseSeedEmails.employee1, Roles.Employee],
+  [seedIds.employee2, "E2", releaseSeedEmails.employee2, Roles.Employee],
+  [seedIds.financeManager, "N1", releaseSeedEmails.financeManager, Roles.FinanceManager],
+  [seedIds.alternateFinance, "N2", releaseSeedEmails.alternateFinance, Roles.FinanceManager],
+  [seedIds.admin, "ADM", releaseSeedEmails.admin, Roles.Admin],
+  [seedIds.auditor, "AUD", releaseSeedEmails.auditor, Roles.Auditor],
+  [seedIds.assetManager, "AST", releaseSeedEmails.assetManager, Roles.AssetManager],
+] as const;
+
 const client = new Client({ connectionString: requireEnv("DATABASE_URL") });
-await client.connect();
+let connected = false;
+let transactionStarted = false;
 
 try {
+  await client.connect();
+  connected = true;
+  await verifyQaSeedDatabaseIdentity(client, process.env);
   await client.query("BEGIN");
+  transactionStarted = true;
   const defaultCompanyId = await ensureQaAdminCompanyContext(client, {
     adminUserId: seedIds.admin,
     companyId: ids.companyDefault,
     preferenceId: ids.adminPreference,
   });
+  await ensureQaPersonaCompanyContexts(
+    client,
+    defaultCompanyId,
+    releasePersonaContexts.map(([userId, employeeCode, email, activeRole]) => ({
+      userId,
+      employeeCode,
+      email,
+      activeRole,
+      preferenceId:
+        userId === seedIds.admin
+          ? ids.adminPreference
+          : uuidFromName(`qa-session-preference-${employeeCode}`),
+    })),
+  );
 
   await client.query(
     `INSERT INTO core.designations (id, designation_code, title, level, status)
@@ -173,6 +213,112 @@ try {
     throw new Error("QA seed did not assign every persona to the release Admin company.");
   }
 
+  const tenantBCompanies = await client.query<{ id: string; company_slug: string; status: string }>(
+    `SELECT id, company_slug, status
+       FROM platform.company_profiles
+      WHERE id = $1 OR company_slug = 'hawkaii-hrms-tenant-b'
+      ORDER BY id
+      FOR UPDATE`,
+    [ids.companyTenantB],
+  );
+  const exactTenantB = tenantBCompanies.rows.filter(
+    (row) => row.id === ids.companyTenantB && row.company_slug === "hawkaii-hrms-tenant-b" && row.status === "active",
+  );
+  if (tenantBCompanies.rows.length > 0 && (tenantBCompanies.rows.length !== 1 || exactTenantB.length !== 1)) {
+    throw new Error("QA seed refused a Tenant B company identity collision.");
+  }
+  if (tenantBCompanies.rows.length === 0) {
+    await client.query(
+      `INSERT INTO platform.company_profiles (
+         id, company_name, company_slug, timezone, locale, currency,
+         fiscal_year_start_month, working_week, work_hours_per_day,
+         status, bootstrap_completed_at
+       ) VALUES ($1, 'Hawkaii HRMS QA Tenant B', 'hawkaii-hrms-tenant-b',
+         'Asia/Kolkata', 'en-IN', 'INR', 4, 'Mon-Fri', 8, 'active', now())`,
+      [ids.companyTenantB],
+    );
+  }
+
+  const existingTenantBAdmins = await client.query<{
+    id: string;
+    employee_code: string;
+    email: string;
+    company_id: string | null;
+    active_role: string | null;
+  }>(
+    `SELECT admin.id, admin.employee_code, admin.email,
+            preference.company_id, preference.active_role
+       FROM core.users admin
+       LEFT JOIN platform.user_session_preferences preference ON preference.user_id = admin.id
+      WHERE admin.id = $1 OR admin.employee_code = 'QBADM' OR lower(admin.email) = lower($2)
+      ORDER BY admin.id
+      FOR UPDATE OF admin`,
+    [ids.tenantBAdmin, qaSeedEmails.tenantBAdmin],
+  );
+  requireQaTenantAdminIdentity(existingTenantBAdmins.rows, {
+    userId: ids.tenantBAdmin,
+    companyId: ids.companyTenantB,
+    employeeCode: "QBADM",
+    email: qaSeedEmails.tenantBAdmin,
+  });
+
+  const tenantBAdmin = await client.query<{ id: string }>(
+    `INSERT INTO core.users (
+       id, employee_code, email, full_name, department_id, designation_id,
+       hierarchy_path, employment_status, timezone, joined_on
+     ) VALUES ($1, 'QBADM', $2, 'QA Tenant B Admin', $3, $4,
+       'CEO.QBADM'::ltree, 'active', 'Asia/Kolkata', '2026-01-01')
+     ON CONFLICT (employee_code) DO UPDATE
+     SET email = EXCLUDED.email, full_name = EXCLUDED.full_name,
+         department_id = EXCLUDED.department_id, designation_id = EXCLUDED.designation_id,
+         hierarchy_path = EXCLUDED.hierarchy_path, employment_status = EXCLUDED.employment_status,
+         updated_at = now(), deleted_at = NULL
+     RETURNING id`,
+    [ids.tenantBAdmin, qaSeedEmails.tenantBAdmin, seedIds.departmentSales, ids.designationAdmin],
+  );
+  requireQaPersonaIdentity(ids.tenantBAdmin, tenantBAdmin.rows[0]?.id, "QBADM");
+  await client.query(
+    `INSERT INTO core.user_roles (id, user_id, role_key, status, effective_from)
+     VALUES ($1, $2, $3, 'active', '2026-01-01')
+     ON CONFLICT (id) DO UPDATE
+     SET user_id = EXCLUDED.user_id, role_key = EXCLUDED.role_key,
+         status = EXCLUDED.status, updated_at = now()`,
+    [uuidFromName("qa-role-QBADM"), ids.tenantBAdmin, Roles.Admin],
+  );
+  await client.query(
+    `INSERT INTO platform.user_session_preferences
+       (id, user_id, active_role, company_id, landing_page, locale, timezone)
+     VALUES ($1, $2, $3, $4, '/dashboard', 'en-IN', 'Asia/Kolkata')
+     ON CONFLICT (user_id) DO UPDATE
+     SET active_role = EXCLUDED.active_role, company_id = EXCLUDED.company_id,
+         updated_at = now(), version = platform.user_session_preferences.version + 1`,
+    [uuidFromName("qa-session-preference-QBADM"), ids.tenantBAdmin, Roles.Admin, ids.companyTenantB],
+  );
+  await client.query(
+    `INSERT INTO platform.user_credentials (id, user_id, password_hash, status)
+     VALUES ($1, $2, $3, 'active')
+     ON CONFLICT (user_id) DO UPDATE
+     SET password_hash = EXCLUDED.password_hash, status = EXCLUDED.status,
+         deleted_at = NULL, updated_at = now()`,
+    [
+      uuidFromName("qa-credential-QBADM"),
+      ids.tenantBAdmin,
+      hashPasswordSync(localDemoPassword, "hrms-local-qbadm"),
+    ],
+  );
+  const tenantBContext = await client.query<{ company_id: string; active_role: string }>(
+    `SELECT company_id, active_role
+       FROM platform.user_session_preferences
+      WHERE user_id = $1`,
+    [ids.tenantBAdmin],
+  );
+  if (
+    tenantBContext.rows[0]?.company_id !== ids.companyTenantB ||
+    tenantBContext.rows[0]?.active_role !== Roles.Admin
+  ) {
+    throw new Error("QA seed could not establish the deterministic Tenant B Admin context.");
+  }
+
   await client.query(
     `INSERT INTO expenses.employee_reviewer_mappings
      (id, employee_user_id, reviewer_user_id, assigned_by_user_id, effective_from, status)
@@ -232,10 +378,16 @@ try {
   );
 
   await client.query("COMMIT");
+  transactionStarted = false;
 } catch (error) {
-  await rethrowAfterQaSeedRollback(client, error);
+  if (transactionStarted) {
+    await rethrowAfterQaSeedRollback(client, error);
+  }
+  throw error;
 } finally {
-  await client.end();
+  if (connected) {
+    await client.end();
+  }
 }
 
 const result = {
@@ -254,7 +406,8 @@ const result = {
     terminated_employee: "E3",
     asset_admin: "AST",
     timesheet_approver: "TSA",
-    unauthorized_employee: "U1"
+    unauthorized_employee: "U1",
+    tenant_b_admin: "QBADM"
   },
   seeded_records: [
     "departments/designations",
@@ -265,7 +418,8 @@ const result = {
     "assigned asset and available asset",
     "license entitlement and compromised device key",
     "timesheet JSONB workflow definition",
-    "sample work segment"
+    "sample work segment",
+    "isolated Tenant B Admin company context"
   ]
 };
 

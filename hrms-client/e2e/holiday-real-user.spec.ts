@@ -1,7 +1,9 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 const API_BASE_URL = process.env.E2E_API_BASE_URL ?? "http://127.0.0.1:3001";
-const LOCAL_DEMO_PASSWORD = process.env.E2E_LOCAL_DEMO_PASSWORD ?? "LocalDev@123";
+const LOCAL_DEMO_PASSWORD =
+  process.env.E2E_LOCAL_DEMO_PASSWORD ??
+  (process.env.E2E_EXPECTED_APP_ENV === "qa" ? "" : "LocalDev@123");
 const EXPECTED_APP_ENV = process.env.E2E_EXPECTED_APP_ENV ?? "local";
 
 test.beforeAll(async ({ request }) => {
@@ -10,6 +12,10 @@ test.beforeAll(async ({ request }) => {
     "Set E2E_ALLOW_HOLIDAY_MUTATIONS=true only for an isolated local or QA environment.",
   ).toBe("true");
   expect(["local", "qa"]).toContain(EXPECTED_APP_ENV);
+  expect(
+    LOCAL_DEMO_PASSWORD,
+    "E2E_LOCAL_DEMO_PASSWORD must be supplied from the QA secret store for hosted QA.",
+  ).not.toBe("");
   const ready = await request.get(`${API_BASE_URL}/api/v1/health/ready`, { timeout: 5_000 });
   expect(ready.ok(), `Holiday browser QA requires the local API at ${API_BASE_URL}`).toBe(true);
   const identity = (await ready.json()) as { app_env?: string };
@@ -23,7 +29,7 @@ test.describe("holiday real-user journey", () => {
   test("Admin and HR create/edit safely while an employee remains read-only", async ({
     browser,
   }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(240_000);
     const suffix = `${Date.now()}`;
     const firstName = `QA Regional Day ${suffix}`;
     const secondName = `QA Optional Day ${suffix}`;
@@ -35,11 +41,17 @@ test.describe("holiday real-user journey", () => {
 
     const adminContext = await browser.newContext();
     const adminPage = await adminContext.newPage();
-    const stalePage = await adminContext.newPage();
+    const staleContext = await browser.newContext();
+    const stalePage = await staleContext.newPage();
     await login(adminPage, "admin@example.test");
     await openHolidays(adminPage);
 
-    await addHoliday(adminPage, { name: firstName, date, region: "IN", optional: false });
+    const firstHoliday = await addHoliday(adminPage, {
+      name: firstName,
+      date,
+      region: "IN",
+      optional: false,
+    });
     await addHoliday(adminPage, { name: secondName, date, region: "US", optional: true });
     await adminPage.reload({ waitUntil: "networkidle" });
     await expect(adminPage.getByRole("button", { name: `Edit ${firstName}` })).toBeVisible();
@@ -48,6 +60,7 @@ test.describe("holiday real-user journey", () => {
     await expect(adminPage.getByText(firstName, { exact: true })).toBeVisible();
     await expect(adminPage.getByText(secondName, { exact: true })).toBeVisible();
 
+    await login(stalePage, "admin@example.test");
     await openHolidays(stalePage);
     await stalePage.getByRole("button", { name: `Edit ${firstName}` }).click();
     await adminPage.getByRole("tab", { name: "List" }).click();
@@ -115,9 +128,198 @@ test.describe("holiday real-user journey", () => {
     await expect(adminPage.getByText(hrUpdatedName, { exact: true })).toBeVisible();
     await expect(adminPage.getByText(forgedName, { exact: true })).toHaveCount(0);
 
-    await Promise.all([adminContext.close(), hrContext.close(), employeeContext.close()]);
+    const tenantBContext = await browser.newContext();
+    const tenantBPage = await tenantBContext.newPage();
+    await login(tenantBPage, "admin.tenant-b@example.test");
+    await openHolidays(tenantBPage);
+    const tenantBName = `QA Tenant B Day ${suffix}`;
+    const tenantBHoliday = await addHoliday(tenantBPage, {
+      name: tenantBName,
+      date,
+      region: "TENANT-B",
+      optional: false,
+    });
+
+    const crossTenantAttempt = await putHolidayFromPage(adminPage, tenantBHoliday.id, {
+      name: `Leaked ${tenantBName}`,
+      date,
+      region: "TENANT-A",
+      optional: false,
+      expected_version: tenantBHoliday.version,
+    });
+    expect(crossTenantAttempt.status).toBe(404);
+    expect(JSON.stringify(crossTenantAttempt.body)).not.toContain(tenantBName);
+
+    const protectedId = crypto.randomUUID();
+    const protectedAttempt = await putHolidayFromPage(adminPage, protectedId, {
+      name: `Protected field ${suffix}`,
+      date,
+      region: "IN",
+      optional: false,
+      company_id: crypto.randomUUID(),
+    });
+    expect(protectedAttempt.status).toBe(400);
+
+    const currentAdminHoliday = (
+      await listHolidaysFromPage(adminPage, Number(date.slice(0, 4)))
+    ).find((holiday) => holiday.id === firstHoliday.id);
+    expect(currentAdminHoliday).toBeDefined();
+    const retry = await putHolidayFromPage(adminPage, firstHoliday.id, {
+      name: currentAdminHoliday!.name,
+      date: currentAdminHoliday!.date,
+      region: currentAdminHoliday!.region,
+      optional: currentAdminHoliday!.optional,
+    });
+    expect(retry.status).toBe(200);
+    expect((retry.body as HolidayMutationResponse).holiday.version).toBe(
+      currentAdminHoliday!.version,
+    );
+
+    await adminPage.reload({ waitUntil: "networkidle" });
+    await expect(adminPage.getByText(tenantBName, { exact: true })).toHaveCount(0);
+    await expect(adminPage.getByText(`Protected field ${suffix}`, { exact: true })).toHaveCount(0);
+    await tenantBPage.reload({ waitUntil: "networkidle" });
+    await expect(tenantBPage.getByRole("button", { name: `Edit ${tenantBName}` })).toBeVisible();
+    const tenantBList = await listHolidaysFromPage(tenantBPage, Number(date.slice(0, 4)));
+    expect(tenantBList.find((holiday) => holiday.id === tenantBHoliday.id)).toMatchObject({
+      name: tenantBName,
+      version: tenantBHoliday.version,
+    });
+
+    await Promise.all([
+      adminContext.close(),
+      staleContext.close(),
+      hrContext.close(),
+      employeeContext.close(),
+      tenantBContext.close(),
+    ]);
+  });
+
+  test("mobile keyboard, theme, boundary navigation, double action, and network recovery", async ({
+    browser,
+  }) => {
+    test.setTimeout(240_000);
+    const suffix = `${Date.now()}`;
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
+    const page = await context.newPage();
+    await login(page, "admin@example.test");
+    await openHolidays(page);
+
+    await page.getByRole("button", { name: "Toggle Sidebar" }).click();
+    const themeToggle = page.getByRole("button", { name: /Switch to (dark|light) mode/ });
+    await expect(themeToggle).toBeVisible();
+    const originalThemeLabel = await themeToggle.getAttribute("aria-label");
+    await themeToggle.focus();
+    await page.keyboard.press("Enter");
+    await expect(themeToggle).not.toHaveAttribute("aria-label", originalThemeLabel!);
+    await page.keyboard.press("Escape");
+
+    const doubleName = `QA Double Guard ${suffix}`;
+    await page.getByRole("button", { name: "Add holiday" }).focus();
+    await page.keyboard.press("Enter");
+    await page.getByLabel("Name", { exact: true }).fill(doubleName);
+    await page.getByLabel("Date", { exact: true }).fill("2026-12-30");
+    await page.getByLabel("Region", { exact: true }).fill("MOBILE");
+    let doubleRequests = 0;
+    const countRequest = (request: { method(): string; url(): string }) => {
+      if (
+        request.method() === "PUT" &&
+        /\/api\/v1\/holidays\/[^/]+$/.test(new URL(request.url()).pathname)
+      ) {
+        doubleRequests += 1;
+      }
+    };
+    page.on("request", countRequest);
+    const doubleResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === "PUT" &&
+        /\/api\/v1\/holidays\/[^/]+$/.test(new URL(response.url()).pathname),
+    );
+    await page.getByRole("button", { name: "Add", exact: true }).evaluate((button) => {
+      (button as HTMLButtonElement).click();
+      (button as HTMLButtonElement).click();
+    });
+    expect((await doubleResponse).status()).toBe(200);
+    await expect(page.getByRole("button", { name: `Edit ${doubleName}` })).toBeVisible();
+    await page.waitForTimeout(250);
+    expect(doubleRequests).toBe(1);
+    page.off("request", countRequest);
+
+    const recoveryName = `QA Network Recovery ${suffix}`;
+    await page.route(
+      "**/api/v1/holidays/*",
+      async (route) => {
+        if (route.request().method() === "PUT") {
+          await route.abort("internetdisconnected");
+          return;
+        }
+        await route.continue();
+      },
+      { times: 1 },
+    );
+    await page.getByRole("button", { name: "Add holiday" }).click();
+    await page.getByLabel("Name", { exact: true }).fill(recoveryName);
+    await page.getByLabel("Date", { exact: true }).fill("2026-12-31");
+    await page.getByLabel("Region", { exact: true }).fill("RECOVERY");
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    await expect(page.getByText(/connection dropped/i)).toBeVisible();
+    await expect(page.getByLabel("Name", { exact: true })).toHaveValue(recoveryName);
+    await page.unroute("**/api/v1/holidays/*");
+    const recoveryResponse = page.waitForResponse(
+      (response) =>
+        response.request().method() === "PUT" &&
+        /\/api\/v1\/holidays\/[^/]+$/.test(new URL(response.url()).pathname),
+    );
+    await page.getByRole("button", { name: "Add", exact: true }).click();
+    expect((await recoveryResponse).status()).toBe(200);
+    await expect(page.getByRole("button", { name: `Edit ${recoveryName}` })).toBeVisible();
+
+    const januaryName = `QA New Year Boundary ${suffix}`;
+    const januaryId = crypto.randomUUID();
+    expect(
+      (
+        await putHolidayFromPage(page, januaryId, {
+          name: januaryName,
+          date: "2027-01-01",
+          region: "BOUNDARY",
+          optional: false,
+        })
+      ).status,
+    ).toBe(200);
+
+    await page.goto("/leave-wfh/holidays?month=2026-11", { waitUntil: "networkidle" });
+    await page.getByRole("tab", { name: "Calendar" }).click();
+    await page.getByRole("button", { name: "Next month" }).click();
+    await expect(page.getByRole("heading", { name: "December 2026" })).toBeVisible();
+    await expect(page.getByText(recoveryName, { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Next month" }).click();
+    await expect(page.getByRole("heading", { name: "January 2027" })).toBeVisible();
+    await expect(page.getByText(januaryName, { exact: true })).toBeVisible();
+
+    await page.goto("/dashboard", { waitUntil: "networkidle" });
+    await page.goBack({ waitUntil: "networkidle" });
+    await expect(page).toHaveURL(/\/leave-wfh\/holidays/);
+    await expect(page.getByText(januaryName, { exact: true })).toBeVisible();
+    await page.reload({ waitUntil: "networkidle" });
+    await expect(page.getByText(januaryName, { exact: true })).toBeVisible();
+    await context.close();
   });
 });
+
+interface HolidayRecord {
+  id: string;
+  company_id?: string;
+  name: string;
+  date: string;
+  region: string;
+  optional: boolean;
+  version: number;
+}
+
+interface HolidayMutationResponse {
+  holiday: HolidayRecord;
+  version: number;
+}
 
 async function openHolidays(page: Page): Promise<void> {
   await page.goto("/leave-wfh/holidays", { waitUntil: "networkidle" });
@@ -128,20 +330,67 @@ async function openHolidays(page: Page): Promise<void> {
 async function addHoliday(
   page: Page,
   input: { name: string; date: string; region: string; optional: boolean },
-): Promise<void> {
+): Promise<HolidayRecord> {
   await page.getByRole("button", { name: "Add holiday" }).click();
   await page.getByLabel("Name", { exact: true }).fill(input.name);
   await page.getByLabel("Date", { exact: true }).fill(input.date);
   await page.getByLabel("Region", { exact: true }).fill(input.region);
-  if (input.optional) await page.getByRole("switch").click();
+  if (input.optional) {
+    await page.getByRole("switch", { name: "Optional holiday" }).click();
+  }
   const response = page.waitForResponse(
     (candidate) =>
       /\/api\/v1\/holidays\/[^/]+$/.test(new URL(candidate.url()).pathname) &&
       candidate.request().method() === "PUT",
   );
   await page.getByRole("button", { name: "Add", exact: true }).click();
-  expect((await response).status()).toBe(200);
+  const completed = await response;
+  expect(completed.status()).toBe(200);
+  const payload = (await completed.json()) as HolidayMutationResponse;
   await expect(page.getByRole("button", { name: `Edit ${input.name}` })).toBeVisible();
+  return payload.holiday;
+}
+
+async function putHolidayFromPage(
+  page: Page,
+  id: string,
+  body: Record<string, unknown>,
+): Promise<{ status: number; body: unknown }> {
+  return page.evaluate(
+    async ({ apiBaseUrl, holidayId, payload }) => {
+      const token = window.sessionStorage.getItem("hawkaii_api_access_token");
+      const response = await fetch(`${apiBaseUrl}/api/v1/holidays/${holidayId}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(payload),
+      });
+      return { status: response.status, body: await response.json() };
+    },
+    { apiBaseUrl: API_BASE_URL, holidayId: id, payload: body },
+  );
+}
+
+async function listHolidaysFromPage(page: Page, year: number): Promise<HolidayRecord[]> {
+  return page.evaluate(
+    async ({ apiBaseUrl, queryYear }) => {
+      const token = window.sessionStorage.getItem("hawkaii_api_access_token");
+      const response = await fetch(
+        `${apiBaseUrl}/api/v1/holidays?year=${queryYear}&page=1&page_size=100`,
+        {
+          credentials: "include",
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        },
+      );
+      if (!response.ok) throw new Error(`Holiday list failed with ${response.status}`);
+      const payload = (await response.json()) as { holidays: HolidayRecord[] };
+      return payload.holidays;
+    },
+    { apiBaseUrl: API_BASE_URL, queryYear: year },
+  );
 }
 
 async function saveHoliday(page: Page, expectedStatus: number): Promise<void> {
@@ -156,8 +405,20 @@ async function saveHoliday(page: Page, expectedStatus: number): Promise<void> {
 
 async function login(page: Page, email: string): Promise<void> {
   await page.goto("/login", { waitUntil: "networkidle" });
-  await page.locator("#email").fill(email);
-  await page.locator("#password").fill(LOCAL_DEMO_PASSWORD);
+  const emailInput = page.locator("#email");
+  const passwordInput = page.locator("#password");
+  await expect(emailInput).toBeEditable({ timeout: 15_000 });
+  await expect(passwordInput).toBeEditable({ timeout: 15_000 });
+  await emailInput.fill(email);
+  await passwordInput.fill(LOCAL_DEMO_PASSWORD);
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  await expect(emailInput).toHaveValue(email);
+  await expect(passwordInput).toHaveValue(LOCAL_DEMO_PASSWORD);
   const loginResponse = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&
